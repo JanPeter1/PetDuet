@@ -1,6 +1,0 @@
-{
-  "name": "ESP32 CYD Retro Tamagotchi Dual-Device RPG",
-  "description": "Virtual pet Tamagotchi simulator and companion firmware for dual ESP32 Cheap Yellow Displays (ESP_CoGo) with biomes, RPG levels, socket peer sync, and PHP server.",
-  "requestFramePermissions": ["serial", "usb"],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
