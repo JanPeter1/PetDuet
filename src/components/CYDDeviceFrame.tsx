@@ -97,8 +97,17 @@ export const CYDDeviceFrame: React.FC<CYDDeviceFrameProps> = ({
             {deviceName}
           </span>
 
-          {/* Physical Buttons: BOOT & RST */}
+          {/* Physical Buttons: BEEP, BOOT & RST */}
           <div className="flex items-center gap-2">
+            {onBeepTest && (
+              <button
+                onClick={onBeepTest}
+                className="px-1.5 py-0.5 bg-amber-900 text-amber-100 hover:bg-amber-800 active:bg-amber-950 text-[8px] rounded border border-slate-950 shadow-sm transition-transform active:scale-95"
+                title="ESP32 Buzzer Audio Test (GPIO 26)"
+              >
+                🔊 BEEP
+              </button>
+            )}
             <button
               onClick={onBoot}
               className="px-2 py-0.5 bg-slate-800 text-slate-100 hover:bg-slate-700 active:bg-slate-900 text-[8px] rounded border border-slate-950 shadow-sm transition-transform active:scale-95"

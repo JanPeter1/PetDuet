@@ -9,15 +9,16 @@
 
 import {
   PetState,
-  PetStats,
   BiomeType,
-  SeasonType,
   EvolutionPhase,
-  InventoryItem,
   CYDMessagePacket,
+  DailyMission,
+  DailyMissionsState,
+  MissionActionType,
 } from '../types/pet';
 import { GameRulesConfig, parseGameRules } from './ConfigParser';
-import defaultRulesText from './config/tamagotchi_rules.cfg?raw';
+import defaultRulesJson from './config/rules.json?raw';
+import fallbackRulesCfg from './config/tamagotchi_rules.cfg?raw';
 
 export type EngineEvent =
   | 'stat_change'
@@ -26,7 +27,9 @@ export type EngineEvent =
   | 'egg_hatch'
   | 'job_complete'
   | 'packet_out'
-  | 'notification';
+  | 'notification'
+  | 'mission_progress'
+  | 'mission_complete';
 
 export type EventListener = (eventName: EngineEvent, data: any) => void;
 
@@ -38,9 +41,10 @@ export class TamagotchiCoreEngine {
   private tickTimer: any = null;
 
   constructor(initialConfigText?: string, initialBiome: BiomeType = 'grassland') {
-    this.rawConfigText = initialConfigText || defaultRulesText;
+    this.rawConfigText = initialConfigText || defaultRulesJson || fallbackRulesCfg;
     this.rules = parseGameRules(this.rawConfigText);
     this.state = this.buildInitialState(initialBiome);
+    this.checkDailyMissionsLogin();
   }
 
   // --------------------------------------------------------------------------
@@ -141,6 +145,36 @@ export class TamagotchiCoreEngine {
       createdAt: Date.now(),
       lastFedAt: Date.now(),
       lastInteractedAt: Date.now(),
+      dailyMissions: this.createInitialDailyMissionsState(1),
+    };
+  }
+
+  private createInitialDailyMissionsState(consecutiveDays = 1): DailyMissionsState {
+    const today = new Date().toISOString().split('T')[0];
+    const missions: DailyMission[] = (this.rules.dailyMissions || []).map((m) => {
+      const isLoginStreak = m.actionType === 'login_streak';
+      const initialCount = isLoginStreak ? consecutiveDays : 0;
+      return {
+        id: m.id,
+        title: m.name,
+        title_de: m.name_de,
+        description: m.description,
+        description_de: m.description_de,
+        actionType: m.actionType as MissionActionType,
+        targetCount: m.targetCount,
+        currentCount: initialCount,
+        coinReward: m.coinReward,
+        xpReward: m.xpReward,
+        completed: initialCount >= m.targetCount,
+        claimed: false,
+        icon: m.icon,
+      };
+    });
+
+    return {
+      lastLoginDate: today,
+      consecutiveLoginDays: consecutiveDays,
+      missions,
     };
   }
 
@@ -150,6 +184,7 @@ export class TamagotchiCoreEngine {
 
   public setState(newState: PetState) {
     this.state = newState;
+    this.checkDailyMissionsLogin();
     this.emit('stat_change', this.state);
   }
 
@@ -211,6 +246,7 @@ export class TamagotchiCoreEngine {
       this.state.stats.health + healthAmount
     );
     this.addXP(15);
+    this.recordAction('feed', 1);
     this.emit('stat_change', this.state);
   }
 
@@ -221,6 +257,7 @@ export class TamagotchiCoreEngine {
     );
     this.state.stats.energy = Math.max(0, this.state.stats.energy - energyCost);
     this.addXP(20);
+    this.recordAction('play', 1);
     this.emit('stat_change', this.state);
   }
 
@@ -231,6 +268,7 @@ export class TamagotchiCoreEngine {
       this.state.stats.happiness + 10
     );
     this.addXP(10);
+    this.recordAction('bath', 1);
     this.emit('stat_change', this.state);
   }
 
@@ -356,6 +394,7 @@ export class TamagotchiCoreEngine {
 
     this.state.recipesCraftedCount += 1;
     this.addXP(recipe.xpReward);
+    this.recordAction('cook', 1);
     this.emit('notification', { message: `Cooked ${recipe.name}! ${recipe.icon}` });
     return true;
   }
@@ -374,6 +413,7 @@ export class TamagotchiCoreEngine {
       durationSeconds: job.durationSeconds,
     };
 
+    this.recordAction('start_job', 1);
     this.emit('notification', { message: `Started job: ${job.title}! ${job.icon}` });
     this.emit('stat_change', this.state);
     return true;
@@ -441,6 +481,7 @@ export class TamagotchiCoreEngine {
     }
 
     this.addXP(35);
+    this.recordAction('cast_spell', 1);
 
     // If target touches friend, generate socket packet
     if (spell.target === 'friend' || spell.target === 'both') {
@@ -457,6 +498,18 @@ export class TamagotchiCoreEngine {
 
     this.emit('notification', { message: `Cast ${spell.name}! ${spell.icon}` });
     return true;
+  }
+
+  public sendTreat(): void {
+    this.state.treatsSentCount += 1;
+    this.recordAction('send_treat', 1);
+    this.addXP(10);
+    this.emit('packet_out', {
+      type: 'TREAT',
+      payload: { from: this.state.name },
+    });
+    this.emit('notification', { message: 'Sent a yummy treat to your friend! 🍩' });
+    this.emit('stat_change', this.state);
   }
 
   // --------------------------------------------------------------------------
@@ -488,5 +541,130 @@ export class TamagotchiCoreEngine {
     }
 
     this.emit('stat_change', this.state);
+  }
+
+  // --------------------------------------------------------------------------
+  // Daily Missions & Login Streaks
+  // --------------------------------------------------------------------------
+  public checkDailyMissionsLogin(): void {
+    const today = new Date().toISOString().split('T')[0];
+    if (!this.state.dailyMissions) {
+      this.state.dailyMissions = this.createInitialDailyMissionsState(1);
+      return;
+    }
+
+    const { lastLoginDate, consecutiveLoginDays } = this.state.dailyMissions;
+    if (lastLoginDate === today) {
+      // Ensure missing missions from config exist
+      for (const rule of this.rules.dailyMissions || []) {
+        const existing = this.state.dailyMissions.missions.find((m) => m.id === rule.id);
+        if (!existing) {
+          const isStreak = rule.actionType === 'login_streak';
+          const count = isStreak ? consecutiveLoginDays : 0;
+          this.state.dailyMissions.missions.push({
+            id: rule.id,
+            title: rule.name,
+            title_de: rule.name_de,
+            description: rule.description,
+            description_de: rule.description_de,
+            actionType: rule.actionType as MissionActionType,
+            targetCount: rule.targetCount,
+            currentCount: count,
+            coinReward: rule.coinReward,
+            xpReward: rule.xpReward,
+            completed: count >= rule.targetCount,
+            claimed: false,
+            icon: rule.icon,
+          });
+        }
+      }
+      return;
+    }
+
+    // Different day: calculate difference in calendar days
+    const lastTime = new Date(lastLoginDate).getTime();
+    const currentTime = new Date(today).getTime();
+    const diffDays = Math.round(Math.abs(currentTime - lastTime) / (1000 * 60 * 60 * 24));
+
+    let newStreak = consecutiveLoginDays;
+    if (diffDays === 1) {
+      newStreak += 1;
+    } else if (diffDays > 1) {
+      newStreak = 1;
+    }
+
+    this.state.dailyMissions = this.createInitialDailyMissionsState(newStreak);
+    this.emit('stat_change', this.state);
+  }
+
+  public recordAction(actionType: MissionActionType, count = 1): void {
+    if (!this.state.dailyMissions) {
+      this.checkDailyMissionsLogin();
+    }
+    const dm = this.state.dailyMissions;
+    if (!dm) return;
+
+    let changed = false;
+    for (const mission of dm.missions) {
+      if (mission.actionType === actionType && !mission.completed) {
+        mission.currentCount = Math.min(mission.targetCount, mission.currentCount + count);
+        changed = true;
+        this.emit('mission_progress', { mission, pet: this.state });
+        if (mission.currentCount >= mission.targetCount) {
+          mission.completed = true;
+          this.emit('mission_complete', { mission, pet: this.state });
+          this.emit('notification', {
+            message: `🎯 Mission complete: ${mission.title}! Claim bonus coins & XP!`,
+          });
+        }
+      }
+    }
+    if (changed) {
+      this.emit('stat_change', this.state);
+    }
+  }
+
+  public claimDailyMission(missionId: string): boolean {
+    if (!this.state.dailyMissions) return false;
+    const mission = this.state.dailyMissions.missions.find((m) => m.id === missionId);
+    if (!mission || !mission.completed || mission.claimed) return false;
+
+    mission.claimed = true;
+    this.state.coins += mission.coinReward;
+    this.addXP(mission.xpReward);
+    this.emit('notification', {
+      message: `Claimed ${mission.title}! +${mission.coinReward} Coins, +${mission.xpReward} XP ✨`,
+    });
+    this.emit('stat_change', this.state);
+    return true;
+  }
+
+  public getDailyMissions(): DailyMission[] {
+    if (!this.state.dailyMissions) {
+      this.checkDailyMissionsLogin();
+    }
+    return this.state.dailyMissions?.missions || [];
+  }
+
+  public getConsecutiveLoginDays(): number {
+    if (!this.state.dailyMissions) {
+      this.checkDailyMissionsLogin();
+    }
+    return this.state.dailyMissions?.consecutiveLoginDays || 1;
+  }
+
+  // --------------------------------------------------------------------------
+  // Auto Tick Management
+  // --------------------------------------------------------------------------
+  public startAutoTick(intervalMs = 6000): void {
+    this.stopAutoTick();
+    this.tickTimer = setInterval(() => this.tick(), intervalMs);
+  }
+
+  public stopAutoTick(): void {
+    if (this.tickTimer) {
+      clearInterval(this.tickTimer);
+      this.tickTimer = null;
+    }
   }
 }

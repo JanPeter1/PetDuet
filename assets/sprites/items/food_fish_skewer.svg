@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" shape-rendering="crispEdges">
+  <!-- Bamboo Skewer Line -->
+  <line x1="2" y1="22" x2="22" y2="2" stroke="#b45309" stroke-width="2" />
+  <!-- Grilled Fish Outline -->
+  <path d="M 6 12 H 10 V 8 H 14 V 6 H 18 V 8 H 20 V 12 H 18 V 14 H 14 V 16 H 10 V 14 H 6 Z" fill="#1e293b" />
+  <!-- Grilled Fish Body (Golden Cyan Crust) -->
+  <path d="M 8 12 H 12 V 8 H 16 V 10 H 18 V 12 H 16 V 14 H 12 V 12 H 8 Z" fill="#0284c7" />
+  <!-- Char Marks -->
+  <rect x="11" y="9" width="1" height="3" fill="#78350f" />
+  <rect x="14" y="10" width="1" height="3" fill="#78350f" />
+  <!-- Lemon Slice Garnish -->
+  <rect x="7" y="11" width="3" height="3" fill="#fef08a" />
+</svg>

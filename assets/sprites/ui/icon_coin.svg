@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" shape-rendering="crispEdges">
+  <!-- Coin Outline (Octagonal) -->
+  <path d="M 7 3 H 17 V 5 H 21 V 9 H 23 V 15 H 21 V 19 H 17 V 21 H 7 V 19 H 3 V 15 H 1 V 9 H 3 V 5 H 7 Z" fill="#78350f" />
+  <!-- Coin Body Fill (Rich Gold) -->
+  <path d="M 7 5 H 17 V 9 H 21 V 15 H 17 V 19 H 7 V 15 H 3 V 9 H 7 Z" fill="#fbbf24" />
+  <!-- Inner Rim Shading -->
+  <path d="M 7 7 H 17 V 9 H 19 V 15 H 17 V 17 H 7 V 15 H 5 V 9 H 7 Z" fill="#f59e0b" />
+  <!-- Embossed Star in Center -->
+  <rect x="11" y="8" width="2" height="8" fill="#fef08a" />
+  <rect x="8" y="11" width="8" height="2" fill="#fef08a" />
+  <rect x="11" y="11" width="2" height="2" fill="#ffffff" />
+</svg>

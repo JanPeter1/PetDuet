@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" shape-rendering="crispEdges">
+  <defs>
+    <style>
+      @keyframes brambleBreathe {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-1px); }
+      }
+      .anim-forest { transform-origin: 24px 44px; animation: brambleBreathe 2.2s ease-in-out infinite; }
+    </style>
+  </defs>
+
+  <ellipse cx="24" cy="45" rx="14" ry="3" fill="#0f172a" opacity="0.4" />
+
+  <g class="anim-forest">
+    <!-- Round Bear Ears -->
+    <path d="M 12 10 H 18 V 16 H 12 Z M 30 10 H 36 V 16 H 30 Z" fill="#3e2723" />
+    <path d="M 13 11 H 17 V 15 H 13 Z M 31 11 H 35 V 15 H 31 Z" fill="#8d6e63" />
+    <rect x="14" y="12" width="2" height="2" fill="#d7ccc8" />
+    <rect x="32" y="12" width="2" height="2" fill="#d7ccc8" />
+
+    <!-- Cute Red Mushroom Hat on Head -->
+    <path d="M 19 6 H 29 V 8 H 31 V 12 H 17 V 8 H 19 Z" fill="#dc2626" />
+    <rect x="21" y="8" width="2" height="2" fill="#ffffff" />
+    <rect x="27" y="8" width="2" height="2" fill="#ffffff" />
+    <!-- Mushroom Stem Base -->
+    <rect x="22" y="12" width="4" height="2" fill="#fef2f2" />
+
+    <!-- Main Body Outline -->
+    <path d="M 14 16 H 34 V 18 H 38 V 24 H 40 V 38 H 38 V 42 H 34 V 44 H 14 V 42 H 10 V 38 H 8 V 24 H 10 V 18 H 14 Z" fill="#3e2723" />
+    <!-- Main Body Fill (Warm Rustic Brown) -->
+    <path d="M 14 18 H 34 V 24 H 38 V 38 H 34 V 42 H 14 V 38 H 10 V 24 H 14 Z" fill="#8d6e63" />
+    <!-- Shading -->
+    <path d="M 12 36 H 14 V 40 H 34 V 42 H 14 V 40 H 12 Z M 34 26 H 36 V 38 H 34 Z" fill="#5d4037" />
+    <!-- Creamy Snout & Belly -->
+    <path d="M 18 32 H 30 V 40 H 18 Z" fill="#efebe9" />
+
+    <!-- Orange Forest Cheeks -->
+    <rect x="12" y="30" width="3" height="2" fill="#fb923c" />
+    <rect x="33" y="30" width="3" height="2" fill="#fb923c" />
+
+    <!-- Curious Black Eyes -->
+    <rect x="17" y="25" width="3" height="4" fill="#1c1917" />
+    <rect x="17" y="25" width="1" height="2" fill="#ffffff" />
+    <rect x="28" y="25" width="3" height="4" fill="#1c1917" />
+    <rect x="28" y="25" width="1" height="2" fill="#ffffff" />
+
+    <!-- Bear Snout Button Nose -->
+    <rect x="22" y="29" width="4" height="2" fill="#1c1917" />
+
+    <!-- Acorn Pendant -->
+    <path d="M 23 35 H 25 V 38 H 23 Z" fill="#b45309" />
+    <rect x="22" y="34" width="4" height="1" fill="#78350f" />
+  </g>
+</svg>

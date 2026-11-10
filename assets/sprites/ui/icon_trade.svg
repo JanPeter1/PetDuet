@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" shape-rendering="crispEdges">
+  <!-- Top Arrow (Left to Right, Amber Gold) -->
+  <path d="M 4 8 H 16 V 6 H 20 V 10 H 16 V 8 H 4 Z" fill="#d97706" />
+  <rect x="5" y="7" width="11" height="2" fill="#fbbf24" />
+  <!-- Bottom Arrow (Right to Left, Cyan Aqua) -->
+  <path d="M 20 16 H 8 V 18 H 4 V 14 H 8 V 16 H 20 Z" fill="#0284c7" />
+  <rect x="8" y="15" width="11" height="2" fill="#38bdf8" />
+  <!-- Center Exchange Dot -->
+  <rect x="11" y="11" width="2" height="2" fill="#ffffff" />
+</svg>

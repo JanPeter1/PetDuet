@@ -169,16 +169,21 @@ export const CYDScreen: React.FC<CYDScreenProps> = ({
           {/* Top Info Header */}
           <div className="relative z-10 flex flex-col gap-0.5">
             <div className="flex items-center justify-between text-[8px]">
-              <span className="truncate max-w-[70px] text-white font-bold tracking-tight">
-                {myPet.name}
-              </span>
-              <span className="text-amber-300 text-[7px] shrink-0">
+              <div className="flex items-center gap-1 min-w-0">
+                <span className="px-1 py-0.2 bg-emerald-500/30 text-emerald-300 rounded text-[5px] font-bold border border-emerald-500/40">
+                  {language === 'de' ? 'DU' : 'YOU'}
+                </span>
+                <span className="truncate max-w-[55px] text-white font-bold tracking-tight">
+                  {myPet.name}
+                </span>
+              </div>
+              <span className="text-amber-300 text-[7px] shrink-0 font-bold">
                 Lv.{myPet.level}
               </span>
             </div>
 
             <div className="flex items-center justify-between text-[6px] text-slate-300">
-              <span style={{ color: myBiome.primaryHex }} className="uppercase">
+              <span style={{ color: myBiome.primaryHex }} className="uppercase font-bold">
                 {myBiome.name}
               </span>
               <span className="text-slate-400">
@@ -223,7 +228,7 @@ export const CYDScreen: React.FC<CYDScreenProps> = ({
             </div>
           </div>
 
-          {/* Center Pet Sprite & Interaction Area */}
+          {/* Center Pet Sprite & Interaction Area (Your Pet) */}
           <div 
             onClick={() => {
               if (myPet.phase === 'Egg') {
@@ -235,6 +240,7 @@ export const CYDScreen: React.FC<CYDScreenProps> = ({
               }
             }}
             className="flex-1 flex flex-col items-center justify-center cursor-pointer transition-transform active:scale-95 py-1"
+            title="Tap your pet to cuddle / warm egg"
           >
             <PetPixelSprite
               biome={myPet.biome}
@@ -259,14 +265,17 @@ export const CYDScreen: React.FC<CYDScreenProps> = ({
         </div>
 
         {/* ========================================================= */}
-        {/* CENTER DIVIDER: HARDWARE WIRELESS SYNC INDICATOR          */}
+        {/* CENTER DIVIDER: DUAL-PET HARDWARE WIRELESS SYNC BRIDGE     */}
         {/* ========================================================= */}
         <div className="w-[8px] h-full bg-slate-900 flex flex-col items-center justify-between py-2 border-x border-slate-800 z-20">
-          <div className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse" title="Direct Socket active" />
+          <div className="w-1 h-1 rounded-full bg-emerald-400 animate-pulse" title="Your Pet (Online)" />
           <div className="flex flex-col items-center gap-1.5 my-auto">
             <div className="w-0.5 h-6 bg-slate-700" />
-            <span className="text-[6px] text-slate-400 rotate-90 whitespace-nowrap">
-              {connectionType === 'direct_socket' ? 'LAN' : 'NET'}
+            <span 
+              className="text-[5px] text-slate-400 rotate-90 whitespace-nowrap font-bold tracking-widest cursor-default"
+              title={`Hardware Link: ${connectionType === 'direct_socket' ? 'Direct Socket (WiFi 8888)' : 'PHP Server Relay'}`}
+            >
+              SYNC
             </span>
             <div className="w-0.5 h-6 bg-slate-700" />
           </div>
@@ -274,33 +283,38 @@ export const CYDScreen: React.FC<CYDScreenProps> = ({
             className={`w-1 h-1 rounded-full ${
               friendPet.isOnline ? 'bg-cyan-400 animate-ping' : 'bg-rose-500'
             }`} 
-            title={friendPet.isOnline ? 'Friend Connected' : 'Seeking Friend'}
+            title={friendPet.isOnline ? `Partner Connected via ${connectionType}` : 'Seeking Partner'}
           />
         </div>
 
         {/* ========================================================= */}
-        {/* RIGHT VIEWPORT: FRIEND'S PET (X: 168 to 284)              */}
-        {/* Uses friend's chosen biome color scheme                    */}
+        {/* RIGHT VIEWPORT: PARTNER'S PET (Right of Your Own Pet)     */}
+        {/* Displays friend's live pet sprite & status in real-time   */}
         {/* ========================================================= */}
         <div 
           className={`flex-1 h-full relative p-1.5 flex flex-col justify-between bg-gradient-to-b ${biomeBgStyles[friendPet.biome]} overflow-hidden`}
         >
-          {/* Top Info Header: Friend Pet */}
+          {/* Top Info Header: Friend/Partner Pet */}
           <div className="relative z-10 flex flex-col gap-0.5">
             <div className="flex items-center justify-between text-[8px]">
-              <span className="truncate max-w-[70px] text-cyan-200 font-bold tracking-tight">
-                {friendPet.petName}
-              </span>
-              <span className="text-amber-300 text-[7px] shrink-0">
+              <div className="flex items-center gap-1 min-w-0">
+                <span className="px-1 py-0.2 bg-cyan-500/30 text-cyan-300 rounded text-[5px] font-bold border border-cyan-500/40">
+                  {language === 'de' ? 'PARTNER' : 'PARTNER'}
+                </span>
+                <span className="truncate max-w-[55px] text-cyan-200 font-bold tracking-tight">
+                  {friendPet.petName}
+                </span>
+              </div>
+              <span className="text-amber-300 text-[7px] shrink-0 font-bold">
                 Lv.{friendPet.level}
               </span>
             </div>
 
             <div className="flex items-center justify-between text-[6px] text-slate-300">
-              <span style={{ color: friendBiome.primaryHex }} className="uppercase">
+              <span style={{ color: friendBiome.primaryHex }} className="uppercase font-bold">
                 {friendBiome.name}
               </span>
-              <span className="text-emerald-400">
+              <span className={friendPet.isOnline ? 'text-emerald-400 font-semibold' : 'text-slate-500'}>
                 {friendPet.isOnline ? `● ${t.statusOnline}` : `○ ${t.statusAsleep}`}
               </span>
             </div>

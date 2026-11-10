@@ -10,6 +10,8 @@ const app = express();
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
 app.use(express.json({ limit: '2mb' }));
+app.use(express.static(path.resolve(__dirname, 'public')));
+app.use('/assets', express.static(path.resolve(__dirname, 'assets')));
 
 // In-memory store for registered CYD devices, cloud saves, leaderboards, and sync messages
 interface DeviceRecord {
@@ -186,7 +188,7 @@ app.post('/api/register', (req, res) => {
 });
 
 // 2. Peer Discovery (matches peers.php / find_friend.php)
-app.get('/api/peers', (req, res) => {
+app.get('/api/peers', (_req, res) => {
   const now = Date.now();
   // Filter devices seen in the last 15 minutes (or mock retain for demo)
   const peerList = Array.from(devices.values()).map((dev) => ({
@@ -343,6 +345,51 @@ app.get('/api/download/php-server', (_req, res) => {
       res.status(500).json({ error: 'Could not send PHP server zip archive' });
     }
   });
+});
+
+// 9. Over-The-Air (OTA) A/B Firmware & Dynamic Rules Distribution Endpoints
+app.get('/api/ota/check', (req, res) => {
+  const currentVersion = (req.query.version as string) || '1.0.0';
+  const deviceId = (req.query.device as string) || 'CYD_DEV1';
+  
+  res.json({
+    status: 'success',
+    device_id: deviceId,
+    firmware: {
+      update_available: currentVersion !== '1.2.0',
+      target_version: '1.2.0',
+      min_required_version: '1.0.0',
+      url: '/firmware/cyd_tamagotchi.bin',
+      size_bytes: 1310720,
+      sha256: '7d9b4b0a48d88e63286b51c8b39a3f2a1a8c3d98ef5c07c6f05a5a73e614138e',
+      release_notes_de: 'Neues A/B OTA-System, Dual-Pet Stage & verbesserte Touch-Kalibrierung.',
+      release_notes_en: 'New A/B OTA system, dual-pet stage & improved touch calibration.'
+    },
+    rules: {
+      update_available: true,
+      target_version: '1.0.4',
+      hash: 'c3ab8ff13720e8ad9047dd39466b3c8974e592c2fa383d4a3960714caef0c4f2',
+      url: '/api/rules',
+      hot_reload: true
+    }
+  });
+});
+
+app.get('/api/rules', (req, res) => {
+  const format = req.query.format as string;
+  if (format === 'cfg') {
+    const rulesPath = path.resolve(__dirname, 'src/engine/config/tamagotchi_rules.cfg');
+    return res.sendFile(rulesPath);
+  }
+  const jsonPath = path.resolve(__dirname, 'src/engine/config/rules.json');
+  res.setHeader('Content-Type', 'application/json');
+  return res.sendFile(jsonPath);
+});
+
+app.post('/api/ota/report', (req, res) => {
+  const { deviceId, status, slot, error } = req.body;
+  console.log(`[OTA REPORT] Device: ${deviceId}, Status: ${status}, Slot: ${slot}, Error: ${error || 'none'}`);
+  res.json({ status: 'success', received: true });
 });
 
 // Setup Vite development middleware

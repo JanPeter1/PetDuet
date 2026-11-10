@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PetDuet Asset & Animation Catalog</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Plus+Jakarta+Sans:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: #020617;
+      color: #f8fafc;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      padding: 2rem 1.5rem 4rem;
+      min-height: 100vh;
+    }
+    .font-pixel { font-family: 'Press Start 2P', monospace; }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+    .container { max-width: 1200px; margin: 0 auto; }
+    
+    header {
+      border-bottom: 1px solid #1e293b;
+      padding-bottom: 1.5rem;
+      margin-bottom: 2rem;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+    }
+    .badge {
+      font-size: 0.65rem;
+      background: rgba(245, 158, 11, 0.15);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.4);
+      padding: 0.25rem 0.6rem;
+      border-radius: 6px;
+      font-weight: 700;
+    }
+    
+    .section-title {
+      font-size: 1.15rem;
+      font-weight: 800;
+      color: #e2e8f0;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      border-left: 4px solid #10b981;
+      padding-left: 0.75rem;
+    }
+    .section-title.amber { border-color: #f59e0b; }
+    .section-title.cyan { border-color: #06b6d4; }
+    .section-title.purple { border-color: #a855f7; }
+
+    .grid-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 1.25rem;
+      margin-bottom: 3rem;
+    }
+    .card {
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: 12px;
+      padding: 1.25rem;
+      display: flex;
+      flex-col;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      transition: all 0.2s ease;
+      position: relative;
+    }
+    .card:hover {
+      border-color: #38bdf8;
+      transform: translateY(-2px);
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+    }
+    .sprite-box {
+      width: 72px;
+      height: 72px;
+      background: #020617;
+      border: 1px solid #1e293b;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 0.75rem;
+      image-rendering: pixelated;
+    }
+    .sprite-box img {
+      width: 48px;
+      height: 48px;
+      image-rendering: pixelated;
+    }
+    .sprite-box.large {
+      width: 140px;
+      height: 72px;
+    }
+    .sprite-box.large img {
+      width: 120px;
+      height: 48px;
+    }
+    .card-name {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: #f1f5f9;
+      margin-bottom: 0.25rem;
+    }
+    .card-meta {
+      font-size: 0.7rem;
+      color: #94a3b8;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .cyd-badge {
+      margin-top: 0.5rem;
+      font-size: 0.6rem;
+      color: #34d399;
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.25rem;">
+          <span style="font-size: 1.5rem;">👾</span>
+          <h1 style="font-size: 1.4rem; font-weight:800; letter-spacing:-0.02em;">PetDuet Graphics & Animation Catalog</h1>
+          <span class="badge">ESP32 CYD & Web Ready</span>
+        </div>
+        <p style="font-size: 0.85rem; color:#94a3b8;">
+          16-bit Pixel Art Assets, Emotional State Machine, Items & Care UI Icons.
+        </p>
+      </div>
+      <div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; color:#64748b;">
+        Location: /assets/sprites/
+      </div>
+    </header>
+
+    <!-- SECTION 1: PET SPECIES & ANIMATIONS -->
+    <h2 class="section-title">1. Pet Species & Emotional Animations (4 Biomes)</h2>
+    <div class="grid-cards">
+      <!-- Leafkin Idle -->
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/pets/grassland_pet_idle.svg" alt="Leafkin Idle">
+        </div>
+        <div class="card-name">Leafkin (Idle)</div>
+        <div class="card-meta">Grassland · Breathing</div>
+        <div class="cyd-badge">2-Frame Loop</div>
+      </div>
+
+      <!-- Leafkin Happy -->
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/pets/grassland_pet_happy.svg" alt="Leafkin Happy">
+        </div>
+        <div class="card-name">Leafkin (Happy)</div>
+        <div class="card-meta">Grassland · Hop & Sparks</div>
+        <div class="cyd-badge">400ms Hop</div>
+      </div>
+
+      <!-- Leafkin Eating -->
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/pets/grassland_pet_eating.svg" alt="Leafkin Eating">
+        </div>
+        <div class="card-name">Leafkin (Eating)</div>
+        <div class="card-meta">Grassland · Chew Munch</div>
+        <div class="cyd-badge">Apple Bite</div>
+      </div>
+
+      <!-- Leafkin Sleeping -->
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/pets/grassland_pet_sleeping.svg" alt="Leafkin Sleeping">
+        </div>
+        <div class="card-name">Leafkin (Sleeping)</div>
+        <div class="card-meta">Grassland · Curled ZZZ</div>
+        <div class="cyd-badge">Energy Regen</div>
+      </div>
+
+      <!-- Leafkin Sick -->
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/pets/grassland_pet_sick.svg" alt="Leafkin Sick">
+        </div>
+        <div class="card-name">Leafkin (Sick / Call)</div>
+        <div class="card-meta">Grassland · Shiver & Sweat</div>
+        <div class="cyd-badge">Care Warning</div>
+      </div>
+
+      <!-- Sunscale Desert -->
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/pets/desert_pet_idle.svg" alt="Sunscale Desert">
+        </div>
+        <div class="card-name">Sunscale (Idle)</div>
+        <div class="card-meta">Desert · Horn Crest</div>
+        <div class="cyd-badge">Amber 0xFD40</div>
+      </div>
+
+      <!-- Tideling Water -->
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/pets/water_pet_idle.svg" alt="Tideling Water">
+        </div>
+        <div class="card-name">Tideling (Idle)</div>
+        <div class="card-meta">Water · Axolotl Gills</div>
+        <div class="cyd-badge">Azure 0x1DCF</div>
+      </div>
+
+      <!-- Bramble Forest -->
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/pets/forest_pet_idle.svg" alt="Bramble Forest">
+        </div>
+        <div class="card-name">Bramble (Idle)</div>
+        <div class="card-meta">Forest · Mushroom Cap</div>
+        <div class="cyd-badge">Bark 0x8BE3</div>
+      </div>
+
+      <!-- Egg Stages -->
+      <div class="card" style="grid-column: span 2;">
+        <div class="sprite-box large">
+          <img src="../sprites/pets/egg_stages.svg" alt="Egg Progression">
+        </div>
+        <div class="card-name">Egg Progression (3 Stages)</div>
+        <div class="card-meta">Intact → Cracked (+40%) → Hatch Peek (+100%)</div>
+        <div class="cyd-badge">Touch Warming</div>
+      </div>
+    </div>
+
+    <!-- SECTION 2: EMOTION BALLOONS & PARTICLES -->
+    <h2 class="section-title amber">2. Emotional Overlays & Status Balloons</h2>
+    <div class="grid-cards">
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/emotions/emotion_heart.svg" alt="Heart">
+        </div>
+        <div class="card-name">Affection (Heart)</div>
+        <div class="card-meta">Pulsing Love Response</div>
+      </div>
+
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/emotions/emotion_happy_sparkle.svg" alt="Sparkle">
+        </div>
+        <div class="card-name">Joy Sparkle</div>
+        <div class="card-meta">Level-Up / Buff Active</div>
+      </div>
+
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/emotions/emotion_sleep_zzz.svg" alt="ZZZ">
+        </div>
+        <div class="card-name">Floating ZZZ</div>
+        <div class="card-meta">Sleep Rest Cycle</div>
+      </div>
+
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/emotions/emotion_sweat_worry.svg" alt="Sweatdrop">
+        </div>
+        <div class="card-name">Sweatdrop Alarm</div>
+        <div class="card-meta">Care Mistake 15m Window</div>
+      </div>
+
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/emotions/emotion_sick_skull.svg" alt="Skull">
+        </div>
+        <div class="card-name">Poison / Sickness</div>
+        <div class="card-meta">Dirty / Starvation</div>
+      </div>
+
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/emotions/emotion_exclamation.svg" alt="Exclamation">
+        </div>
+        <div class="card-name">Attention Call</div>
+        <div class="card-meta">Audible Buzzer Alert</div>
+      </div>
+
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/emotions/emotion_musical_note.svg" alt="Note">
+        </div>
+        <div class="card-name">Musical Melody</div>
+        <div class="card-meta">Play Session Cheerful</div>
+      </div>
+    </div>
+
+    <!-- SECTION 3: ITEMS & RPG WARDROBE -->
+    <h2 class="section-title cyan">3. RPG Consumables, Materials & Wardrobe Gear</h2>
+    <div class="grid-cards">
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/items/food_apple.svg" alt="Apple">
+        </div>
+        <div class="card-name">Meadow Apple</div>
+        <div class="card-meta">+15 Hunger · Common</div>
+      </div>
+
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/items/food_soup.svg" alt="Mushroom Stew">
+        </div>
+        <div class="card-name">Herb Stew</div>
+        <div class="card-meta">+35 Hunger · +15 HP</div>
+      </div>
+
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/items/food_honey_waffle.svg" alt="Honey Waffle">
+        </div>
+        <div class="card-name">Golden Honey Waffle</div>
+        <div class="card-meta">+40 Hunger · +20 Energy</div>
+      </div>
+
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/items/food_fish_skewer.svg" alt="Fish Skewer">
+        </div>
+        <div class="card-name">Grilled Fish Skewer</div>
+        <div class="card-meta">+30 Hunger · +25 Mana</div>
+      </div>
+
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/items/food_sun_bread.svg" alt="Sun Bread">
+        </div>
+        <div class="card-name">Golden Dune Loaf</div>
+        <div class="card-meta">+25 Hunger · Desert Craft</div>
+      </div>
+
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/items/mat_herb.svg" alt="Herb">
+        </div>
+        <div class="card-name">Meadow Herb</div>
+        <div class="card-meta">Foraged Herb Ingredient</div>
+      </div>
+
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/items/mat_sunstone.svg" alt="Sunstone">
+        </div>
+        <div class="card-name">Radiant Sun Salt</div>
+        <div class="card-meta">Dune Crystal Seasoning</div>
+      </div>
+
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/items/mat_mushroom.svg" alt="Mushroom">
+        </div>
+        <div class="card-name">Forest Toadstool</div>
+        <div class="card-meta">Woodland Cooking Fungi</div>
+      </div>
+
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/items/mat_kelp.svg" alt="Kelp">
+        </div>
+        <div class="card-name">Azure Lagoon Kelp</div>
+        <div class="card-meta">Aquatic Cooking Binder</div>
+      </div>
+
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/items/mat_meat.svg" alt="Meat">
+        </div>
+        <div class="card-name">Savory Cutlet</div>
+        <div class="card-meta">Co-op Quest Drop</div>
+      </div>
+
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/items/gear_straw_hat.svg" alt="Straw Hat">
+        </div>
+        <div class="card-name">Farmer Straw Hat</div>
+        <div class="card-meta">Wardrobe (Head)</div>
+      </div>
+
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/items/gear_wizard_cap.svg" alt="Wizard Hat">
+        </div>
+        <div class="card-name">Mystic Wizard Cap</div>
+        <div class="card-meta">Wardrobe (Head) · +Mana</div>
+      </div>
+
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/items/gear_goggles.svg" alt="Goggles">
+        </div>
+        <div class="card-name">Brass Goggles</div>
+        <div class="card-meta">Wardrobe (Face)</div>
+      </div>
+
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/items/gear_feather_charm.svg" alt="Charm">
+        </div>
+        <div class="card-name">Swift Feather Charm</div>
+        <div class="card-meta">Wardrobe (Back)</div>
+      </div>
+    </div>
+
+    <!-- SECTION 4: CARE & HARDWARE UI ICONS -->
+    <h2 class="section-title purple">4. Care & Hardware Touch Screen UI Icons</h2>
+    <div class="grid-cards">
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/ui/icon_feed.svg" alt="Feed">
+        </div>
+        <div class="card-name">Feed Meal / Snack</div>
+        <div class="card-meta">Touch Action 1</div>
+      </div>
+
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/ui/icon_play.svg" alt="Play">
+        </div>
+        <div class="card-name">Play Mini-Game</div>
+        <div class="card-meta">Touch Action 2</div>
+      </div>
+
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/ui/icon_bath.svg" alt="Bath">
+        </div>
+        <div class="card-name">Clean Poop / Bath</div>
+        <div class="card-meta">Touch Action 3</div>
+      </div>
+
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/ui/icon_heal.svg" alt="Heal">
+        </div>
+        <div class="card-name">Heal / Medicine</div>
+        <div class="card-meta">Touch Action 4</div>
+      </div>
+
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/ui/icon_magic.svg" alt="Magic">
+        </div>
+        <div class="card-name">Cast Spell</div>
+        <div class="card-meta">Touch Action 5</div>
+      </div>
+
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/ui/icon_quest.svg" alt="Quest">
+        </div>
+        <div class="card-name">Co-op Quest</div>
+        <div class="card-meta">Touch Action 6</div>
+      </div>
+
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/ui/icon_trade.svg" alt="Trade">
+        </div>
+        <div class="card-name">Peer Escrow Trade</div>
+        <div class="card-meta">Socket Handshake</div>
+      </div>
+
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/ui/icon_chat.svg" alt="Chat">
+        </div>
+        <div class="card-name">Instant Chat Ping</div>
+        <div class="card-meta">CYD Peer Packet</div>
+      </div>
+
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/ui/icon_save.svg" alt="Save">
+        </div>
+        <div class="card-name">NVS & Cloud Save</div>
+        <div class="card-meta">Persistence</div>
+      </div>
+
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/ui/icon_wifi_ap.svg" alt="WiFi AP">
+        </div>
+        <div class="card-name">SoftAP Web Portal</div>
+        <div class="card-meta">192.168.4.1 Config</div>
+      </div>
+
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/ui/icon_sync_link.svg" alt="SYNC">
+        </div>
+        <div class="card-name">Dual Hardware SYNC</div>
+        <div class="card-meta">Live Bridge</div>
+      </div>
+
+      <div class="card">
+        <div class="sprite-box">
+          <img src="../sprites/ui/icon_coin.svg" alt="Coin">
+        </div>
+        <div class="card-name">Economy Coin</div>
+        <div class="card-meta">Gold Currency</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -33,6 +33,18 @@ struct EngineRecipe {
   uint16_t xpReward  = 35;
 };
 
+struct EngineDailyMission {
+  char id[16]         = "";
+  char name[32]       = "";
+  char actionType[16] = ""; // feed, play, bath, login_streak, send_treat
+  uint8_t targetCount = 1;
+  uint8_t currentCount = 0;
+  uint16_t coinReward = 20;
+  uint16_t xpReward   = 30;
+  bool completed      = false;
+  bool claimed        = false;
+};
+
 struct EngineRules {
   uint8_t maxStatValue          = 100;
   uint8_t hungerDecay           = 1;
@@ -54,6 +66,8 @@ struct EngineRules {
   uint8_t coopQuestCoinsReward  = 40;
   EngineRecipe recipes[8];
   uint8_t recipeCount           = 0;
+  EngineDailyMission missions[6];
+  uint8_t missionCount          = 0;
 };
 
 class TamagotchiCoreEngine {
@@ -69,6 +83,10 @@ public:
   uint16_t xpNext  = 100;
   uint16_t coins   = 50;
   uint8_t eggWarmth = 20;
+
+  EngineDailyMission missions[6];
+  uint8_t missionCount = 0;
+  uint16_t consecutiveLoginDays = 1;
 
   // Callback types for decoupled hardware event notifications
   typedef void (*EventCallback)(const char* eventName, void* data);
@@ -142,23 +160,57 @@ public:
   }
 
   // --------------------------------------------------------------------------
+  // Daily Missions
+  // --------------------------------------------------------------------------
+  void recordAction(const char* actionType, uint8_t count = 1) {
+    for (uint8_t i = 0; i < missionCount; i++) {
+      if (strcmp(missions[i].actionType, actionType) == 0 && !missions[i].completed) {
+        missions[i].currentCount += count;
+        if (missions[i].currentCount >= missions[i].targetCount) {
+          missions[i].currentCount = missions[i].targetCount;
+          missions[i].completed = true;
+          if (onEvent) onEvent("MISSION_COMPLETE", (void*)&missions[i]);
+        } else {
+          if (onEvent) onEvent("MISSION_PROGRESS", (void*)&missions[i]);
+        }
+      }
+    }
+  }
+
+  bool claimMission(const char* missionId) {
+    for (uint8_t i = 0; i < missionCount; i++) {
+      if (strcmp(missions[i].id, missionId) == 0 && missions[i].completed && !missions[i].claimed) {
+        missions[i].claimed = true;
+        coins += missions[i].coinReward;
+        addXP(missions[i].xpReward);
+        if (onEvent) onEvent("MISSION_CLAIMED", (void*)&missions[i]);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // --------------------------------------------------------------------------
   // Interactions
   // --------------------------------------------------------------------------
   void feed(uint8_t amount = 25) {
     stats.hunger = min((int)rules.maxStatValue, stats.hunger + amount);
     addXP(15);
+    recordAction("feed", 1);
   }
 
   void play(uint8_t happy = 20, uint8_t cost = 10) {
     stats.happiness = min((int)rules.maxStatValue, stats.happiness + happy);
     stats.energy = max(0, stats.energy - cost);
     addXP(20);
+    recordAction("play", 1);
   }
 
   void clean() {
     stats.hygiene = rules.maxStatValue;
     stats.happiness = min((int)rules.maxStatValue, stats.happiness + 10);
     addXP(10);
+    recordAction("bath", 1);
   }
 
   bool warmEgg(uint8_t amount = 25) {

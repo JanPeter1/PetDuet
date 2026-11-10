@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" shape-rendering="crispEdges">
+  <!-- Feeding Bowl -->
+  <path d="M 4 10 H 20 V 12 H 21 V 16 H 19 V 19 H 5 V 16 H 3 V 12 H 4 Z" fill="#78350f" />
+  <rect x="4" y="11" width="16" height="5" fill="#f59e0b" />
+  <!-- Food Mound Inside (Steaming Rice/Meat) -->
+  <rect x="6" y="9" width="12" height="2" fill="#fef3c7" />
+  <rect x="8" y="7" width="8" height="2" fill="#fef3c7" />
+  <!-- Wooden Spoon Diagonal -->
+  <path d="M 14 3 H 17 V 5 H 16 V 8 H 14 Z" fill="#b45309" />
+  <rect x="17" y="2" width="4" height="4" fill="#d97706" />
+</svg>

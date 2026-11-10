@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" shape-rendering="crispEdges">
+  <defs>
+    <style>
+      @keyframes sweatDrop {
+        0% { transform: translateY(-1px) scale(0.9); }
+        50% { transform: translateY(1px) scale(1.05); }
+        100% { transform: translateY(-1px) scale(0.9); }
+      }
+      .anim-drop {
+        transform-origin: 12px 12px;
+        animation: sweatDrop 1s ease-in-out infinite;
+      }
+    </style>
+  </defs>
+  <g class="anim-drop">
+    <!-- Sweatdrop Outline -->
+    <path d="M 11 3 H 13 V 5 H 15 V 8 H 17 V 11 H 19 V 16 H 17 V 19 H 15 V 21 H 9 V 19 H 7 V 16 H 5 V 11 H 7 V 8 H 9 V 5 H 11 Z" fill="#082f49" />
+    <!-- Sweatdrop Body (Cyan / Blue) -->
+    <path d="M 11 5 H 13 V 8 H 15 V 11 H 17 V 16 H 15 V 19 H 9 V 16 H 7 V 11 H 9 V 8 H 11 Z" fill="#38bdf8" />
+    <!-- Highlight -->
+    <rect x="8" y="11" width="2" height="4" fill="#ffffff" />
+    <rect x="10" y="8" width="2" height="3" fill="#bae6fd" />
+    <!-- Dark Shadow -->
+    <path d="M 12 16 H 15 V 18 H 12 Z M 15 13 H 16 V 16 H 15 Z" fill="#0284c7" />
+  </g>
+</svg>

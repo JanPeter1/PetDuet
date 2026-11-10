@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" shape-rendering="crispEdges">
+  <defs>
+    <style>
+      @keyframes tidelingBob {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-2px); }
+      }
+      .anim-water { transform-origin: 24px 44px; animation: tidelingBob 2.0s ease-in-out infinite; }
+    </style>
+  </defs>
+
+  <ellipse cx="24" cy="45" rx="14" ry="3" fill="#0f172a" opacity="0.4" />
+
+  <g class="anim-water">
+    <!-- Axolotl Coral Gills / Fin Ears -->
+    <!-- Left Gills -->
+    <path d="M 6 18 H 10 V 22 H 6 Z M 4 22 H 9 V 26 H 4 Z" fill="#0369a1" />
+    <path d="M 7 19 H 9 V 21 H 7 Z M 5 23 H 8 V 25 H 5 Z" fill="#38bdf8" />
+    <rect x="5" y="19" width="2" height="1" fill="#f472b6" />
+    <!-- Right Gills -->
+    <path d="M 38 18 H 42 V 22 H 38 Z M 39 22 H 44 V 26 H 39 Z" fill="#0369a1" />
+    <path d="M 39 19 H 41 V 21 H 39 Z M 40 23 H 43 V 25 H 40 Z" fill="#38bdf8" />
+    <rect x="41" y="19" width="2" height="1" fill="#f472b6" />
+
+    <!-- Main Body Outline -->
+    <path d="M 14 16 H 34 V 18 H 38 V 24 H 40 V 38 H 38 V 42 H 34 V 44 H 14 V 42 H 10 V 38 H 8 V 24 H 10 V 18 H 14 Z" fill="#0e7490" />
+    <!-- Main Body Fill (Aqua Cyan) -->
+    <path d="M 14 18 H 34 V 24 H 38 V 38 H 34 V 42 H 14 V 38 H 10 V 24 H 14 Z" fill="#06b6d4" />
+    <!-- Aquatic Shading -->
+    <path d="M 12 36 H 14 V 40 H 34 V 42 H 14 V 40 H 12 Z M 34 26 H 36 V 38 H 34 Z" fill="#0891b2" />
+    <!-- Soft Aqua Belly -->
+    <path d="M 18 30 H 30 V 40 H 18 Z" fill="#cffafe" />
+
+    <!-- Coral Pink Cheeks -->
+    <rect x="12" y="30" width="3" height="2" fill="#f472b6" />
+    <rect x="33" y="30" width="3" height="2" fill="#f472b6" />
+
+    <!-- Big Sparkly Eyes -->
+    <rect x="17" y="24" width="4" height="5" fill="#083344" />
+    <rect x="17" y="24" width="2" height="2" fill="#ffffff" />
+    <rect x="19" y="27" width="1" height="1" fill="#38bdf8" />
+
+    <rect x="27" y="24" width="4" height="5" fill="#083344" />
+    <rect x="27" y="24" width="2" height="2" fill="#ffffff" />
+    <rect x="29" y="27" width="1" height="1" fill="#38bdf8" />
+
+    <!-- Mouth -->
+    <rect x="23" y="31" width="2" height="1" fill="#0e7490" />
+
+    <!-- Droplet Tail -->
+    <path d="M 38 36 H 43 V 40 H 38 Z" fill="#0284c7" />
+  </g>
+</svg>

@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" shape-rendering="crispEdges">
+  <defs>
+    <style>
+      @keyframes sparkleSpin {
+        0% { transform: scale(0.8) rotate(0deg); opacity: 0.8; }
+        50% { transform: scale(1.15) rotate(90deg); opacity: 1; }
+        100% { transform: scale(0.8) rotate(180deg); opacity: 0.8; }
+      }
+      .anim-sparkle {
+        transform-origin: 12px 12px;
+        animation: sparkleSpin 1.4s ease-in-out infinite;
+      }
+    </style>
+  </defs>
+  <g class="anim-sparkle">
+    <!-- Center Star Outline -->
+    <path d="M 11 3 H 13 V 7 H 17 V 9 H 21 V 11 H 21 V 13 H 17 V 15 H 13 V 21 H 11 V 17 H 7 V 15 H 3 V 13 H 3 V 11 H 7 V 9 H 11 Z" fill="#78350f" />
+    <!-- Star Core (Gold) -->
+    <path d="M 11 5 H 13 V 8 H 16 V 11 H 19 V 13 H 16 V 16 H 13 V 19 H 11 V 16 H 8 V 13 H 5 V 11 H 8 V 8 H 11 Z" fill="#fbbf24" />
+    <!-- Core Bright Yellow -->
+    <rect x="10" y="10" width="4" height="4" fill="#fef08a" />
+    <rect x="11" y="11" width="2" height="2" fill="#ffffff" />
+  </g>
+  <!-- Mini Side Sparkle -->
+  <rect x="3" y="4" width="2" height="2" fill="#fde047" />
+  <rect x="19" y="18" width="2" height="2" fill="#fde047" />
+</svg>

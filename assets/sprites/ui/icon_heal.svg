@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" shape-rendering="crispEdges">
+  <!-- First Aid Pill / Cross Badge Outline -->
+  <path d="M 6 4 H 18 V 6 H 20 V 18 H 18 V 20 H 6 V 18 H 4 V 6 H 6 Z" fill="#064e3b" />
+  <!-- Emerald Badge Fill -->
+  <path d="M 6 6 H 18 V 18 H 6 Z" fill="#10b981" />
+  <!-- White Healing Cross -->
+  <rect x="10" y="7" width="4" height="10" fill="#ffffff" />
+  <rect x="7" y="10" width="10" height="4" fill="#ffffff" />
+  <!-- Red Center Cross Heart Accent -->
+  <rect x="11" y="11" width="2" height="2" fill="#ef4444" />
+</svg>

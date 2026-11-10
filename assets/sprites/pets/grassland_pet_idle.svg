@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" shape-rendering="crispEdges">
+  <defs>
+    <style>
+      @keyframes leafkinBreathe {
+        0%, 100% { transform: translateY(0) scaleY(1); }
+        50% { transform: translateY(-1px) scaleY(1.04); }
+      }
+      @keyframes earWiggle {
+        0%, 100% { transform: rotate(0deg); }
+        50% { transform: rotate(3deg); }
+      }
+      @keyframes blink {
+        0%, 90%, 100% { transform: scaleY(1); }
+        95% { transform: scaleY(0.1); }
+      }
+      .anim-body { transform-origin: 24px 44px; animation: leafkinBreathe 1.8s ease-in-out infinite; }
+      .anim-ears { transform-origin: 24px 20px; animation: earWiggle 2.4s ease-in-out infinite; }
+      .anim-eyes { transform-origin: 24px 28px; animation: blink 4s infinite; }
+    </style>
+  </defs>
+
+  <!-- Ground Shadow -->
+  <ellipse cx="24" cy="45" rx="14" ry="3" fill="#0f172a" opacity="0.4" />
+
+  <g class="anim-body">
+    <!-- Ears & Sprout -->
+    <g class="anim-ears">
+      <!-- Left Bunny Ear -->
+      <path d="M 14 6 H 18 V 18 H 14 Z" fill="#064e3b" />
+      <path d="M 15 7 H 17 V 17 H 15 Z" fill="#10b981" />
+      <rect x="16" y="9" width="1" height="6" fill="#6ee7b7" />
+      <!-- Right Bunny Ear -->
+      <path d="M 30 6 H 34 V 18 H 30 Z" fill="#064e3b" />
+      <path d="M 31 7 H 33 V 17 H 31 Z" fill="#10b981" />
+      <rect x="31" y="9" width="1" height="6" fill="#6ee7b7" />
+      <!-- Sprout Leaf Stem in center -->
+      <rect x="23" y="8" width="2" height="6" fill="#047857" />
+      <path d="M 21 6 H 27 V 8 H 21 Z M 20 4 H 25 V 6 H 20 Z" fill="#34d399" />
+    </g>
+
+    <!-- Main Head/Body Outline -->
+    <path d="M 14 16 H 34 V 18 H 38 V 24 H 40 V 38 H 38 V 42 H 34 V 44 H 14 V 42 H 10 V 38 H 8 V 24 H 10 V 18 H 14 Z" fill="#064e3b" />
+    <!-- Main Body Fill (Emerald) -->
+    <path d="M 14 18 H 34 V 24 H 38 V 38 H 34 V 42 H 14 V 38 H 10 V 24 H 14 Z" fill="#10b981" />
+    <!-- Body Shading -->
+    <path d="M 12 36 H 14 V 40 H 34 V 42 H 14 V 40 H 12 Z M 34 26 H 36 V 38 H 34 Z" fill="#047857" />
+    <!-- Fluffy White/Cream Belly -->
+    <path d="M 18 30 H 30 V 40 H 18 Z" fill="#d1fae5" />
+    <rect x="20" y="32" width="8" height="6" fill="#ecfdf5" />
+
+    <!-- Rosy Cheeks -->
+    <rect x="12" y="30" width="3" height="2" fill="#fb7185" />
+    <rect x="33" y="30" width="3" height="2" fill="#fb7185" />
+
+    <!-- Cute Eyes with Blink -->
+    <g class="anim-eyes">
+      <!-- Left Eye -->
+      <rect x="17" y="25" width="3" height="4" fill="#0f172a" />
+      <rect x="17" y="25" width="1" height="2" fill="#ffffff" />
+      <!-- Right Eye -->
+      <rect x="28" y="25" width="3" height="4" fill="#0f172a" />
+      <rect x="28" y="25" width="1" height="2" fill="#ffffff" />
+    </g>
+
+    <!-- Tiny Mouth -->
+    <rect x="23" y="30" width="2" height="1" fill="#064e3b" />
+
+    <!-- Little Paws -->
+    <rect x="14" y="42" width="4" height="2" fill="#047857" />
+    <rect x="30" y="42" width="4" height="2" fill="#047857" />
+  </g>
+</svg>

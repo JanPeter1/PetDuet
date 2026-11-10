@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" shape-rendering="crispEdges">
+  <defs>
+    <style>
+      @keyframes happyHop {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-7px); }
+      }
+      @keyframes sparklePulse {
+        0%, 100% { opacity: 0.3; transform: scale(0.8); }
+        50% { opacity: 1; transform: scale(1.2); }
+      }
+      .anim-hop { animation: happyHop 0.5s ease-in-out infinite; }
+      .anim-spark { animation: sparklePulse 0.8s ease-in-out infinite; }
+    </style>
+  </defs>
+
+  <!-- Ground Shadow (stretches/shrinks with hop) -->
+  <ellipse cx="24" cy="45" rx="10" ry="2.5" fill="#0f172a" opacity="0.3" />
+
+  <!-- Happiness Sparkles around Pet -->
+  <g class="anim-spark">
+    <rect x="6" y="14" width="2" height="2" fill="#fbbf24" />
+    <rect x="40" y="16" width="2" height="2" fill="#fbbf24" />
+    <rect x="38" y="8" width="2" height="2" fill="#34d399" />
+  </g>
+
+  <g class="anim-hop">
+    <!-- Perked Up Ears -->
+    <path d="M 12 4 H 17 V 16 H 12 Z" fill="#064e3b" />
+    <path d="M 13 5 H 16 V 15 H 13 Z" fill="#10b981" />
+    <path d="M 31 4 H 36 V 16 H 31 Z" fill="#064e3b" />
+    <path d="M 32 5 H 35 V 15 H 32 Z" fill="#10b981" />
+    <!-- Sprout Fluttering -->
+    <path d="M 21 4 H 28 V 7 H 21 Z" fill="#34d399" />
+    <rect x="23" y="7" width="2" height="6" fill="#047857" />
+
+    <!-- Body Outline -->
+    <path d="M 14 14 H 34 V 16 H 38 V 22 H 40 V 36 H 38 V 40 H 34 V 42 H 14 V 40 H 10 V 36 H 8 V 22 H 10 V 16 H 14 Z" fill="#064e3b" />
+    <path d="M 14 16 H 34 V 22 H 38 V 36 H 34 V 40 H 14 V 36 H 10 V 22 H 14 Z" fill="#10b981" />
+    <!-- Belly -->
+    <path d="M 18 28 H 30 V 38 H 18 Z" fill="#d1fae5" />
+
+    <!-- Big Happy Closed Eyes ^ ^ -->
+    <path d="M 16 23 H 20 V 24 H 19 V 25 H 17 V 25 H 16 Z" fill="#064e3b" />
+    <path d="M 28 23 H 32 V 24 H 31 V 25 H 29 V 25 H 28 Z" fill="#064e3b" />
+
+    <!-- Bright Rosy Cheeks -->
+    <rect x="12" y="27" width="4" height="3" fill="#f43f5e" />
+    <rect x="32" y="27" width="4" height="3" fill="#f43f5e" />
+
+    <!-- Joyful Open Smiling Mouth with Tongue -->
+    <path d="M 22 28 H 26 V 32 H 24 V 33 H 22 Z" fill="#991b1b" />
+    <rect x="23" y="30" width="2" height="2" fill="#fb7185" />
+
+    <!-- Raised Happy Paws -->
+    <rect x="9" y="28" width="3" height="4" fill="#047857" />
+    <rect x="36" y="28" width="3" height="4" fill="#047857" />
+  </g>
+</svg>

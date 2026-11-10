@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" shape-rendering="crispEdges">
+  <!-- 3.5" Retro Floppy Disk Outline -->
+  <path d="M 4 3 H 17 V 5 H 20 V 21 H 4 Z" fill="#0f172a" />
+  <!-- Floppy Plastic Shell (Indigo Blue) -->
+  <path d="M 5 4 H 16 V 6 H 19 V 20 H 5 Z" fill="#3b82f6" />
+  <!-- Metal Shutter Slider Top -->
+  <rect x="7" y="4" width="8" height="6" fill="#cbd5e1" />
+  <rect x="9" y="5" width="2" height="4" fill="#0f172a" />
+  <!-- Paper Label Bottom -->
+  <rect x="7" y="13" width="10" height="7" fill="#ffffff" />
+  <rect x="8" y="15" width="8" height="1" fill="#94a3b8" />
+  <rect x="8" y="17" width="5" height="1" fill="#94a3b8" />
+</svg>

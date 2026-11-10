@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { parseGameRules, GameRulesConfig } from '../engine/ConfigParser';
 import { cydAudio } from '../utils/audio';
-import { translations, Language } from '../utils/i18n';
+import { Language } from '../utils/i18n';
 
 interface RulesEditorTabProps {
   currentConfigText: string;
@@ -14,7 +14,6 @@ export const RulesEditorTab: React.FC<RulesEditorTabProps> = ({
   language = 'de',
   onApplyConfig,
 }) => {
-  const t = translations[language] || translations.de;
   const [configText, setConfigText] = useState(currentConfigText);
   const [parsedPreview, setParsedPreview] = useState<GameRulesConfig | null>(() => {
     try {

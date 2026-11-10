@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" shape-rendering="crispEdges">
+  <!-- Crossed Quest Swords -->
+  <!-- Sword 1 (Bottom-left to Top-right) -->
+  <line x1="4" y1="20" x2="19" y2="5" stroke="#0f172a" stroke-width="3" />
+  <line x1="5" y1="19" x2="18" y2="6" stroke="#94a3b8" stroke-width="2" />
+  <rect x="6" y="16" width="4" height="2" fill="#fbbf24" stroke="#78350f" stroke-width="0.5" />
+  <!-- Sword 2 (Top-left to Bottom-right) -->
+  <line x1="5" y1="5" x2="20" y2="20" stroke="#0f172a" stroke-width="3" />
+  <line x1="6" y1="6" x2="19" y2="19" stroke="#cbd5e1" stroke-width="2" />
+  <rect x="14" y="16" width="4" height="2" fill="#fbbf24" stroke="#78350f" stroke-width="0.5" />
+  <!-- Center Clash Spark -->
+  <rect x="11" y="11" width="2" height="2" fill="#fef08a" />
+</svg>

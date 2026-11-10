@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" shape-rendering="crispEdges">
+  <defs>
+    <style>
+      @keyframes chewMunch {
+        0%, 100% { transform: scaleX(1) scaleY(1); }
+        50% { transform: scaleX(1.06) scaleY(0.96); }
+      }
+      @keyframes foodNibble {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-2px); }
+      }
+      .anim-chew { transform-origin: 24px 30px; animation: chewMunch 0.4s ease-in-out infinite; }
+      .anim-food { animation: foodNibble 0.4s ease-in-out infinite; }
+    </style>
+  </defs>
+
+  <ellipse cx="24" cy="45" rx="14" ry="3" fill="#0f172a" opacity="0.4" />
+
+  <g class="anim-chew">
+    <!-- Ears -->
+    <path d="M 14 6 H 18 V 18 H 14 Z" fill="#064e3b" />
+    <path d="M 15 7 H 17 V 17 H 15 Z" fill="#10b981" />
+    <path d="M 30 6 H 34 V 18 H 30 Z" fill="#064e3b" />
+    <path d="M 31 7 H 33 V 17 H 31 Z" fill="#10b981" />
+    <rect x="23" y="8" width="2" height="6" fill="#047857" />
+    <path d="M 21 6 H 27 V 8 H 21 Z" fill="#34d399" />
+
+    <!-- Body Outline -->
+    <path d="M 14 16 H 34 V 18 H 38 V 24 H 40 V 38 H 38 V 42 H 34 V 44 H 14 V 42 H 10 V 38 H 8 V 24 H 10 V 18 H 14 Z" fill="#064e3b" />
+    <path d="M 14 18 H 34 V 24 H 38 V 38 H 34 V 42 H 14 V 38 H 10 V 24 H 14 Z" fill="#10b981" />
+
+    <!-- Puffed Cheeks -->
+    <rect x="10" y="28" width="5" height="4" fill="#fb7185" />
+    <rect x="33" y="28" width="5" height="4" fill="#fb7185" />
+
+    <!-- Satisfied Closed Eyes -->
+    <path d="M 16 24 H 20 V 25 H 16 Z" fill="#064e3b" />
+    <path d="M 28 24 H 32 V 25 H 28 Z" fill="#064e3b" />
+
+    <!-- Open Munching Mouth -->
+    <rect x="21" y="28" width="6" height="4" fill="#991b1b" />
+    <rect x="23" y="29" width="2" height="2" fill="#fb7185" />
+
+    <!-- Belly -->
+    <path d="M 18 34 H 30 V 42 H 18 Z" fill="#d1fae5" />
+  </g>
+
+  <!-- Nibbled Food Item (Apple) in Hands -->
+  <g class="anim-food">
+    <!-- Paws holding food -->
+    <rect x="18" y="32" width="3" height="4" fill="#047857" />
+    <rect x="27" y="32" width="3" height="4" fill="#047857" />
+    <!-- Apple -->
+    <rect x="21" y="31" width="6" height="6" fill="#ef4444" />
+    <rect x="22" y="30" width="2" height="1" fill="#15803d" />
+    <rect x="21" y="31" width="2" height="2" fill="#fef08a" />
+    <!-- Chew crumbs -->
+    <rect x="19" y="26" width="1" height="1" fill="#fef08a" />
+    <rect x="29" y="27" width="1" height="1" fill="#ef4444" />
+  </g>
+</svg>

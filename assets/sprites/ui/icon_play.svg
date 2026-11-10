@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" shape-rendering="crispEdges">
+  <!-- Bouncing Toy Ball -->
+  <path d="M 6 4 H 18 V 6 H 20 V 18 H 18 V 20 H 6 V 18 H 4 V 6 H 6 Z" fill="#7f1d1d" />
+  <path d="M 6 6 H 18 V 18 H 6 Z" fill="#ef4444" />
+  <!-- Diagonal Yellow Play Stripe -->
+  <path d="M 4 8 H 7 V 11 H 11 V 15 H 15 V 18 H 18 V 20 H 15 V 17 H 11 V 13 H 7 V 10 H 4 Z" fill="#fbbf24" />
+  <!-- Shading & Highlight -->
+  <rect x="7" y="7" width="3" height="3" fill="#ffffff" />
+  <path d="M 14 14 H 17 V 17 H 14 Z" fill="#991b1b" />
+</svg>

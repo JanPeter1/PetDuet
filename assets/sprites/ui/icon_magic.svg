@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" shape-rendering="crispEdges">
+  <!-- Magic Wand Diagonal Shaft -->
+  <line x1="4" y1="20" x2="15" y2="9" stroke="#78350f" stroke-width="2" />
+  <line x1="5" y1="19" x2="14" y2="10" stroke="#b45309" stroke-width="1" />
+  <!-- Crystal Tip on Wand -->
+  <path d="M 14 7 H 18 V 11 H 14 Z" fill="#6d28d9" stroke="#2e1065" stroke-width="1" />
+  <rect x="15" y="8" width="2" height="2" fill="#c084fc" />
+  <!-- Radiant Magic Star Burst -->
+  <rect x="18" y="2" width="2" height="4" fill="#fde047" />
+  <rect x="17" y="3" width="4" height="2" fill="#fde047" />
+  <!-- Sparkles -->
+  <rect x="21" y="8" width="2" height="2" fill="#38bdf8" />
+  <rect x="11" y="2" width="2" height="2" fill="#38bdf8" />
+</svg>

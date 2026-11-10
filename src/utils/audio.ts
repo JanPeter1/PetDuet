@@ -152,6 +152,15 @@ export const cydAudio = {
     });
   },
 
+  // Daily Mission / Reward Claim Fanfare
+  fanfare: () => {
+    const notes = [659, 784, 988, 1318];
+    const delays = [0, 90, 180, 300];
+    notes.forEach((freq, idx) => {
+      setTimeout(() => playTone(freq, idx === notes.length - 1 ? 260 : 80, 'triangle', 0.12), delays[idx]);
+    });
+  },
+
   // Trade offer received
   tradeBell: () => {
     playTone(587, 80, 'square', 0.1);

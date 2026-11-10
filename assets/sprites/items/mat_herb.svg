@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" shape-rendering="crispEdges">
+  <!-- Herb Outline -->
+  <path d="M 11 3 H 15 V 5 H 17 V 9 H 15 V 13 H 13 V 21 H 11 V 17 H 7 V 13 H 5 V 9 H 7 V 5 H 11 Z" fill="#064e3b" />
+  <!-- Center Main Leaf (Emerald) -->
+  <path d="M 11 5 H 15 V 9 H 13 V 15 H 11 Z" fill="#10b981" />
+  <!-- Left Leaf -->
+  <path d="M 7 9 H 11 V 13 H 7 Z" fill="#34d399" />
+  <!-- Right Leaf -->
+  <path d="M 13 9 H 16 V 12 H 13 Z" fill="#059669" />
+  <!-- Stem & Twine Binding -->
+  <rect x="11" y="14" width="2" height="6" fill="#047857" />
+  <rect x="10" y="16" width="4" height="2" fill="#d97706" />
+</svg>

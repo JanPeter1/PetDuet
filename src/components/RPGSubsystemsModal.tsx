@@ -14,6 +14,7 @@ interface RPGSubsystemsModalProps {
   onCastSpell: (spell: MagicSpell) => void;
   onEquipItem: (item: InventoryItem) => void;
   onUnequipItem: (slot: 'head' | 'face' | 'back' | 'environment') => void;
+  onClaimMission?: (missionId: string) => void;
 }
 
 export const RPGSubsystemsModal: React.FC<RPGSubsystemsModalProps> = ({
@@ -26,9 +27,13 @@ export const RPGSubsystemsModal: React.FC<RPGSubsystemsModalProps> = ({
   onCastSpell,
   onEquipItem,
   onUnequipItem,
+  onClaimMission,
 }) => {
   const t = translations[language] || translations.de;
-  const [activeTab, setActiveTab] = useState<'recipes' | 'jobs' | 'magic' | 'inventory'>('recipes');
+  const [activeTab, setActiveTab] = useState<'recipes' | 'jobs' | 'magic' | 'inventory' | 'missions'>('recipes');
+
+  // Count uncompleted or claimable missions for badge
+  const claimableCount = pet.dailyMissions?.missions.filter((m) => m.completed && !m.claimed).length || 0;
 
   // Helper to count item quantity in inventory
   const getItemCount = (itemId: string) => {
@@ -57,13 +62,13 @@ export const RPGSubsystemsModal: React.FC<RPGSubsystemsModalProps> = ({
         </div>
 
         {/* Tab Selector */}
-        <div className="flex border-b border-slate-800 bg-slate-950/60 p-1.5 gap-1 text-xs font-medium">
+        <div className="flex border-b border-slate-800 bg-slate-950/60 p-1.5 gap-1 text-xs font-medium overflow-x-auto">
           <button
             onClick={() => {
               cydAudio.click();
               setActiveTab('recipes');
             }}
-            className={`flex-1 py-2 px-3 rounded-lg flex items-center justify-center gap-2 transition-colors ${
+            className={`flex-1 min-w-[70px] py-2 px-2.5 rounded-lg flex items-center justify-center gap-1.5 transition-colors ${
               activeTab === 'recipes'
                 ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
                 : 'text-slate-400 hover:text-slate-200'
@@ -76,7 +81,7 @@ export const RPGSubsystemsModal: React.FC<RPGSubsystemsModalProps> = ({
               cydAudio.click();
               setActiveTab('jobs');
             }}
-            className={`flex-1 py-2 px-3 rounded-lg flex items-center justify-center gap-2 transition-colors ${
+            className={`flex-1 min-w-[70px] py-2 px-2.5 rounded-lg flex items-center justify-center gap-1.5 transition-colors ${
               activeTab === 'jobs'
                 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                 : 'text-slate-400 hover:text-slate-200'
@@ -89,7 +94,7 @@ export const RPGSubsystemsModal: React.FC<RPGSubsystemsModalProps> = ({
               cydAudio.click();
               setActiveTab('magic');
             }}
-            className={`flex-1 py-2 px-3 rounded-lg flex items-center justify-center gap-2 transition-colors ${
+            className={`flex-1 min-w-[70px] py-2 px-2.5 rounded-lg flex items-center justify-center gap-1.5 transition-colors ${
               activeTab === 'magic'
                 ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40'
                 : 'text-slate-400 hover:text-slate-200'
@@ -102,13 +107,29 @@ export const RPGSubsystemsModal: React.FC<RPGSubsystemsModalProps> = ({
               cydAudio.click();
               setActiveTab('inventory');
             }}
-            className={`flex-1 py-2 px-3 rounded-lg flex items-center justify-center gap-2 transition-colors ${
+            className={`flex-1 min-w-[70px] py-2 px-2.5 rounded-lg flex items-center justify-center gap-1.5 transition-colors ${
               activeTab === 'inventory'
                 ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             <span>🎒</span> {t.tabGear}
+          </button>
+          <button
+            onClick={() => {
+              cydAudio.click();
+              setActiveTab('missions');
+            }}
+            className={`flex-1 min-w-[75px] py-2 px-2.5 rounded-lg flex items-center justify-center gap-1.5 transition-colors relative ${
+              activeTab === 'missions'
+                ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <span>🎯</span> {t.tabMissions}
+            {claimableCount > 0 && (
+              <span className="w-2 h-2 rounded-full bg-rose-500 absolute top-1.5 right-1.5 animate-pulse" />
+            )}
           </button>
         </div>
 
@@ -435,6 +456,105 @@ export const RPGSubsystemsModal: React.FC<RPGSubsystemsModalProps> = ({
                     </div>
                   ))}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 5: DAILY MISSIONS & LOGIN STREAK */}
+          {activeTab === 'missions' && (
+            <div className="space-y-4">
+              {/* Daily Streak Header */}
+              <div className="p-3.5 bg-gradient-to-r from-rose-950/40 via-amber-950/30 to-slate-900 border border-rose-900/50 rounded-xl flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-2xl">
+                    🔥
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold text-amber-300">
+                      {t.loginStreak}: {pet.dailyMissions?.consecutiveLoginDays || 1} {t.daysStreak}
+                    </div>
+                    <div className="text-[11px] text-slate-400">
+                      {t.missionsDesc}
+                    </div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] font-mono px-2 py-1 rounded bg-slate-950/80 border border-slate-700 text-slate-300">
+                    {pet.dailyMissions?.missions.filter((m) => m.claimed).length || 0} / {pet.dailyMissions?.missions.length || 0} {t.missionClaimed}
+                  </span>
+                </div>
+              </div>
+
+              {/* Missions List */}
+              <div className="space-y-2.5">
+                {(pet.dailyMissions?.missions || []).map((m) => {
+                  const title = language === 'de' && m.title_de ? m.title_de : m.title;
+                  const desc = language === 'de' && m.description_de ? m.description_de : m.description;
+                  const pct = Math.min(100, Math.round((m.currentCount / Math.max(1, m.targetCount)) * 100));
+
+                  return (
+                    <div
+                      key={m.id}
+                      className={`p-3 rounded-lg border transition-all ${
+                        m.claimed
+                          ? 'bg-slate-950/40 border-slate-800/60 opacity-60'
+                          : m.completed
+                          ? 'bg-amber-950/20 border-amber-500/50 shadow-md shadow-amber-950/30'
+                          : 'bg-slate-800/50 border-slate-700/60'
+                      } flex flex-col sm:flex-row sm:items-center justify-between gap-3`}
+                    >
+                      <div className="flex items-start sm:items-center gap-3 flex-1 min-w-0">
+                        <span className="text-2xl p-2 rounded-lg bg-slate-900 border border-slate-700 shrink-0">
+                          {m.icon}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-slate-100 truncate">{title}</span>
+                            <span className="text-[10px] font-mono text-slate-400">
+                              ({m.currentCount}/{m.targetCount})
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-slate-400 mt-0.5 line-clamp-1">{desc}</div>
+                          {/* Progress bar */}
+                          <div className="w-full h-1.5 bg-slate-900 rounded-full mt-2 overflow-hidden border border-slate-700/50">
+                            <div
+                              className={`h-full transition-all duration-300 ${
+                                m.completed ? 'bg-amber-400' : 'bg-rose-500'
+                              }`}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-800">
+                        <div className="flex items-center gap-2 text-[11px] font-mono">
+                          <span className="text-amber-400">+{m.coinReward} 🪙</span>
+                          <span className="text-purple-400">+{m.xpReward} XP</span>
+                        </div>
+                        {m.claimed ? (
+                          <span className="text-[11px] font-mono text-slate-500 py-1 px-2.5 rounded bg-slate-900/80 border border-slate-800">
+                            ✓ {t.missionClaimed}
+                          </span>
+                        ) : m.completed ? (
+                          <button
+                            onClick={() => {
+                              cydAudio.fanfare();
+                              onClaimMission?.(m.id);
+                            }}
+                            className="text-xs font-bold px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 shadow-md shadow-amber-500/20 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <span>🎁</span> {t.btnClaimReward}
+                          </button>
+                        ) : (
+                          <span className="text-[10px] font-mono text-slate-400 py-1 px-2 rounded bg-slate-900/60 border border-slate-800">
+                            {pct}%
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" shape-rendering="crispEdges">
+  <defs>
+    <style>
+      @keyframes floatSkull {
+        0%, 100% { transform: translateY(0px); }
+        50% { transform: translateY(-2px); }
+      }
+      .anim-skull { animation: floatSkull 1.6s ease-in-out infinite; }
+    </style>
+  </defs>
+  <g class="anim-skull">
+    <!-- Purple Poison Cloud Back -->
+    <path d="M 6 4 H 18 V 6 H 20 V 10 H 22 V 16 H 20 V 18 H 18 V 20 H 6 V 18 H 4 V 16 H 2 V 10 H 4 V 6 H 6 Z" fill="#4c1d95" opacity="0.6" />
+    <!-- Skull Outline -->
+    <path d="M 7 5 H 17 V 7 H 19 V 15 H 17 V 17 H 15 V 19 H 9 V 17 H 7 V 15 H 5 V 7 H 7 Z" fill="#18181b" />
+    <!-- Skull Cranium (Bone White) -->
+    <path d="M 8 7 H 16 V 14 H 14 V 16 H 10 V 14 H 8 Z" fill="#e4e4e7" />
+    <!-- Teeth / Jaw -->
+    <rect x="10" y="15" width="1" height="2" fill="#ffffff" />
+    <rect x="12" y="15" width="1" height="2" fill="#ffffff" />
+    <!-- Empty Eye Sockets -->
+    <rect x="8" y="9" width="3" height="3" fill="#18181b" />
+    <rect x="13" y="9" width="3" height="3" fill="#18181b" />
+    <!-- Nose Hole -->
+    <rect x="11" y="12" width="2" height="1" fill="#18181b" />
+  </g>
+</svg>

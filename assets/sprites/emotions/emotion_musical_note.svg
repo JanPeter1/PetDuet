@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" shape-rendering="crispEdges">
+  <defs>
+    <style>
+      @keyframes bobNote {
+        0%, 100% { transform: translateY(0) rotate(-5deg); }
+        50% { transform: translateY(-3px) rotate(5deg); }
+      }
+      .anim-note {
+        transform-origin: 12px 14px;
+        animation: bobNote 1.2s ease-in-out infinite;
+      }
+    </style>
+  </defs>
+  <g class="anim-note">
+    <!-- Outer Outline -->
+    <path d="M 12 3 H 20 V 5 H 22 V 15 H 20 V 17 H 17 V 19 H 13 V 17 H 11 V 11 H 13 V 7 H 18 V 5 H 12 Z M 6 13 H 8 V 19 H 6 V 21 H 2 V 19 H 0 V 15 H 2 V 13 H 6 Z" fill="#064e3b" />
+    <!-- Note Stems & Beams -->
+    <path d="M 13 4 H 21 V 7 H 13 Z M 19 7 H 21 V 16 H 18 V 14 H 19 Z M 6 7 H 8 V 18 H 5 V 16 H 6 Z M 6 4 H 13 V 7 H 6 Z" fill="#10b981" />
+    <!-- Note Heads (Cyan / Emerald) -->
+    <rect x="2" y="15" width="4" height="4" fill="#34d399" />
+    <rect x="15" y="13" width="4" height="4" fill="#34d399" />
+    <rect x="3" y="16" width="1" height="1" fill="#ffffff" />
+    <rect x="16" y="14" width="1" height="1" fill="#ffffff" />
+  </g>
+</svg>

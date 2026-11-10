@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" shape-rendering="crispEdges">
+  <!-- Leather Head Strap -->
+  <rect x="1" y="11" width="22" height="2" fill="#451a03" />
+  <!-- Left Brass Lens Ring -->
+  <path d="M 4 8 H 10 V 10 H 11 V 15 H 10 V 17 H 4 V 15 H 3 V 10 H 4 Z" fill="#78350f" />
+  <rect x="4" y="9" width="6" height="7" fill="#d97706" />
+  <!-- Left Glass Lens (Cyan Tint) -->
+  <rect x="5" y="10" width="4" height="5" fill="#38bdf8" />
+  <rect x="5" y="10" width="2" height="2" fill="#ffffff" />
+
+  <!-- Center Bridge Connector -->
+  <rect x="10" y="11" width="4" height="2" fill="#b45309" />
+
+  <!-- Right Brass Lens Ring -->
+  <path d="M 14 8 H 20 V 10 H 21 V 15 H 20 V 17 H 14 V 15 H 13 V 10 H 14 Z" fill="#78350f" />
+  <rect x="14" y="9" width="6" height="7" fill="#d97706" />
+  <!-- Right Glass Lens -->
+  <rect x="15" y="10" width="4" height="5" fill="#38bdf8" />
+  <rect x="15" y="10" width="2" height="2" fill="#ffffff" />
+</svg>

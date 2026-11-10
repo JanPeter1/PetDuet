@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" shape-rendering="crispEdges">
+  <!-- Bath Sponge -->
+  <path d="M 5 9 H 17 V 11 H 19 V 17 H 17 V 19 H 5 V 17 H 3 V 11 H 5 Z" fill="#78350f" />
+  <rect x="5" y="11" width="12" height="6" fill="#fbbf24" />
+  <!-- Sponge Texture Holes -->
+  <rect x="7" y="12" width="2" height="2" fill="#d97706" />
+  <rect x="12" y="14" width="2" height="2" fill="#d97706" />
+  <!-- Iridescent Soap Bubbles floating above -->
+  <circle cx="16" cy="6" r="3" fill="#38bdf8" stroke="#0284c7" stroke-width="1" />
+  <rect x="15" y="5" width="1" height="1" fill="#ffffff" />
+  <circle cx="9" cy="4" r="2" fill="#bae6fd" stroke="#0284c7" stroke-width="1" />
+  <circle cx="19" cy="11" r="2" fill="#bae6fd" stroke="#0284c7" stroke-width="1" />
+</svg>

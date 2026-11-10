@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" shape-rendering="crispEdges">
+  <!-- Bone Protrusion -->
+  <path d="M 3 13 H 7 V 17 H 3 Z M 2 11 H 5 V 14 H 2 Z M 2 16 H 5 V 19 H 2 Z" fill="#e2e8f0" />
+  <rect x="5" y="14" width="3" height="2" fill="#cbd5e1" />
+  <!-- Meat Outline -->
+  <path d="M 8 7 H 18 V 9 H 21 V 15 H 19 V 19 H 9 V 17 H 7 V 9 H 8 Z" fill="#450a0a" />
+  <!-- Savory Meat Cutlet Fill (Marbled Red) -->
+  <path d="M 8 9 H 18 V 15 H 19 V 17 H 9 V 15 H 8 Z" fill="#e11d48" />
+  <!-- White Fat Marbling -->
+  <rect x="11" y="10" width="4" height="2" fill="#ffffff" />
+  <rect x="15" y="12" width="3" height="2" fill="#ffffff" />
+  <!-- Dark Rim Shade -->
+  <path d="M 9 15 H 18 V 17 H 9 Z" fill="#9f1239" />
+</svg>

@@ -1,15 +1,15 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import confetti from 'canvas-confetti';
 import {
   PetState,
   FriendPetSummary,
   BiomeType,
-  SeasonType,
   Recipe,
   Job,
   MagicSpell,
   InventoryItem,
   TradeOffer,
+  MissionActionType,
 } from './types/pet';
 import {
   createInitialPet,
@@ -20,7 +20,7 @@ import {
   checkEvolution,
   CATALOG_ITEMS,
 } from './utils/petLogic';
-import { cydAudio, toggleAudio, isAudioEnabled } from './utils/audio';
+import { cydAudio, toggleAudio } from './utils/audio';
 import { DualDeviceView } from './components/DualDeviceView';
 import { RPGSubsystemsModal } from './components/RPGSubsystemsModal';
 import { TradingModal } from './components/TradingModal';
@@ -64,12 +64,8 @@ export default function App() {
   // Audio State
   const [soundOn, setSoundOn] = useState(true);
 
-  // Active Modals
-  const [showRPGModal, setShowRPGModal] = useState(false);
-  const [showTradeModal, setShowTradeModal] = useState(false);
-  const [showChatModal, setShowChatModal] = useState(false);
-  const [showLeaderboardModal, setShowLeaderboardModal] = useState(false);
-  const [showWiFiModal, setShowWiFiModal] = useState(false);
+  // Active Modal: 'rpg' | 'trade' | 'chat' | 'leaderboard' | 'wifi' | null
+  const [activeModal, setActiveModal] = useState<'rpg' | 'trade' | 'chat' | 'leaderboard' | 'wifi' | null>(null);
   const [wifiConfig, setWifiConfig] = useState({
     ssid: 'Home-WiFi-2.4G',
     deviceId: 'CYD-DEV1',
@@ -132,6 +128,19 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('cyd_dev2_pet', JSON.stringify(dev2Pet));
   }, [dev2Pet]);
+
+  // Daily Missions Login Streak Check on Startup
+  useEffect(() => {
+    engineRef.current.setState(dev1Pet);
+    engineRef.current.checkDailyMissionsLogin();
+    const state = engineRef.current.getState();
+    if (state.dailyMissions) {
+      setDev1Pet((prev) => ({
+        ...prev,
+        dailyMissions: state.dailyMissions,
+      }));
+    }
+  }, []);
 
   // Lifecycle Game Loop (Hunger, Energy & Jobs)
   useEffect(() => {
@@ -258,6 +267,44 @@ export default function App() {
     });
   };
 
+  // -------------------------------------------------------------------------
+  // Daily Missions Progression & Claiming
+  // -------------------------------------------------------------------------
+  const recordMissionAction = (actionType: MissionActionType, count = 1) => {
+    engineRef.current.setState(dev1Pet);
+    engineRef.current.recordAction(actionType, count);
+    const updated = engineRef.current.getState();
+    if (updated.dailyMissions) {
+      setDev1Pet((prev) => ({
+        ...prev,
+        dailyMissions: updated.dailyMissions,
+      }));
+    }
+  };
+
+  const handleClaimMission = (missionId: string) => {
+    engineRef.current.setState(dev1Pet);
+    const success = engineRef.current.claimDailyMission(missionId);
+    if (success) {
+      const updated = engineRef.current.getState();
+      setDev1Pet((prev) => ({
+        ...prev,
+        coins: updated.coins,
+        xp: updated.xp,
+        dailyMissions: updated.dailyMissions,
+      }));
+      cydAudio.fanfare();
+      confetti({ particleCount: 70, spread: 60, origin: { y: 0.6 } });
+      const mission = updated.dailyMissions?.missions.find((m) => m.id === missionId);
+      const title = mission ? (language === 'de' && mission.title_de ? mission.title_de : mission.title) : 'Mission';
+      triggerNotificationDev1(
+        language === 'de'
+          ? `Tagesmission eingelöst: ${title}! +🪙 & +XP`
+          : `Daily mission claimed: ${title}! +🪙 & +XP`
+      );
+    }
+  };
+
   // =========================================================================
   // ACTIONS DISPATCHER FOR DEVICE 1 (YOU)
   // =========================================================================
@@ -275,6 +322,7 @@ export default function App() {
         }));
         triggerNotificationDev1(t.notifFed);
         addXPDev1(15);
+        recordMissionAction('feed', 1);
         break;
       }
 
@@ -290,6 +338,7 @@ export default function App() {
         }));
         triggerNotificationDev1(t.notifPlayed);
         addXPDev1(20);
+        recordMissionAction('play', 1);
         break;
       }
 
@@ -305,6 +354,7 @@ export default function App() {
         }));
         triggerNotificationDev1(t.notifBath);
         addXPDev1(10);
+        recordMissionAction('bath', 1);
         break;
       }
 
@@ -346,7 +396,7 @@ export default function App() {
       }
 
       case 'open_rpg':
-        setShowRPGModal(true);
+        setActiveModal('rpg');
         break;
 
       case 'cloud_save': {
@@ -365,6 +415,7 @@ export default function App() {
         cydAudio.treatSend();
         setActivePacket({ from: 'DEV1', type: 'TREAT', label: '🍖 TREAT' });
         triggerNotificationDev1(t.notifTreatSent);
+        recordMissionAction('send_treat', 1);
 
         setTimeout(() => {
           cydAudio.treatReceive();
@@ -391,7 +442,7 @@ export default function App() {
       }
 
       case 'open_chat':
-        setShowChatModal(true);
+        setActiveModal('chat');
         break;
 
       case 'cast_magic': {
@@ -408,6 +459,7 @@ export default function App() {
           spellsCastCount: prev.spellsCastCount + 1,
         }));
         triggerNotificationDev1(t.notifMagicSent);
+        recordMissionAction('cast_spell', 1);
 
         setTimeout(() => {
           setActivePacket(null);
@@ -455,7 +507,7 @@ export default function App() {
       }
 
       case 'open_trade':
-        setShowTradeModal(true);
+        setActiveModal('trade');
         break;
 
       case 'reset': {
@@ -564,6 +616,7 @@ export default function App() {
     });
 
     addXPDev1(recipe.xpReward);
+    recordMissionAction('cook', 1);
     const cookedName = language === 'de' ? (recipe.name_de || recipe.name) : recipe.name;
     triggerNotificationDev1(
       language === 'de'
@@ -582,6 +635,7 @@ export default function App() {
         durationSeconds: job.durationSeconds,
       },
     }));
+    recordMissionAction('start_job', 1);
     triggerNotificationDev1(`Dispatched to ${job.title}! ⛏️`);
   };
 
@@ -616,6 +670,7 @@ export default function App() {
     }
 
     addXPDev1(35);
+    recordMissionAction('cast_spell', 1);
     triggerNotificationDev1(`Cast ${spell.name}! ✨`);
   };
 
@@ -707,6 +762,8 @@ export default function App() {
   const handleSendMessage = (message: string) => {
     setActivePacket({ from: 'DEV1', type: 'CHAT', label: '💬 CHAT' });
     triggerNotificationDev1('Transmitting chat packet...');
+    setChatBalloonDev1(message);
+    setTimeout(() => setChatBalloonDev1(null), 3000);
 
     setTimeout(() => {
       setActivePacket(null);
@@ -776,11 +833,16 @@ export default function App() {
       {/* ================================================================= */}
       <header className="flex items-center justify-between gap-8 px-6 py-4 border-b border-slate-800 bg-slate-950/90 backdrop-blur sticky top-0 z-40">
         {/* Zone 1: Single text wordmark */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2.5 shrink-0">
           <span className="text-xl">👾</span>
-          <span className="text-base font-bold tracking-tight text-white whitespace-nowrap">
-            CYD Tamagotchi RPG
-          </span>
+          <div className="flex items-baseline gap-2">
+            <span className="text-base font-bold tracking-tight text-white whitespace-nowrap">
+              PetDuet
+            </span>
+            <span className="text-[10px] font-mono font-medium text-amber-400 bg-amber-950/60 border border-amber-800/60 px-1.5 py-0.5 rounded">
+              Dual-Device RPG
+            </span>
+          </div>
         </div>
 
         {/* Zone 2: 4 concise single-line text links */}
@@ -799,7 +861,7 @@ export default function App() {
           <button
             onClick={() => {
               cydAudio.click();
-              setShowRPGModal(true);
+              setActiveModal('rpg');
             }}
             className="transition-colors whitespace-nowrap shrink-0 hover:text-white"
           >
@@ -859,7 +921,7 @@ export default function App() {
           <button
             onClick={() => {
               cydAudio.click();
-              setShowWiFiModal(true);
+              setActiveModal('wifi');
             }}
             className="px-3 py-1.5 text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5"
             title="Open ESP32 SoftAP Web Configuration Portal (192.168.4.1)"
@@ -879,7 +941,7 @@ export default function App() {
           <button
             onClick={() => {
               cydAudio.click();
-              setShowLeaderboardModal(true);
+              setActiveModal('leaderboard');
             }}
             className="px-3.5 py-2 text-xs font-semibold text-slate-950 bg-amber-500 hover:bg-amber-400 rounded-lg transition-colors whitespace-nowrap shrink-0 shadow-sm"
           >
@@ -935,7 +997,7 @@ export default function App() {
         )}
 
         {/* TAB 2: ESP32 FIRMWARE (ESP_CoGo CYD C++) */}
-        {currentTab === 'firmware' && <FirmwareTab />}
+        {currentTab === 'firmware' && <FirmwareTab language={language} />}
 
         {/* TAB 3: PHP SERVER (register.php, sync.php, cloud_save.php) */}
         {currentTab === 'php_server' && <PHPServerTab myPet={dev1Pet} />}
@@ -951,51 +1013,52 @@ export default function App() {
       </main>
 
       {/* Interactive Modals */}
-      {showRPGModal && (
+      {activeModal === 'rpg' && (
         <RPGSubsystemsModal
           pet={dev1Pet}
           recipes={activeRecipes}
           language={language}
-          onClose={() => setShowRPGModal(false)}
+          onClose={() => setActiveModal(null)}
           onCookRecipe={handleCookRecipe}
           onStartJob={handleStartJob}
           onCastSpell={handleCastSpell}
           onEquipItem={handleEquipItem}
           onUnequipItem={handleUnequipItem}
+          onClaimMission={handleClaimMission}
         />
       )}
 
-      {showTradeModal && (
+      {activeModal === 'trade' && (
         <TradingModal
           myPet={dev1Pet}
           friendPet={dev1FriendSummary}
           pendingOffers={tradeOffers}
           language={language}
-          onClose={() => setShowTradeModal(false)}
+          onClose={() => setActiveModal(null)}
           onSendTradeOffer={handleSendTradeOffer}
           onAcceptTrade={handleAcceptTrade}
           onDeclineTrade={handleDeclineTrade}
         />
       )}
 
-      {showChatModal && (
+      {activeModal === 'chat' && (
         <ChatModal
           friendPet={dev1FriendSummary}
           language={language}
-          onClose={() => setShowChatModal(false)}
+          onClose={() => setActiveModal(null)}
           onSendMessage={handleSendMessage}
         />
       )}
 
-      {showLeaderboardModal && (
+      {activeModal === 'leaderboard' && (
         <LeaderboardModal
           myPet={dev1Pet}
           language={language}
-          onClose={() => setShowLeaderboardModal(false)}
+          onClose={() => setActiveModal(null)}
         />
       )}
 
-      {showWiFiModal && (
+      {activeModal === 'wifi' && (
         <WiFiAPModal
           currentSSID={wifiConfig.ssid}
           currentDeviceID={dev1Pet.deviceId}
@@ -1004,7 +1067,7 @@ export default function App() {
           currentBiome={dev1Pet.biome}
           currentServerURL={wifiConfig.serverUrl}
           language={language}
-          onClose={() => setShowWiFiModal(false)}
+          onClose={() => setActiveModal(null)}
           onSaveConfig={handleSaveWiFiConfig}
         />
       )}
@@ -1012,13 +1075,15 @@ export default function App() {
       {/* Footer */}
       <footer className="border-t border-slate-800 py-6 px-6 text-center text-xs text-slate-500">
         <div className="flex flex-wrap items-center justify-center gap-3 font-mono">
-          <span>ESP32-2432S028R Cheap Yellow Display Companion</span>
+          <span>PetDuet · ESP32-2432S028R Cheap Yellow Display Dual Companion</span>
           <span aria-hidden="true">·</span>
           <span>ILI9341 320x240 LCD</span>
           <span aria-hidden="true">·</span>
-          <span>XPT2046 Resistive Touch</span>
+          <span>XPT2046 Touch</span>
           <span aria-hidden="true">·</span>
-          <span>Direct Socket & PHP Server Sync</span>
+          <span>A/B OTA Updates</span>
+          <span aria-hidden="true">·</span>
+          <span>Direct Socket & Server Sync</span>
         </div>
       </footer>
     </div>

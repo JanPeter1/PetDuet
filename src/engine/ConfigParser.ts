@@ -47,6 +47,374 @@ export interface ParsedSpellRule {
   icon: string;
 }
 
+export interface ParsedDailyMissionRule {
+  id: string;
+  name: string;
+  name_de?: string;
+  description: string;
+  description_de?: string;
+  actionType: 'feed' | 'login_streak' | 'play' | 'bath' | 'send_treat' | 'cast_spell' | 'cook' | 'start_job';
+  targetCount: number;
+  coinReward: number;
+  xpReward: number;
+  icon: string;
+}
+
+export const DEFAULT_DAILY_MISSIONS: ParsedDailyMissionRule[] = [
+  {
+    id: 'mission_feed',
+    name: 'Nourish Pet',
+    name_de: 'Pet Füttern',
+    description: 'Feed your pet 3 times today',
+    description_de: 'Füttere dein Haustier heute 3 Mal',
+    actionType: 'feed',
+    targetCount: 3,
+    coinReward: 40,
+    xpReward: 50,
+    icon: '🍖',
+  },
+  {
+    id: 'mission_login_streak',
+    name: 'Loyal Companion',
+    name_de: 'Treuer Begleiter',
+    description: 'Log in 2 days in a row',
+    description_de: 'Logge dich 2 Tage hintereinander ein',
+    actionType: 'login_streak',
+    targetCount: 2,
+    coinReward: 60,
+    xpReward: 80,
+    icon: '📅',
+  },
+  {
+    id: 'mission_play',
+    name: 'Playtime Fun',
+    name_de: 'Spiel & Spass',
+    description: 'Play with your pet 2 times',
+    description_de: 'Spiele 2 Mal mit deinem Haustier',
+    actionType: 'play',
+    targetCount: 2,
+    coinReward: 30,
+    xpReward: 40,
+    icon: '🎾',
+  },
+  {
+    id: 'mission_bath',
+    name: 'Bubble Bath',
+    name_de: 'Blitzsauber',
+    description: 'Give your pet a sparkling bath',
+    description_de: 'Bade dein Haustier oder putze',
+    actionType: 'bath',
+    targetCount: 1,
+    coinReward: 25,
+    xpReward: 35,
+    icon: '🧼',
+  },
+  {
+    id: 'mission_treat',
+    name: 'Share the Love',
+    name_de: 'Freundes-Leckerli',
+    description: 'Send a treat or blessing to your partner',
+    description_de: 'Sende ein Leckerli an dein Partner-Pet',
+    actionType: 'send_treat',
+    targetCount: 1,
+    coinReward: 50,
+    xpReward: 60,
+    icon: '🎁',
+  },
+];
+
+export interface ParsedShopItemRule {
+  id: string;
+  name: string;
+  name_de?: string;
+  priceCoins: number;
+  minLevel: number;
+  category: string;
+  slot?: string;
+  icon: string;
+  description?: string;
+  description_de?: string;
+  effects?: Record<string, any>;
+}
+
+export interface ParsedShopRecipeRule {
+  id: string;
+  name: string;
+  name_de?: string;
+  priceCoins: number;
+  minLevel: number;
+  icon: string;
+  description?: string;
+  description_de?: string;
+  ingredients?: Record<string, number>;
+  effects?: Record<string, any>;
+}
+
+export interface ParsedShopSpellRule {
+  id: string;
+  name: string;
+  name_de?: string;
+  priceCoins: number;
+  minLevel: number;
+  manaCost: number;
+  target: 'self' | 'friend' | 'both';
+  icon: string;
+  description?: string;
+  description_de?: string;
+  effects?: Record<string, any>;
+}
+
+export interface ParsedShopConfig {
+  items: ParsedShopItemRule[];
+  recipes: ParsedShopRecipeRule[];
+  spells: ParsedShopSpellRule[];
+}
+
+export const DEFAULT_SHOP_CONFIG: ParsedShopConfig = {
+  items: [
+    {
+      id: 'item_apple',
+      name: 'Fresh Apple',
+      name_de: 'Frischer Apfel',
+      priceCoins: 5,
+      minLevel: 1,
+      category: 'food',
+      icon: '🍎',
+      description: 'Crisp red orchard apple that restores basic hunger.',
+      description_de: 'Knackiger roter Apfel, der den kleinen Hunger stillt.',
+      effects: { hunger: 15, happiness: 5 },
+    },
+    {
+      id: 'item_herb',
+      name: 'Meadow Herb Bundle',
+      name_de: 'Wiesenkräuter-Bündel',
+      priceCoins: 8,
+      minLevel: 1,
+      category: 'material',
+      icon: '🌿',
+      description: 'Wild medicinal herb used for brewing remedies and salads.',
+      description_de: 'Frisch gepflückte Wiesenkräuter für Salate und Tinkturen.',
+      effects: {},
+    },
+    {
+      id: 'item_salve',
+      name: 'Healing Salve',
+      name_de: 'Wohltuende Heilsalbe',
+      priceCoins: 25,
+      minLevel: 2,
+      category: 'potion',
+      icon: '🧴',
+      description: 'Herbal balm that restores 40 HP and cures illness.',
+      description_de: 'Heilende Kräutersalbe, die 40 HP wiederherstellt und Krankheiten heilt.',
+      effects: { health: 40, cure_sickness: true },
+    },
+    {
+      id: 'item_energy_elixir',
+      name: 'Energy Tonic',
+      name_de: 'Vitalitäts-Tonikum',
+      priceCoins: 35,
+      minLevel: 3,
+      category: 'potion',
+      icon: '🧪',
+      description: 'Invigorating elixir restoring 60 Energy and 15 Mana.',
+      description_de: 'Stärkendes Tonikum für 60 Energie und 15 Mana.',
+      effects: { energy: 60, mana: 15 },
+    },
+    {
+      id: 'item_sunstone',
+      name: 'Sun Salt Crystals',
+      name_de: 'Sonnensalz-Kristalle',
+      priceCoins: 45,
+      minLevel: 3,
+      category: 'material',
+      icon: '🧂',
+      description: 'Rare desert mineral crystal required for gourmet curing.',
+      description_de: 'Sonnengereiftes Wüstensalz für nahrhaftes Dörrfleisch.',
+      effects: {},
+    },
+    {
+      id: 'item_blossom_crown',
+      name: 'Blossom Crown',
+      name_de: 'Blütenkrone',
+      priceCoins: 75,
+      minLevel: 2,
+      category: 'accessory',
+      slot: 'head',
+      icon: '👑',
+      description: 'Hand-woven daisy wreath. Grants +10 Happiness and +5% XP.',
+      description_de: 'Handgeflochtene Blumenkrone für +10 Glück und +5% XP.',
+      effects: { happiness: 10, xp_bonus_pct: 5 },
+    },
+    {
+      id: 'item_wizard_cowl',
+      name: 'Starry Wizard Cowl',
+      name_de: 'Sternen-Zauberkappe',
+      priceCoins: 110,
+      minLevel: 4,
+      category: 'accessory',
+      slot: 'head',
+      icon: '🧙',
+      description: 'Star-patterned mystical hood boosting mana efficiency.',
+      description_de: 'Sternenverzierte Kappe, die das Mana um +15 erhöht.',
+      effects: { max_mana_bonus: 15 },
+    },
+    {
+      id: 'item_tophat',
+      name: 'Fancy Top Hat',
+      name_de: 'Vornehmer Zylinder',
+      priceCoins: 140,
+      minLevel: 5,
+      category: 'accessory',
+      slot: 'head',
+      icon: '🎩',
+      description: 'Distinguished velvet top hat granting +15% coin rewards on jobs.',
+      description_de: 'Eleganter Samtzylinder für +15% Münzgewinn bei Berufen.',
+      effects: { job_coin_bonus_pct: 15 },
+    },
+    {
+      id: 'item_evo_prism',
+      name: 'Astral Evolution Prism',
+      name_de: 'Astrales Evolutionsprisma',
+      priceCoins: 250,
+      minLevel: 8,
+      category: 'evolution',
+      icon: '🔮',
+      description: 'Legendary radiant prism catalyzing evolution into Elder forms.',
+      description_de: 'Legendäres Prisma zur Beschleunigung der Evolution zur Meisterstufe.',
+      effects: { evolution_unlock: true },
+    },
+  ],
+  recipes: [
+    {
+      id: 'rcp_salad',
+      name: 'Meadow Herb Salad',
+      name_de: 'Wiesenkräuter-Salat',
+      priceCoins: 15,
+      minLevel: 1,
+      icon: '🥗',
+      description: 'Blueprint teaching the synthesis of crisp meadow herbs.',
+      description_de: 'Rezeptrolle zum Zubereiten von frischem Wiesensalat.',
+      ingredients: { mat_herb: 2 },
+      effects: { food: 25, energy: 10, xp: 20 },
+    },
+    {
+      id: 'rcp_jerky',
+      name: 'Desert Jerky',
+      name_de: 'Wüsten-Dörrfleisch',
+      priceCoins: 35,
+      minLevel: 2,
+      icon: '🥩',
+      description: 'Blueprint for hearty sun-dried cured protein rations.',
+      description_de: 'Rezeptrolle für sonnengetrocknetes Dörrfleisch.',
+      ingredients: { mat_meat: 2, mat_sunstone: 1 },
+      effects: { food: 45, energy: 20, happiness: 15, xp: 60 },
+    },
+    {
+      id: 'rcp_berry_pie',
+      name: 'Forest Berry Tart',
+      name_de: 'Waldbeeren-Tarte',
+      priceCoins: 65,
+      minLevel: 3,
+      icon: '🥧',
+      description: 'Blueprint for warm, sweet woodland berry pastries.',
+      description_de: 'Rezeptrolle für süße, duftende Waldbeerenkuchen.',
+      ingredients: { mat_herb: 1, mat_mushroom: 1 },
+      effects: { food: 35, happiness: 25, health: 15, xp: 80 },
+    },
+    {
+      id: 'rcp_stew',
+      name: 'Hearty River Stew',
+      name_de: 'Herzhafter Flusseintopf',
+      priceCoins: 110,
+      minLevel: 4,
+      icon: '🍲',
+      description: 'Blueprint for deep mineral and seafood chowder.',
+      description_de: 'Rezeptrolle für kräftigenden Flusseintopf.',
+      ingredients: { mat_mushroom: 2, mat_pearl: 1 },
+      effects: { food: 70, health: 30, mana: 15, xp: 110 },
+    },
+    {
+      id: 'rcp_ambrosia',
+      name: 'Celestial Ambrosia',
+      name_de: 'Himmlische Ambrosia',
+      priceCoins: 240,
+      minLevel: 6,
+      icon: '✨',
+      description: 'Master recipe synthesizing essences of all 4 biomes.',
+      description_de: 'Meisterrezept mit Essenzen aller vier Biome.',
+      ingredients: { mat_sunstone: 1, mat_pearl: 1, mat_mushroom: 2, mat_herb: 2 },
+      effects: { food: 100, health: 50, energy: 50, mana: 50, xp: 250 },
+    },
+  ],
+  spells: [
+    {
+      id: 'spl_cleanse',
+      name: 'Purify',
+      name_de: 'Läuterung',
+      priceCoins: 40,
+      minLevel: 2,
+      manaCost: 15,
+      target: 'self',
+      icon: '🫧',
+      description: 'Tome teaching the instant cleansing of waste and disease.',
+      description_de: 'Zauberbuch zur sofortigen Reinigung und Krankheitsheilung.',
+      effects: { clean_poop: true, cure_sickness: true, xp: 20 },
+    },
+    {
+      id: 'spl_heal',
+      name: 'Vitality Aura',
+      name_de: 'Vitalitäts-Aura',
+      priceCoins: 70,
+      minLevel: 2,
+      manaCost: 20,
+      target: 'self',
+      icon: '💖',
+      description: 'Tome radiating self-healing light restoring 25 HP.',
+      description_de: 'Zauberbuch für eine wärmende Aura mit +25 HP.',
+      effects: { health: 25, happiness: 10, xp: 35 },
+    },
+    {
+      id: 'spl_friend_blessing',
+      name: 'Friend Blessing',
+      name_de: 'Freundes-Segen',
+      priceCoins: 95,
+      minLevel: 3,
+      manaCost: 30,
+      target: 'friend',
+      icon: '✨',
+      description: 'Tome enabling socket transmission of friendship waves.',
+      description_de: 'Zauberbuch zum Senden von Segnungen an das Partner-CYD.',
+      effects: { health: 35, happiness: 25, xp: 45 },
+    },
+    {
+      id: 'spl_treat_burst',
+      name: 'Astral Feast',
+      name_de: 'Astral-Festmahl',
+      priceCoins: 130,
+      minLevel: 4,
+      manaCost: 25,
+      target: 'self',
+      icon: '🍓',
+      description: 'Tome conjuring spectral mana fruits that fulfill hunger.',
+      description_de: 'Zauberbuch zur Beschwörung nahrhafter Mana-Beeren.',
+      effects: { hunger: 35, energy: 15, xp: 50 },
+    },
+    {
+      id: 'spl_astral_harmony',
+      name: 'Dual Astral Harmony',
+      name_de: 'Astrale Harmonie',
+      priceCoins: 260,
+      minLevel: 6,
+      manaCost: 45,
+      target: 'both',
+      icon: '🌟',
+      description: 'Ancient grand tome triggering dual synchronized screen auroras.',
+      description_de: 'Uraltes Großzauberbuch für synchronisierte Nordlichter auf beiden Geräten.',
+      effects: { health: 50, happiness: 40, xp: 100 },
+    },
+  ],
+};
+
 export interface GameRulesConfig {
   general: {
     gameTitle: string;
@@ -95,6 +463,8 @@ export interface GameRulesConfig {
   recipes: ParsedRecipeRule[];
   jobs: ParsedJobRule[];
   magicSpells: ParsedSpellRule[];
+  dailyMissions: ParsedDailyMissionRule[];
+  shop: ParsedShopConfig;
   socialActions: {
     treatSendHungerGain: number;
     treatSendHappinessGain: number;
@@ -106,7 +476,228 @@ export interface GameRulesConfig {
   };
 }
 
+export function parseJsonGameRules(json: any): GameRulesConfig {
+  const biomes: GameRulesConfig['biomes'] = {};
+  if (json.biomes) {
+    for (const [key, b] of Object.entries<any>(json.biomes)) {
+      biomes[key] = {
+        name: b.name || key,
+        colorHex: b.color || '#7CFC00',
+        rgb565: b.rgb565 || '0x7FE0',
+        trait: b.trait || 'Resilient',
+        description: b.name_de ? `${b.name} (${b.name_de})` : b.name,
+        energyBonusPct: b.modifiers?.energy_decay ? Math.round((b.modifiers.energy_decay - 1) * 100) : 0,
+        hungerDecayBonusPct: b.modifiers?.food_decay ? Math.round((b.modifiers.food_decay - 1) * 100) : 0,
+      };
+    }
+  }
+
+  const recipes: ParsedRecipeRule[] = [];
+  if (Array.isArray(json.recipes)) {
+    for (const r of json.recipes) {
+      const ingredients = [];
+      if (r.ingredients) {
+        for (const [itemId, count] of Object.entries<any>(r.ingredients)) {
+          ingredients.push({ itemId, count: Number(count) || 1 });
+        }
+      }
+      recipes.push({
+        id: r.id,
+        name: r.name || r.id,
+        name_de: r.name_de,
+        description: r.description,
+        description_de: r.description_de,
+        minLevel: r.min_level || 1,
+        ingredients,
+        hungerGain: r.effects?.food || 25,
+        healthGain: r.effects?.health || 0,
+        energyGain: r.effects?.energy || 0,
+        manaGain: r.effects?.mana || 0,
+        xpReward: r.effects?.xp || 20,
+        icon: r.icon || '🍲',
+      });
+    }
+  }
+
+  const jobs: ParsedJobRule[] = [];
+  if (Array.isArray(json.jobs)) {
+    for (const j of json.jobs) {
+      jobs.push({
+        id: j.id,
+        title: j.name || j.id,
+        minLevel: j.min_level || 1,
+        durationSeconds: j.duration_seconds || 60,
+        coinReward: j.rewards?.coins || 15,
+        xpReward: j.rewards?.xp || 25,
+        drop: {
+          itemId: Object.keys(j.rewards?.materials || {})[0] || 'mat_herb',
+          chance: 100,
+        },
+        icon: j.icon || '🌿',
+      });
+    }
+  }
+
+  const spells: ParsedSpellRule[] = [];
+  if (Array.isArray(json.spells)) {
+    for (const s of json.spells) {
+      spells.push({
+        id: s.id,
+        name: s.name || s.id,
+        minLevel: s.min_level || 1,
+        manaCost: s.mana_cost || 15,
+        target: s.target || 'self',
+        healthBonus: s.effects?.health || 0,
+        happinessBonus: s.effects?.happiness || 0,
+        energyBonus: s.effects?.energy || 0,
+        hygieneBonus: s.effects?.clean_poop ? 100 : 0,
+        biome: s.biome || 'universal',
+        icon: s.icon || '✨',
+      });
+    }
+  }
+
+  const dailyMissions: ParsedDailyMissionRule[] = [];
+  if (Array.isArray(json.daily_missions)) {
+    for (const m of json.daily_missions) {
+      dailyMissions.push({
+        id: m.id || `mission_${dailyMissions.length}`,
+        name: m.name || m.title || 'Daily Mission',
+        name_de: m.name_de || m.title_de,
+        description: m.description || '',
+        description_de: m.description_de || '',
+        actionType: m.action_type || m.actionType || 'feed',
+        targetCount: m.target_count || m.targetCount || 1,
+        coinReward: m.rewards?.coins || m.coinReward || 30,
+        xpReward: m.rewards?.xp || m.xpReward || 40,
+        icon: m.icon || '🎯',
+      });
+    }
+  }
+
+  const shopItems: ParsedShopItemRule[] = [];
+  if (Array.isArray(json.shop?.items)) {
+    for (const it of json.shop.items) {
+      shopItems.push({
+        id: it.id,
+        name: it.name || it.id,
+        name_de: it.name_de,
+        priceCoins: it.price_coins || it.cost || 10,
+        minLevel: it.min_level || 1,
+        category: it.category || 'misc',
+        slot: it.slot,
+        icon: it.icon || '📦',
+        description: it.description,
+        description_de: it.description_de,
+        effects: it.effects || {},
+      });
+    }
+  }
+
+  const shopRecipes: ParsedShopRecipeRule[] = [];
+  if (Array.isArray(json.shop?.recipes)) {
+    for (const r of json.shop.recipes) {
+      shopRecipes.push({
+        id: r.id,
+        name: r.name || r.id,
+        name_de: r.name_de,
+        priceCoins: r.price_coins || r.cost || 20,
+        minLevel: r.min_level || 1,
+        icon: r.icon || '📜',
+        description: r.description,
+        description_de: r.description_de,
+        ingredients: r.ingredients || {},
+        effects: r.effects || {},
+      });
+    }
+  }
+
+  const shopSpells: ParsedShopSpellRule[] = [];
+  if (Array.isArray(json.shop?.spells)) {
+    for (const s of json.shop.spells) {
+      shopSpells.push({
+        id: s.id,
+        name: s.name || s.id,
+        name_de: s.name_de,
+        priceCoins: s.price_coins || s.cost || 50,
+        minLevel: s.min_level || 1,
+        manaCost: s.mana_cost || 20,
+        target: s.target || 'self',
+        icon: s.icon || '✨',
+        description: s.description,
+        description_de: s.description_de,
+        effects: s.effects || {},
+      });
+    }
+  }
+
+  const parsedShop: ParsedShopConfig = {
+    items: shopItems.length > 0 ? shopItems : DEFAULT_SHOP_CONFIG.items,
+    recipes: shopRecipes.length > 0 ? shopRecipes : DEFAULT_SHOP_CONFIG.recipes,
+    spells: shopSpells.length > 0 ? shopSpells : DEFAULT_SHOP_CONFIG.spells,
+  };
+
+  return {
+    general: {
+      gameTitle: json.meta?.title || 'PetDuet',
+      version: json.version || '1.0.4',
+      maxStatValue: 100,
+      tickRateSeconds: json.meta?.tick_interval_seconds || 60,
+      socketPort: 8888,
+      baseXpRequirement: 100,
+      xpLevelMultiplier: 1.8,
+    },
+    decayRates: {
+      hungerDecay: json.stats?.food?.decay_per_tick || 0.25,
+      energyDecay: json.stats?.energy?.decay_per_tick || 0.15,
+      hygieneDecay: 0.10,
+      happinessDecay: json.stats?.happiness?.decay_per_tick || 0.20,
+      healthStarveDecay: json.stats?.health?.starve_decay || 1.5,
+      starveThreshold: 20,
+      naturalManaRegen: json.stats?.mana?.regen_per_tick || 0.5,
+    },
+    evolutionPhases: {
+      eggWarmthRequired: 50,
+      babyMinLevel: 1,
+      youthMinLevel: 3,
+      adultMinLevel: 8,
+      elderMinLevel: 20,
+    },
+    biomes,
+    seasons: {
+      springForageBonusPct: 20,
+      summerThirstDecayPct: 25,
+      autumnCookXpBonusPct: 30,
+      winterRestEnergyBonusPct: 50,
+    },
+    recipes,
+    jobs,
+    magicSpells: spells,
+    dailyMissions: dailyMissions.length > 0 ? dailyMissions : DEFAULT_DAILY_MISSIONS,
+    shop: parsedShop,
+    socialActions: {
+      treatSendHungerGain: 25,
+      treatSendHappinessGain: 20,
+      treatSendXpReward: 15,
+      coopQuestCoinsReward: 35,
+      coopQuestXpReward: 40,
+      coopMagicHpBoost: 35,
+      coopMagicHappinessBoost: 25,
+    },
+  };
+}
+
 export function parseGameRules(cfgText: string): GameRulesConfig {
+  const trimmed = cfgText.trim();
+  if (trimmed.startsWith('{')) {
+    try {
+      const parsedJson = JSON.parse(trimmed);
+      return parseJsonGameRules(parsedJson);
+    } catch (err) {
+      console.warn('[ConfigParser] JSON parsing failed, attempting INI parse:', err);
+    }
+  }
+
   const lines = cfgText.split('\n');
   let currentSection = 'general';
 
@@ -351,6 +942,8 @@ export function parseGameRules(cfgText: string): GameRulesConfig {
     recipes: parsedRecipes,
     jobs: parsedJobs,
     magicSpells: parsedSpells,
+    dailyMissions: DEFAULT_DAILY_MISSIONS,
+    shop: DEFAULT_SHOP_CONFIG,
     socialActions: {
       treatSendHungerGain: getNum('social_actions', 'treat_send_hunger_gain', 25),
       treatSendHappinessGain: getNum('social_actions', 'treat_send_happiness_gain', 20),

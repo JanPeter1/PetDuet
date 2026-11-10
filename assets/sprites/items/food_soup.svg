@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" shape-rendering="crispEdges">
+  <defs>
+    <style>
+      @keyframes steamRise {
+        0% { transform: translateY(0); opacity: 0.3; }
+        50% { transform: translateY(-2px); opacity: 0.8; }
+        100% { transform: translateY(-4px); opacity: 0; }
+      }
+      .anim-steam { animation: steamRise 1.8s ease-in-out infinite; }
+    </style>
+  </defs>
+  <!-- Animated Steam Wisps -->
+  <g class="anim-steam">
+    <path d="M 8 3 H 9 V 6 H 8 Z M 13 2 H 14 V 5 H 13 Z M 17 4 H 18 V 6 H 17 Z" fill="#e2e8f0" />
+  </g>
+  <!-- Bowl Outline -->
+  <path d="M 4 8 H 20 V 10 H 22 V 15 H 20 V 18 H 17 V 20 H 7 V 18 H 4 V 15 H 2 V 10 H 4 Z" fill="#3e2723" />
+  <!-- Bowl Body (Terracotta Ceramic) -->
+  <path d="M 4 10 H 20 V 14 H 18 V 17 H 16 V 19 H 8 V 17 H 6 V 14 H 4 Z" fill="#8d6e63" />
+  <path d="M 6 15 H 8 V 18 H 16 V 19 H 8 V 17 H 6 Z" fill="#5d4037" />
+  <!-- Hearty Soup Broth (Golden Amber) -->
+  <rect x="5" y="9" width="14" height="3" fill="#d97706" />
+  <!-- Ingredients floating in soup (herb leaf, mushroom slice) -->
+  <rect x="7" y="10" width="3" height="1" fill="#15803d" />
+  <rect x="13" y="10" width="2" height="1" fill="#fef08a" />
+  <rect x="16" y="9" width="2" height="2" fill="#ef4444" />
+</svg>

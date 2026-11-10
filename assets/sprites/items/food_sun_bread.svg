@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" shape-rendering="crispEdges">
+  <!-- Loaf Shadow -->
+  <ellipse cx="12" cy="20" rx="8" ry="2" fill="#0f172a" opacity="0.3" />
+  <!-- Bread Loaf Outline -->
+  <path d="M 5 9 H 19 V 11 H 21 V 17 H 19 V 19 H 5 V 17 H 3 V 11 H 5 Z" fill="#78350f" />
+  <!-- Golden Loaf Crust -->
+  <path d="M 5 11 H 19 V 17 H 5 Z" fill="#d97706" />
+  <!-- Top Fluffy Sun Crust -->
+  <path d="M 6 10 H 18 V 14 H 6 Z" fill="#fbbf24" />
+  <!-- Scoring Cuts -->
+  <rect x="8" y="11" width="2" height="4" fill="#78350f" />
+  <rect x="14" y="11" width="2" height="4" fill="#78350f" />
+  <!-- Butter / Flour Dusting -->
+  <rect x="10" y="10" width="2" height="1" fill="#fef3c7" />
+</svg>

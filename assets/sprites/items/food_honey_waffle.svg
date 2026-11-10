@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" shape-rendering="crispEdges">
+  <!-- Waffle Shadow -->
+  <ellipse cx="12" cy="21" rx="8" ry="2" fill="#0f172a" opacity="0.3" />
+  <!-- Waffle Outline -->
+  <path d="M 5 5 H 19 V 7 H 21 V 17 H 19 V 19 H 5 V 17 H 3 V 7 H 5 Z" fill="#78350f" />
+  <!-- Waffle Base Grid (Crisp Golden Brown) -->
+  <path d="M 5 7 H 19 V 17 H 5 Z" fill="#f59e0b" />
+  <!-- Deep Grid Pockets -->
+  <rect x="7" y="9" width="3" height="3" fill="#b45309" />
+  <rect x="14" y="9" width="3" height="3" fill="#b45309" />
+  <rect x="7" y="13" width="3" height="3" fill="#b45309" />
+  <rect x="14" y="13" width="3" height="3" fill="#b45309" />
+  <!-- Honey Glaze Drizzle -->
+  <path d="M 10 6 H 14 V 9 H 12 V 12 H 10 Z" fill="#fbbf24" />
+  <!-- Melting Butter Pat -->
+  <rect x="10" y="8" width="4" height="3" fill="#fef08a" />
+  <rect x="11" y="9" width="2" height="1" fill="#ffffff" />
+</svg>

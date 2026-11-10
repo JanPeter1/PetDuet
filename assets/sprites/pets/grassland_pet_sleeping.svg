@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" shape-rendering="crispEdges">
+  <defs>
+    <style>
+      @keyframes sleepSway {
+        0%, 100% { transform: scaleY(1); }
+        50% { transform: scaleY(0.95); }
+      }
+      @keyframes floatZzz {
+        0% { transform: translate(0, 0); opacity: 0; }
+        30% { opacity: 1; }
+        100% { transform: translate(6px, -12px); opacity: 0; }
+      }
+      .anim-sleep { transform-origin: 24px 44px; animation: sleepSway 2.5s ease-in-out infinite; }
+      .anim-zzz { animation: floatZzz 2.4s ease-in-out infinite; }
+    </style>
+  </defs>
+
+  <ellipse cx="24" cy="45" rx="16" ry="3.5" fill="#0f172a" opacity="0.4" />
+
+  <!-- Floating Zzz -->
+  <g class="anim-zzz">
+    <path d="M 33 16 H 37 V 17 H 35 V 18 H 33 V 19 H 37 V 20 H 32 V 19 H 34 V 18 H 36 V 17 H 32 V 16 Z" fill="#60a5fa" />
+    <path d="M 37 8 H 43 V 10 H 40 V 11 H 38 V 12 H 43 V 14 H 36 V 12 H 38 V 11 H 40 V 10 H 36 V 8 Z" fill="#93c5fd" />
+  </g>
+
+  <g class="anim-sleep">
+    <!-- Drooped Sleeping Ears -->
+    <path d="M 9 24 H 14 V 28 H 9 Z" fill="#064e3b" />
+    <path d="M 10 25 H 13 V 27 H 10 Z" fill="#10b981" />
+    <path d="M 34 24 H 39 V 28 H 34 Z" fill="#064e3b" />
+    <path d="M 35 25 H 38 V 27 H 35 Z" fill="#10b981" />
+
+    <!-- Curled Up Round Body Outline -->
+    <path d="M 12 24 H 36 V 26 H 40 V 38 H 38 V 42 H 36 V 44 H 12 V 42 H 10 V 38 H 8 V 26 H 12 Z" fill="#064e3b" />
+    <path d="M 12 26 H 36 V 38 H 36 V 42 H 12 V 38 H 10 V 26 H 12 Z" fill="#10b981" />
+
+    <!-- Resting Belly -->
+    <path d="M 16 34 H 32 V 42 H 16 Z" fill="#d1fae5" />
+
+    <!-- Soft Sleep Cheeks -->
+    <rect x="12" y="32" width="3" height="2" fill="#fb7185" opacity="0.8" />
+    <rect x="33" y="32" width="3" height="2" fill="#fb7185" opacity="0.8" />
+
+    <!-- Peaceful Closed Eyes (horizontal slits) -->
+    <rect x="16" y="29" width="5" height="1" fill="#064e3b" />
+    <rect x="27" y="29" width="5" height="1" fill="#064e3b" />
+
+    <!-- Sprout resting on head -->
+    <path d="M 21 20 H 27 V 23 H 21 Z" fill="#34d399" />
+    <rect x="23" y="23" width="2" height="2" fill="#047857" />
+  </g>
+</svg>

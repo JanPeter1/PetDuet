@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" shape-rendering="crispEdges">
+  <defs>
+    <style>
+      @keyframes popExclaim {
+        0%, 100% { transform: scale(1) translateY(0); }
+        50% { transform: scale(1.15) translateY(-2px); }
+      }
+      .anim-exclaim {
+        transform-origin: 12px 14px;
+        animation: popExclaim 0.7s ease-in-out infinite;
+      }
+    </style>
+  </defs>
+  <g class="anim-exclaim">
+    <!-- Speech Bubble Outline -->
+    <path d="M 6 2 H 18 V 4 H 20 V 16 H 18 V 18 H 10 V 22 H 8 V 18 H 6 V 16 H 4 V 4 H 6 Z" fill="#7f1d1d" />
+    <!-- Speech Bubble Body (Vibrant Red) -->
+    <path d="M 6 4 H 18 V 16 H 9 V 19 H 8 V 16 H 6 Z" fill="#ef4444" />
+    <!-- Yellow Alert Exclamation Mark -->
+    <rect x="11" y="6" width="2" height="6" fill="#fef08a" />
+    <rect x="11" y="13" width="2" height="2" fill="#fef08a" />
+    <rect x="12" y="7" width="1" height="4" fill="#ffffff" />
+  </g>
+</svg>

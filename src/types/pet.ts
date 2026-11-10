@@ -75,6 +75,38 @@ export interface MagicSpell {
   effectDescription: string;
 }
 
+export type MissionActionType =
+  | 'feed'
+  | 'play'
+  | 'bath'
+  | 'login_streak'
+  | 'send_treat'
+  | 'cast_spell'
+  | 'cook'
+  | 'start_job';
+
+export interface DailyMission {
+  id: string;
+  title: string;
+  title_de?: string;
+  description: string;
+  description_de?: string;
+  actionType: MissionActionType;
+  targetCount: number;
+  currentCount: number;
+  coinReward: number;
+  xpReward: number;
+  completed: boolean;
+  claimed: boolean;
+  icon: string;
+}
+
+export interface DailyMissionsState {
+  lastLoginDate: string;
+  consecutiveLoginDays: number;
+  missions: DailyMission[];
+}
+
 export interface PetState {
   id: string;
   deviceId: string;
@@ -105,6 +137,7 @@ export interface PetState {
   createdAt: number;
   lastFedAt: number;
   lastInteractedAt: number;
+  dailyMissions?: DailyMissionsState;
 }
 
 export interface FriendPetSummary {

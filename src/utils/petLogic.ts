@@ -2,7 +2,6 @@ import {
   BiomeType,
   SeasonType,
   EvolutionPhase,
-  PetStats,
   PetState,
   Recipe,
   Job,

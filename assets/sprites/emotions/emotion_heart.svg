@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" shape-rendering="crispEdges">
+  <defs>
+    <style>
+      @keyframes pulseHeart {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.15) translateY(-1px); }
+      }
+      .anim-heart {
+        transform-origin: center;
+        animation: pulseHeart 0.8s ease-in-out infinite;
+      }
+    </style>
+  </defs>
+  <g class="anim-heart">
+    <!-- Heart Outline -->
+    <path d="M 4 8 H 6 V 6 H 10 V 8 H 12 V 8 H 14 V 6 H 18 V 8 H 20 V 12 H 18 V 14 H 16 V 16 H 14 V 18 H 12 V 20 H 10 V 18 H 8 V 16 H 6 V 14 H 4 V 12 Z" fill="#4c0519" />
+    <!-- Heart Body (Deep Red) -->
+    <path d="M 5 8 H 9 V 10 H 11 V 12 H 13 V 10 H 15 V 8 H 19 V 12 H 17 V 14 H 15 V 16 H 13 V 18 H 11 V 16 H 9 V 14 H 7 V 12 H 5 Z" fill="#e11d48" />
+    <!-- Heart Highlight (Bright Pink) -->
+    <rect x="6" y="8" width="2" height="2" fill="#fda4af" />
+    <rect x="7" y="10" width="1" height="1" fill="#ffffff" />
+    <rect x="15" y="8" width="2" height="2" fill="#fb7185" />
+    <!-- Heart Shadow -->
+    <path d="M 11 16 H 13 V 18 H 11 Z M 13 14 H 15 V 16 H 13 Z M 15 12 H 17 V 14 H 15 Z" fill="#be123c" />
+  </g>
+</svg>
