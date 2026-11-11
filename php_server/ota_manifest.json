@@ -1,0 +1,22 @@
+{
+  "firmware": {
+    "latest_version": "2.1.0",
+    "min_supported_version": "1.0.0",
+    "download_url": "ota_download.php?type=firmware",
+    "binary_filename": "cyd_tamagotchi.bin",
+    "file_size": 1428528,
+    "sha256": "8f4e2c91b5a76e330d4198bfac851493e82012ef902b78129487c0e0b3d64112",
+    "release_date": "2026-11-10",
+    "release_notes_en": "Added Over-The-Air (OTA) A/B partition switching, SPIFFS dynamic rules hot-reloading, Daily Missions engine, and Shop catalog integration.",
+    "release_notes_de": "A/B-Partition Over-The-Air (OTA) Update, dynamisches Regeln-Hot-Reloading ueber SPIFFS, Daily Missions System und Shop-Integration."
+  },
+  "rules": {
+    "latest_version": "1.0.4",
+    "download_url": "ota_download.php?type=rules",
+    "file_size": 4210,
+    "sha256": "3a7b51f089cbde7e62a39281a1795b2d87e0fa0c88344f62e879008bc215018e",
+    "release_date": "2026-11-10",
+    "release_notes_en": "Updated shop items catalog, daily missions definitions, and dual-pet co-op spell balance.",
+    "release_notes_de": "Aktualisierter Shop-Katalog (Items, Rezepte, Zauber), Tagesmissionen und Dual-Pet Koop-Balance."
+  }
+}

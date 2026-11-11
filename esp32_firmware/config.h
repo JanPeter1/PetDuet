@@ -32,11 +32,22 @@
 #define SOCKET_PORT   8888
 
 // ----------------------------------------------------------------------------
-// 5. PHP Server URL (Cloud Save, Peer Discovery & Relay Fallback)
+// 5. PHP Server URL (Cloud Save, Peer Discovery, OTA & Shop)
 // Point this to your PHP server deployment or your local IP:
 // e.g., "http://192.168.1.100/cyd-tamagotchi" or "https://yourdomain.com/cyd"
 // ----------------------------------------------------------------------------
 #define PHP_SERVER_BASE_URL "http://192.168.1.100/cyd-tamagotchi"
+
+// Versioning and OTA Updates (A/B Dual Partition Switching)
+#define FIRMWARE_VERSION        "2.1.0"
+#define RULES_VERSION           "1.0.4"
+#define OTA_CHECK_INTERVAL_MS   (15 * 60 * 1000) // Check for updates every 15 minutes
+
+// Endpoint Paths
+#define OTA_CHECK_ENDPOINT      "/ota_check.php"
+#define OTA_DOWNLOAD_ENDPOINT   "/ota_download.php"
+#define SHOP_ENDPOINT           "/shop.php"
+#define CLOUD_SAVE_ENDPOINT     "/cloud_save.php"
 
 // Synchronization intervals (milliseconds)
 #define SERVER_SYNC_INTERVAL_MS 10000 // Heartbeat every 10 seconds
@@ -49,3 +60,4 @@
 #define LANG_DE 1
 
 #endif // CONFIG_H
+
