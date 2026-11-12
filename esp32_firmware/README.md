@@ -23,12 +23,16 @@ The firmware features an industrial-grade update pipeline:
 
 ---
 
-## 🛍️ Daily Missions & Shop Marketplace (Bazar)
+## 🛍️ Daily Missions, Login Streak & Shop Marketplace (Bazar)
 
+- **Daily Login Streak Engine**:
+   - Consecutive daily logins increment the streak count (1 to 7+ days).
+   - Escalating daily bonus rewards: Day 1 (+15🪙, +10XP) up to Day 7+ (+150🪙, +100XP).
+   - Streak claim status is tracked locally and synchronized with the cloud save.
 - **Daily Missions Engine**:
    - Built into `TamagotchiCoreEngine.h`.
    - Tracks daily care tasks: Feeding, Playing minigames, Bathing, and Sending Treats.
-   - Tap the Coins display (`$XX`) in the lower left to claim completed daily missions for bonus coins and XP!
+   - Tap the Coins display (`$XX`) in the lower left or RPG sub-menu to claim completed daily missions for bonus coins and XP!
 - **Shop & Bazar System**:
    - Purchase Items (Star Cookie, Super Potion, Golden Apple), Recipes (Berry Pie, Dragon Stew), and Co-op Spells (Aura Spark, Celestial Blessing).
    - Validates level requirements and coin balance locally and with the PHP server backend.

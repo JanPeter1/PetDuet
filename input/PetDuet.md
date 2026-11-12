@@ -124,13 +124,23 @@ Combining raw materials creates cooked meals with stat gains and temporary buffs
 ### 6. Daily Missions & Login Streak System
 The core engine features an automated daily engagement and reward loop:
 - **Consecutive Login Streaks:** Evaluated daily on midnight boundary (Europe/Berlin time). Daily consecutive logins increment the streak ($1, 2, 3\dots$ days); missing a full calendar day resets streak to 1.
+- **7-Day Escalating Login Streak Rewards:** Players can claim a daily bonus from the RPG sub-menu each calendar day:
+  | Streak Day | Bonus Coins | Bonus XP | Milestone Perk |
+  |---|---|---|---|
+  | Day 1 | 15 🪙 | 10 XP | Kickoff Welcome Gift |
+  | Day 2 | 25 🪙 | 15 XP | Routine Care Encouragement |
+  | Day 3 | 40 🪙 | 25 XP | Dedicated Tamer Tier 1 |
+  | Day 4 | 60 🪙 | 35 XP | Care Mastery Midpoint |
+  | Day 5 | 85 🪙 | 50 XP | High Companion Bond Tier |
+  | Day 6 | 115 🪙 | 65 XP | Elite Pet Guardian Tier |
+  | Day 7+ | 150 🪙 | 100 XP | Master Tamer Weekly Jackpot (Repeats for 7+ days) |
 - **Dynamic Daily Objectives:** A rotating set of daily care tasks granting bonus Coins ($) and XP:
   - **Nourish Pet:** Feed pet 3 times (+40 Coins, +50 XP).
   - **Loyal Companion:** Maintain a 2-day login streak (+60 Coins, +80 XP).
   - **Playtime Fun:** Play 2 outdoor mini-games (+30 Coins, +40 XP).
   - **Bubble Bath:** Clean pet and keep hygiene at 100% (+25 Coins, +35 XP).
   - **Share the Love:** Transmit a snack or magic blessing to partner (+50 Coins, +60 XP).
-- **Claim Mechanism:** Once an objective reaches its target count, the status flips to `Ready to Claim`. Players tap `Claim Reward` to cash in bonuses with victory audio fanfare.
+- **Claim Mechanism:** Both streak bonuses and completed daily missions feature interactive claim buttons with instant audio fanfare, celebratory confetti particles, and persistent state storage in local storage and cloud sync (`lastStreakClaimedDate`).
 
 ### 7. Shop & Marketplace System (Bazar)
 Pets spend their hard-earned Coins ($) accumulated from daily jobs, missions, and co-op adventures at the in-game Shop. The marketplace offers three dedicated aisles:

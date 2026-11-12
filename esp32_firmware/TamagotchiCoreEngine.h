@@ -123,6 +123,8 @@ public:
   EngineDailyMission missions[6];
   uint8_t missionCount = 0;
   uint16_t consecutiveLoginDays = 1;
+  bool streakClaimedToday = false;
+
 
   // Callback types for decoupled hardware event notifications
   typedef void (*EventCallback)(const char* eventName, void* data);
@@ -316,6 +318,55 @@ public:
     }
     return false;
   }
+
+  // --------------------------------------------------------------------------
+  // Daily Login Streak Bonus
+  // --------------------------------------------------------------------------
+  uint16_t getStreakBonusCoins() {
+    uint8_t cycleDay = ((consecutiveLoginDays - 1) % 7) + 1;
+    switch (cycleDay) {
+      case 1: return 15;
+      case 2: return 25;
+      case 3: return 40;
+      case 4: return 60;
+      case 5: return 85;
+      case 6: return 115;
+      default: {
+        uint16_t extra = min((int)100, (int)((consecutiveLoginDays - 1) / 7) * 15);
+        return 150 + extra;
+      }
+    }
+  }
+
+  uint16_t getStreakBonusXP() {
+    uint8_t cycleDay = ((consecutiveLoginDays - 1) % 7) + 1;
+    switch (cycleDay) {
+      case 1: return 10;
+      case 2: return 15;
+      case 3: return 25;
+      case 4: return 35;
+      case 5: return 50;
+      case 6: return 65;
+      default: return 100;
+    }
+  }
+
+  bool canClaimStreakBonus() {
+    return !streakClaimedToday;
+  }
+
+  bool claimDailyLoginStreakBonus() {
+    if (streakClaimedToday) return false;
+    uint16_t cReward = getStreakBonusCoins();
+    uint16_t xReward = getStreakBonusXP();
+    coins += cReward;
+    addXP(xReward);
+    streakClaimedToday = true;
+    recordAction("login_streak", 1);
+    if (onEvent) onEvent("STREAK_BONUS_CLAIMED", (void*)&cReward);
+    return true;
+  }
+
 
   // --------------------------------------------------------------------------
   // Shop & Marketplace

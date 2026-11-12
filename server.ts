@@ -9,7 +9,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = parseInt(process.env.PORT || '3000', 10);
+// AI Studio development server must listen strictly on port 3000
+const PORT = 3000;
+
 
 app.use(express.json({ limit: '2mb' }));
 app.use(express.static(path.resolve(__dirname, 'public')));
