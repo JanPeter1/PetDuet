@@ -13,6 +13,27 @@
  *  - NVS Persistence: Uses ESP32 Preferences to store credentials & RPG save
  *  - Direct TCP Socket (Port 8888) + PHP Server Sync
  * ============================================================================
+ *
+ * CYD DISPLAY HARDWARE CONFIGURATION (TFT_eSPI):
+ * ----------------------------------------------
+ * Driver:        ILI9341_2_DRIVER  (alternative driver for CYD panel orientation)
+ * Rotation:      tft.setRotation(1)  (90° landscape)
+ * Color Fix:     tft.writecommand(0x21)  // Display Inversion ON (fixes white bg/black text)
+ * Touch:         touch.setRotation(1)  (matches display)
+ *
+ * PINS (from CYD_Pins.h / platformio.ini):
+ *   TFT:   MOSI=13, MISO=12, SCLK=14, CS=15, DC=2, BL=21, RST=-1
+ *   Touch: MOSI=32, MISO=39, CLK=25, CS=33, IRQ=36
+ *   LED:   R=4, G=16, B=17 (Active LOW)
+ *   Buzzer: GPIO 26
+ *   Boot Button: GPIO 0
+ *
+ * PLATFORMIO.INI BUILD FLAGS:
+ *   -D ILI9341_2_DRIVER=1
+ *   -D TFT_WIDTH=320 -D TFT_HEIGHT=240
+ *   -D TFT_MISO=12 -D TFT_MOSI=13 -D TFT_SCLK=14 -D TFT_CS=15 -D TFT_DC=2 -D TFT_RST=-1 -D TFT_BL=21
+ *   -D SPI_FREQUENCY=40000000
+ * ============================================================================
  */
 
 #include <Arduino.h>
@@ -181,9 +202,11 @@ struct FriendPet {
 unsigned long lastTickTime = 0;
 unsigned long lastServerSyncTime = 0;
 unsigned long lastOtaCheckTime = 0;
+unsigned long lastRenderTime = 0;
 bool screenNeedsRefresh = true;
 char activeBannerMessage[32] = "";
 unsigned long bannerTimeout = 0;
+bool inServerErrorState = false;
 
 
 // ----------------------------------------------------------------------------
@@ -272,6 +295,8 @@ void loadSettingsFromNVS();
 void saveSettingsToNVS();
 void startAPConfigPortal();
 void renderAPPortalScreen();
+bool testPHPServerConnection();
+void showServerErrorScreen();
 
 // ============================================================================
 // NVS SETTINGS LOAD / SAVE (ESP32 Preferences)
@@ -487,6 +512,65 @@ void renderAPPortalScreen() {
 }
 
 // ============================================================================
+// PHP SERVER CONNECTIVITY TEST
+// ============================================================================
+bool testPHPServerConnection() {
+  HTTPClient http;
+  String testUrl = cfg_server_url + "/register.php";
+  http.begin(testUrl);
+  http.addHeader("Content-Type", "application/json");
+  http.setTimeout(5000);
+
+  StaticJsonDocument<256> doc;
+  doc["deviceId"] = cfg_device_id;
+  doc["deviceName"] = "test";
+  String body;
+  serializeJson(doc, body);
+
+  int httpCode = http.POST(body);
+  http.end();
+
+  if (httpCode == 200) {
+    Serial.println("[Server] PHP Server reachable!");
+    return true;
+  }
+  Serial.printf("[Server] PHP Server unreachable! HTTP Code: %d\n", httpCode);
+  return false;
+}
+
+void showServerErrorScreen() {
+  setRGB(true, false, true); // Magenta = WiFi OK but Server unreachable
+
+  tft.fillScreen(TFT_BLACK);
+  tft.fillRoundRect(8, 8, 304, 224, 8, COLOR_UI_PANEL);
+  tft.drawRoundRect(8, 8, 304, 224, 8, TFT_RED);
+
+  tft.setTextColor(TFT_RED, COLOR_UI_PANEL);
+  tft.setTextDatum(MC_DATUM);
+  tft.drawString("⚠ SERVER UNREACHABLE ⚠", 160, 30, 3);
+
+  tft.setTextColor(TFT_WHITE, COLOR_UI_PANEL);
+  tft.setTextDatum(MC_DATUM);
+  tft.drawString("WiFi Connected Successfully!", 160, 65, 2);
+
+  tft.setTextColor(TFT_YELLOW, COLOR_UI_PANEL);
+  tft.drawString("IP: " + WiFi.localIP().toString(), 160, 95, 2);
+
+  tft.setTextColor(TFT_CYAN, COLOR_UI_PANEL);
+  tft.drawString("Server URL:", 160, 130, 1);
+  tft.setTextColor(TFT_WHITE, COLOR_UI_PANEL);
+  tft.drawString(cfg_server_url, 160, 150, 1);
+
+  tft.setTextColor(TFT_ORANGE, COLOR_UI_PANEL);
+  tft.drawString("Fix server URL in Config Portal:", 160, 180, 1);
+
+  tft.setTextColor(TFT_GREEN, COLOR_UI_PANEL);
+  tft.drawString("1. Tap screen to open AP Portal", 160, 205, 1);
+  tft.drawString("2. Connect to: CYD-Tamagotchi-AP", 160, 220, 1);
+  tft.drawString("3. Browse to: http://192.168.4.1", 160, 232, 1);
+}
+
+// ============================================================================
 // Arduino SETUP
 // ============================================================================
 void setup() {
@@ -504,12 +588,25 @@ void setup() {
   ledcAttachPin(CYD_SPEAKER_PIN, BUZZER_LEDC_CH);
   playTone(880, 60);
 
-  // 2. Initialize TFT Display (ILI9341)
+  // 2. Initialize TFT Display (ILI9341) via TFT_eSPI
   pinMode(CYD_TFT_BL, OUTPUT);
-  digitalWrite(CYD_TFT_BL, HIGH); // Backlight ON
+  digitalWrite(CYD_TFT_BL, LOW); // Backlight OFF during init
+
+  // Initialize TFT_eSPI (handles SPI, ILI9341 init, rotation automatically)
+  // Use alternative ILI9341_2_DRIVER for CYD panel orientation
   tft.init();
-  tft.setRotation(1); // 320x240 Landscape
+
+  // Fix inverted colors: enable display inversion
+  tft.writecommand(0x21); // Display Inversion ON
+
+  // Use TFT_eSPI's built-in rotation (0=0°, 1=90°, 2=180°, 3=270°)
+  // Rotation 1 works with ILI9341_2_DRIVER
+  tft.setRotation(1);
+
   tft.fillScreen(TFT_BLACK);
+
+  // Turn on backlight
+  digitalWrite(CYD_TFT_BL, HIGH);
 
   // 2b. Initialize SPIFFS and Load Game Rules
   if (!SPIFFS.begin(true)) {
@@ -522,10 +619,15 @@ void setup() {
   // 3. Initialize Touch (XPT2046)
   touchSPI.begin(XPT2046_CLK, XPT2046_MISO, XPT2046_MOSI, XPT2046_CS);
   touch.begin(touchSPI);
-  touch.setRotation(1);
+  touch.setRotation(1);  // Match display rotation 1
 
   // 4. Load persistent settings from NVS
   loadSettingsFromNVS();
+
+  // Apply trainer name to local pet (was defaulting to "Leafkin")
+  if (cfg_trainer_name.length() > 0) {
+    strncpy(myPet.name, cfg_trainer_name.c_str(), sizeof(myPet.name) - 1);
+  }
 
   // Check if BOOT button (GPIO 0) is held down during power-on
   pinMode(0, INPUT_PULLUP);
@@ -557,17 +659,24 @@ void setup() {
     setRGB(false, true, false); // Green = Online & Ready
     showBanner("WiFi Connected! Socket Ready");
     soundLevelUp();
+
+    // 6. Test PHP Server connectivity
+    if (!testPHPServerConnection()) {
+      inServerErrorState = true;
+      showServerErrorScreen();
+      return; // Stay in error state, user can tap to enter AP config
+    }
+
+    // 7. Register with PHP Server, check OTA, & draw initial LCD screen
+    syncWithPHPServer();
+    checkForOTAUpdate();
+    renderCYDScreen();
   } else {
     // If WiFi credentials are unconfigured or fail to connect, launch AP Portal automatically!
     Serial.println("\nWiFi connection failed! Starting AP Portal for easy setup...");
     startAPConfigPortal();
     return;
   }
-
-  // 6. Register with PHP Server, check OTA, & draw initial LCD screen
-  syncWithPHPServer();
-  checkForOTAUpdate();
-  renderCYDScreen();
 }
 
 // ============================================================================
@@ -587,6 +696,17 @@ void loop() {
       setRGB(true, false, false); // Red = Offline
       showBanner("Offline Mode");
       renderCYDScreen();
+      delay(300);
+    }
+    delay(10);
+    return;
+  }
+
+  // If in server error state - allow tap to enter AP config
+  if (inServerErrorState) {
+    if (touch.touched()) {
+      inServerErrorState = false;
+      startAPConfigPortal();
       delay(300);
     }
     delay(10);
@@ -645,10 +765,11 @@ void loop() {
     screenNeedsRefresh = true;
   }
 
-  // 6. Refresh Display if dirty
-  if (screenNeedsRefresh) {
+  // 6. Refresh Display if dirty (throttle to max 10 FPS to prevent flicker)
+  if (screenNeedsRefresh && (now - lastRenderTime > 100)) {
     renderCYDScreen();
     screenNeedsRefresh = false;
+    lastRenderTime = now;
   }
 
   delay(15);
@@ -677,11 +798,11 @@ void renderCYDScreen() {
   tft.fillRect(0, 0, 38, 240, COLOR_UI_PANEL);
   tft.drawFastVLine(37, 0, 240, COLOR_UI_BORDER);
 
-  drawTouchButton(tft, 2, 2,   34, 44, TXT_FEED,  0x1404, TFT_WHITE);
-  drawTouchButton(tft, 2, 50,  34, 44, TXT_PLAY,  0x02F5, TFT_WHITE);
-  drawTouchButton(tft, 2, 98,  34, 44, TXT_BATH,  0x047A, TFT_WHITE);
-  drawTouchButton(tft, 2, 146, 34, 44, TXT_MAGIC, 0x78D8, TFT_WHITE);
-  drawTouchButton(tft, 2, 194, 34, 44, TXT_SAVE,  0x9300, TFT_WHITE);
+  drawTouchButton(tft, 2, 2,   34, 44, TXT_FEED,  0x1404, TFT_WHITE, 1);
+  drawTouchButton(tft, 2, 50,  34, 44, TXT_PLAY,  0x02F5, TFT_WHITE, 2);
+  drawTouchButton(tft, 2, 98,  34, 44, TXT_BATH,  0x047A, TFT_WHITE, 3);
+  drawTouchButton(tft, 2, 146, 34, 44, TXT_MAGIC, 0x78D8, TFT_WHITE, 4);
+  drawTouchButton(tft, 2, 194, 34, 44, TXT_SAVE,  0x9300, TFT_WHITE, 5);
 
   // =========================================================================
   // LEFT VIEWPORT: YOUR PET HUD & SPRITE (X: 38 to 160)
@@ -767,11 +888,11 @@ void renderCYDScreen() {
   tft.fillRect(282, 0, 38, 240, COLOR_UI_PANEL);
   tft.drawFastVLine(282, 0, 240, COLOR_UI_BORDER);
 
-  drawTouchButton(tft, 284, 2,   34, 44, TXT_TREAT,      0xD9E0, TFT_WHITE);
-  drawTouchButton(tft, 284, 50,  34, 44, TXT_CHAT,       0x03FF, TFT_BLACK);
-  drawTouchButton(tft, 284, 98,  34, 44, TXT_MAGIC_PLUS, 0x78D8, TFT_WHITE);
-  drawTouchButton(tft, 284, 146, 34, 44, TXT_QUEST,      0x1404, TFT_WHITE);
-  drawTouchButton(tft, 284, 194, 34, 44, TXT_TRADE,      COLOR_GOLD, TFT_BLACK);
+  drawTouchButton(tft, 284, 2,   34, 44, TXT_TREAT,      0xD9E0, TFT_WHITE, 6);
+  drawTouchButton(tft, 284, 50,  34, 44, TXT_CHAT,       0x03FF, TFT_BLACK, 7);
+  drawTouchButton(tft, 284, 98,  34, 44, TXT_MAGIC_PLUS, 0x78D8, TFT_WHITE, 8);
+  drawTouchButton(tft, 284, 146, 34, 44, TXT_QUEST,      0x1404, TFT_WHITE, 9);
+  drawTouchButton(tft, 284, 194, 34, 44, TXT_TRADE,      COLOR_GOLD, TFT_BLACK, 10);
 
   // Top Notification Toast
   if (strlen(activeBannerMessage) > 0) {

@@ -28,9 +28,14 @@
 
 #define COLOR_UI_PANEL    0x10A2 // Sleek Dark Slate
 #define COLOR_UI_BORDER   0x4A69 // Slate Border
-#define COLOR_GOLD        0xFDE0 // Level / Coins
+#define COLOR_GOLD        0xFEA0 // Level / Coins
 #define COLOR_HEART_RED   0xF986 // Health / Treats
 #define COLOR_MANA_PURPLE 0x99FD // Mana / Magic
+
+// Additional colors for icons
+#define TFT_SILVER        0xC618
+#define TFT_PINK          0xF81F
+#define TFT_DARKGREY      0x7BEF
 
 struct BiomeTheme {
   const char* name;
@@ -146,22 +151,106 @@ inline void drawPixelPet(TFT_eSPI& tft, int cx, int cy, const char* biome, const
 
   // Elder Sage Aura
   if (isElder) {
-    tft.drawCircle(cx, cy, radius + 4, TFT_GOLD);
+    tft.drawCircle(cx, cy, radius + 4, COLOR_GOLD);
     tft.drawLine(cx - 5, cy + 7, cx - 12, cy + 11, TFT_WHITE); // Whiskers
     tft.drawLine(cx + 5, cy + 7, cx + 12, cy + 11, TFT_WHITE);
   }
 }
 
 /**
- * Draws a standardized touch button with borders and label
+ * Draws a standardized touch button with borders and large icon (no text)
  */
-inline void drawTouchButton(TFT_eSPI& tft, int x, int y, int w, int h, const char* label, uint16_t fillCol, uint16_t textCol) {
+inline void drawTouchButton(TFT_eSPI& tft, int x, int y, int w, int h, const char* label, uint16_t fillCol, uint16_t textCol, uint8_t iconType = 0) {
   tft.fillRoundRect(x, y, w, h, 4, fillCol);
   tft.drawRoundRect(x, y, w, h, 4, TFT_WHITE);
-  tft.setTextColor(textCol, fillCol);
-  tft.setTextSize(1);
-  tft.setTextDatum(MC_DATUM); // Middle Center
-  tft.drawString(label, x + (w / 2), y + (h / 2));
+
+  // Draw large centered icon (no text)
+  int iconX = x + (w / 2);
+  int iconY = y + (h / 2);
+
+  if (iconType > 0) {
+    switch (iconType) {
+      case 1: { // Feed - large food bowl
+        tft.fillRect(iconX - 8, iconY + 2, 16, 6, TFT_ORANGE);
+        tft.fillRect(iconX - 6, iconY - 4, 12, 6, TFT_WHITE);
+        tft.drawRect(iconX - 6, iconY - 4, 12, 6, TFT_BLACK);
+        break;
+      }
+      case 2: { // Play - large game controller
+        tft.fillCircle(iconX - 6, iconY - 4, 5, TFT_BLUE);
+        tft.fillCircle(iconX + 6, iconY - 4, 5, TFT_BLUE);
+        tft.fillCircle(iconX, iconY + 4, 5, TFT_BLUE);
+        tft.fillCircle(iconX, iconY - 6, 5, TFT_BLUE);
+        tft.fillCircle(iconX - 4, iconY - 2, 2, TFT_WHITE);
+        tft.fillCircle(iconX + 4, iconY - 2, 2, TFT_WHITE);
+        tft.fillCircle(iconX, iconY + 2, 2, TFT_WHITE);
+        tft.fillCircle(iconX, iconY - 4, 2, TFT_WHITE);
+        break;
+      }
+      case 3: { // Bath - large water drops
+        tft.fillTriangle(iconX, iconY - 6, iconX - 4, iconY, iconX + 4, iconY, TFT_CYAN);
+        tft.fillTriangle(iconX - 6, iconY + 2, iconX - 10, iconY + 8, iconX - 2, iconY + 8, TFT_CYAN);
+        tft.fillTriangle(iconX + 6, iconY + 2, iconX + 2, iconY + 8, iconX + 10, iconY + 8, TFT_CYAN);
+        break;
+      }
+      case 4: { // Magic - large sparkle
+        tft.drawLine(iconX, iconY - 8, iconX, iconY + 8, TFT_YELLOW);
+        tft.drawLine(iconX - 8, iconY, iconX + 8, iconY, TFT_YELLOW);
+        tft.drawLine(iconX - 6, iconY - 6, iconX + 6, iconY + 6, TFT_YELLOW);
+        tft.drawLine(iconX - 6, iconY + 6, iconX + 6, iconY - 6, TFT_YELLOW);
+        tft.drawPixel(iconX - 3, iconY - 3, TFT_WHITE);
+        tft.drawPixel(iconX + 3, iconY + 3, TFT_WHITE);
+        tft.drawPixel(iconX - 3, iconY + 3, TFT_WHITE);
+        tft.drawPixel(iconX + 3, iconY - 3, TFT_WHITE);
+        break;
+      }
+      case 5: { // Save - large floppy/disk
+        tft.fillRect(iconX - 8, iconY - 6, 16, 12, TFT_DARKGREY);
+        tft.drawRect(iconX - 8, iconY - 6, 16, 12, TFT_BLACK);
+        tft.fillRect(iconX - 4, iconY - 6, 8, 4, TFT_WHITE);
+        tft.fillRect(iconX - 2, iconY - 4, 4, 2, TFT_SILVER);
+        break;
+      }
+      case 6: { // Treat - large donut
+        tft.drawCircle(iconX, iconY, 8, TFT_ORANGE);
+        tft.drawCircle(iconX, iconY, 3, TFT_ORANGE);
+        tft.fillCircle(iconX, iconY, 2, TFT_ORANGE);
+        break;
+      }
+      case 7: { // Chat - large speech bubble
+        tft.fillTriangle(iconX - 6, iconY + 4, iconX - 2, iconY + 4, iconX - 2, iconY + 8, TFT_BLUE);
+        tft.fillRoundRect(iconX - 10, iconY - 8, 18, 12, 4, TFT_BLUE);
+        tft.drawRoundRect(iconX - 10, iconY - 8, 18, 12, 4, TFT_WHITE);
+        tft.fillRect(iconX - 6, iconY - 4, 4, 4, TFT_WHITE);
+        tft.fillRect(iconX + 2, iconY - 4, 4, 4, TFT_WHITE);
+        tft.fillRect(iconX - 6, iconY + 2, 12, 2, TFT_WHITE);
+        break;
+      }
+      case 8: { // Magic Plus - large dual sparkles
+        tft.drawLine(iconX - 8, iconY - 6, iconX - 8, iconY + 6, TFT_PINK);
+        tft.drawLine(iconX - 11, iconY, iconX - 5, iconY, TFT_PINK);
+        tft.drawLine(iconX - 7, iconY - 5, iconX - 9, iconY - 3, TFT_PINK);
+        tft.drawLine(iconX - 7, iconY + 5, iconX - 9, iconY + 3, TFT_PINK);
+        tft.drawLine(iconX + 4, iconY - 6, iconX + 4, iconY + 6, TFT_PINK);
+        tft.drawLine(iconX + 1, iconY, iconX + 7, iconY, TFT_PINK);
+        tft.drawLine(iconX + 3, iconY - 5, iconX + 5, iconY - 3, TFT_PINK);
+        tft.drawLine(iconX + 3, iconY + 5, iconX + 5, iconY + 3, TFT_PINK);
+        break;
+      }
+      case 9: { // Quest - large sword
+        tft.drawLine(iconX, iconY - 10, iconX, iconY + 6, TFT_SILVER);
+        tft.drawLine(iconX - 5, iconY + 4, iconX + 5, iconY + 4, TFT_SILVER);
+        tft.fillTriangle(iconX, iconY - 12, iconX - 3, iconY - 10, iconX + 3, iconY - 10, TFT_SILVER);
+        break;
+      }
+      case 10: { // Trade - large arrows
+        tft.fillTriangle(iconX - 10, iconY - 4, iconX - 2, iconY, iconX - 10, iconY + 4, TFT_GOLD);
+        tft.fillTriangle(iconX + 10, iconY - 4, iconX + 2, iconY, iconX + 10, iconY + 4, TFT_GOLD);
+        tft.drawLine(iconX - 10, iconY, iconX + 10, iconY, TFT_GOLD);
+        break;
+      }
+    }
+  }
 }
 
 /**
