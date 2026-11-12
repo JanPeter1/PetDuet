@@ -1,14 +1,14 @@
 {
   "firmware": {
-    "latest_version": "2.1.0",
+    "latest_version": "2.1.1",
     "min_supported_version": "1.0.0",
     "download_url": "ota_download.php?type=firmware",
     "binary_filename": "cyd_tamagotchi.bin",
-    "file_size": 1428528,
-    "sha256": "8f4e2c91b5a76e330d4198bfac851493e82012ef902b78129487c0e0b3d64112",
-    "release_date": "2026-11-10",
-    "release_notes_en": "Added Over-The-Air (OTA) A/B partition switching, SPIFFS dynamic rules hot-reloading, Daily Missions engine, and Shop catalog integration.",
-    "release_notes_de": "A/B-Partition Over-The-Air (OTA) Update, dynamisches Regeln-Hot-Reloading ueber SPIFFS, Daily Missions System und Shop-Integration."
+    "file_size": 1054624,
+    "sha256": "aeae91ffb94c477d15955a8b788ddfb3f2266273fdb220d0a2739a430b20569d",
+    "release_date": "2026-11-12",
+    "release_notes_en": "Fixed display orientation/colors (ILI9341_2_DRIVER), trainer name from NVS, large button icons, partial rendering (no flicker), server error screen with IP, startup version display.",
+    "release_notes_de": "Display-Orientierung/Farben korrigiert (ILI9341_2_DRIVER), Trainername aus NVS, große Button-Icons, partielles Rendering (kein Flackern), Server-Fehlerbildschirm mit IP, Versionsanzeige beim Start."
   },
   "rules": {
     "latest_version": "1.0.4",
