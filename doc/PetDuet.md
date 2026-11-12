@@ -124,13 +124,23 @@ Combining raw materials creates cooked meals with stat gains and temporary buffs
 ### 6. Daily Missions & Login Streak System
 The core engine features an automated daily engagement and reward loop:
 - **Consecutive Login Streaks:** Evaluated daily on midnight boundary (Europe/Berlin time). Daily consecutive logins increment the streak ($1, 2, 3\dots$ days); missing a full calendar day resets streak to 1.
+- **7-Day Escalating Login Streak Rewards:** Players can claim a daily bonus from the RPG sub-menu each calendar day:
+  | Streak Day | Bonus Coins | Bonus XP | Milestone Perk |
+  |---|---|---|---|
+  | Day 1 | 15 🪙 | 10 XP | Kickoff Welcome Gift |
+  | Day 2 | 25 🪙 | 15 XP | Routine Care Encouragement |
+  | Day 3 | 40 🪙 | 25 XP | Dedicated Tamer Tier 1 |
+  | Day 4 | 60 🪙 | 35 XP | Care Mastery Midpoint |
+  | Day 5 | 85 🪙 | 50 XP | High Companion Bond Tier |
+  | Day 6 | 115 🪙 | 65 XP | Elite Pet Guardian Tier |
+  | Day 7+ | 150 🪙 | 100 XP | Master Tamer Weekly Jackpot (Repeats for 7+ days) |
 - **Dynamic Daily Objectives:** A rotating set of daily care tasks granting bonus Coins ($) and XP:
   - **Nourish Pet:** Feed pet 3 times (+40 Coins, +50 XP).
   - **Loyal Companion:** Maintain a 2-day login streak (+60 Coins, +80 XP).
   - **Playtime Fun:** Play 2 outdoor mini-games (+30 Coins, +40 XP).
   - **Bubble Bath:** Clean pet and keep hygiene at 100% (+25 Coins, +35 XP).
   - **Share the Love:** Transmit a snack or magic blessing to partner (+50 Coins, +60 XP).
-- **Claim Mechanism:** Once an objective reaches its target count, the status flips to `Ready to Claim`. Players tap `Claim Reward` to cash in bonuses with victory audio fanfare.
+- **Claim Mechanism:** Both streak bonuses and completed daily missions feature interactive claim buttons with instant audio fanfare, celebratory confetti particles, and persistent state storage in local storage and cloud sync (`lastStreakClaimedDate`).
 
 ### 7. Shop & Marketplace System (Bazar)
 Pets spend their hard-earned Coins ($) accumulated from daily jobs, missions, and co-op adventures at the in-game Shop. The marketplace offers three dedicated aisles:
@@ -384,20 +394,22 @@ ESP32 CYD 1 (Device A) <────[WebSocket]────> PHP Server Relay <�
 - **Production Server Host:** `https://familie-riegel.de/petduet/` (SFTP: `ftp.familie-riegel.de:2222`)
 
 ### Core API Endpoints
-| Endpoint | Method | Purpose |
+| Endpoint (REST / Direct PHP) | Method | Purpose |
 |---|---|---|
-| `/api/register-device` | POST | Register device ID, MAC address, token, trainer name, biome |
+| `/api/register-device` (`register.php`) | POST | Register device ID, MAC address, token, trainer name, biome |
 | `/api/login` | POST | Authenticate client and return session token |
 | `/api/pet/get-pet` | GET | Retrieve complete pet state, inventory, and stats from SQLite |
 | `/api/pet/update` | POST | Sync pet state changes (stats, XP, level, evolution) |
-| `/api/sync` | POST | Trigger full 2-way state sync and process pending trade escrow |
-| `/api/rules` | GET | Download latest `rules.json` to ESP32 SPIFFS |
-| `/api/leaderboard` | GET | Fetch global leaderboards (Level, XP, Friends Treated) |
-| `/api/ota/check` | GET | Query server for available firmware binary or rule file updates |
-| `/api/ota/firmware/:file` | GET | Stream compiled ESP32 firmware binary for A/B OTA slot flashing |
+| `/api/sync` (`sync.php`) | POST | Trigger full 2-way state sync and process pending trade escrow |
+| `/api/rules` (`rules.json`) | GET | Download latest `rules.json` to ESP32 SPIFFS |
+| `/api/shop` (`shop.php`) | GET/POST | Query shop catalog & validate purchases of items, recipes, spells |
+| `/api/leaderboard` (`leaderboard.php`) | GET | Fetch global leaderboards (Level, XP, Friends Treated) |
+| `/api/ota/check` (`ota_check.php`) | GET | Query server for available firmware binary or rule file updates |
+| `/api/ota/firmware/:file` (`ota_download.php`) | GET | Stream compiled ESP32 firmware binary or rules for A/B OTA slot flashing |
 | `/api/ota/report` | POST | Client reports upgrade success or automatic rollback event |
 
 ---
+
 
 ## ESP32 Firmware Specifications
 

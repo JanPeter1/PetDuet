@@ -78,6 +78,26 @@ bool inAPConfigMode = false;
   #define TXT_ONLINE     "ONLINE"
   #define TXT_ASLEEP     "SCHLAFT"
   #define TXT_TAP_EGG    "TIPPEN!"
+
+  #define TXT_BANNER_FED             "Gefuettert! +25 Hunger"
+  #define TXT_BANNER_PLAY            "Gespielt! +20 Freude"
+  #define TXT_BANNER_BATH            "Sauber gebadet! 🫧"
+  #define TXT_BANNER_AURA            "Heilaura gewirkt! ✨"
+  #define TXT_BANNER_NO_MANA20       "Braucht 20 Mana! ⚡"
+  #define TXT_BANNER_NO_MANA30       "Braucht 30 Mana! ⚡"
+  #define TXT_BANNER_SAVED           "Cloud gespeichert & OTA! 💾"
+  #define TXT_BANNER_TREAT_SENT      "Snack gesendet! 🍩"
+  #define TXT_BANNER_CHAT_SENT       "Chat gesendet! 💬"
+  #define TXT_BANNER_BLESSING        "Segen gesendet! 🌟"
+  #define TXT_BANNER_QUEST           "Koop-Quest fertig! +$35 ⚔️"
+  #define TXT_BANNER_TRADE           "Tausch gesendet! 🎁"
+  #define TXT_BANNER_OTA_CHECK       "Pruefe auf OTA-Update... ⚡"
+  #define TXT_BANNER_STREAK_CLAIMED  "Streak-Bonus Tag "
+  #define TXT_BANNER_MISSION_CLAIMED "Mission eingeloest! +Coins & XP 🎁"
+  #define TXT_BANNER_SHOP_COOKIE     "Sternenkeks gekauft! 🍪"
+  #define TXT_BANNER_EGG_HATCHED     "EI GESCHLUEPFT! Baby da! 🐣"
+  #define TXT_BANNER_EGG_WARMED      "Ei gewaermt! Weiter tippen 🥚"
+  #define TXT_BANNER_CUDDLED         "Haustier gestreichelt! ❤️"
 #else
   #define TXT_FEED       "FEED"
   #define TXT_PLAY       "PLAY"
@@ -92,6 +112,26 @@ bool inAPConfigMode = false;
   #define TXT_ONLINE     "ONLINE"
   #define TXT_ASLEEP     "ASLEEP"
   #define TXT_TAP_EGG    "TAP EGG!"
+
+  #define TXT_BANNER_FED             "Fed Meal! +25 Hunger"
+  #define TXT_BANNER_PLAY            "Played Minigame! +20 Happy"
+  #define TXT_BANNER_BATH            "Clean Bubble Bath! 🫧"
+  #define TXT_BANNER_AURA            "Vitality Aura Cast! ✨"
+  #define TXT_BANNER_NO_MANA20       "Need 20 Mana! ⚡"
+  #define TXT_BANNER_NO_MANA30       "Need 30 Mana! ⚡"
+  #define TXT_BANNER_SAVED           "Cloud Saved & OTA Checked! 💾"
+  #define TXT_BANNER_TREAT_SENT      "Treat Sent to Friend! 🍩"
+  #define TXT_BANNER_CHAT_SENT       "Chat Beamed over Socket! 💬"
+  #define TXT_BANNER_BLESSING        "Blessing Beamed to Friend! 🌟"
+  #define TXT_BANNER_QUEST           "Co-op Quest Complete! +$35 ⚔️"
+  #define TXT_BANNER_TRADE           "Trade Proposal Sent! 🎁"
+  #define TXT_BANNER_OTA_CHECK       "Checking Server for OTA... ⚡"
+  #define TXT_BANNER_STREAK_CLAIMED  "Streak Bonus Day "
+  #define TXT_BANNER_MISSION_CLAIMED "Mission Claimed! +Coins & XP 🎁"
+  #define TXT_BANNER_SHOP_COOKIE     "Shop: Star Cookie Bought! 🍪"
+  #define TXT_BANNER_EGG_HATCHED     "EGG HATCHED! Baby Born! 🐣"
+  #define TXT_BANNER_EGG_WARMED      "Egg Warmed! Keep Tapping 🥚"
+  #define TXT_BANNER_CUDDLED         "Pet Cuddled! ❤️"
 #endif
 
 // ----------------------------------------------------------------------------
@@ -213,6 +253,10 @@ void showBanner(const char* msg, uint16_t durationMs = 2500) {
   strncpy(activeBannerMessage, msg, sizeof(activeBannerMessage) - 1);
   bannerTimeout = millis() + durationMs;
   screenNeedsRefresh = true;
+}
+
+void showBanner(const String& msg, uint16_t durationMs = 2500) {
+  showBanner(msg.c_str(), durationMs);
 }
 
 // ----------------------------------------------------------------------------
@@ -676,12 +720,14 @@ void renderCYDScreen() {
     drawPixelPet(tft, 95, 126, myPet.biome, myPet.phase, false);
   }
 
-  // Footer: Coins & Energy
+  // Footer: Coins, Streak & Energy
   tft.setTextDatum(TL_DATUM);
   tft.setTextColor(COLOR_GOLD, myBiome.bgColor);
   tft.drawString(String("$") + myPet.coins, 42, 218, 1);
+  tft.setTextColor(engine.canClaimStreakBonus() ? TFT_YELLOW : TFT_ORANGE, myBiome.bgColor);
+  tft.drawString(String("S:") + engine.consecutiveLoginDays + (engine.canClaimStreakBonus() ? "!" : ""), 70, 218, 1);
   tft.setTextColor(TFT_CYAN, myBiome.bgColor);
-  tft.drawString(String("EN:") + myPet.energy, 92, 218, 1);
+  tft.drawString(String("EN:") + myPet.energy, 98, 218, 1);
 
   // =========================================================================
   // RIGHT VIEWPORT: FRIEND'S PET (X: 160 to 282)
@@ -750,18 +796,18 @@ void handleTouchPress(uint16_t x, uint16_t y) {
       myPet.hunger = min(100, myPet.hunger + 25);
       myPet.xp += 15;
       engine.recordAction("feed", 1);
-      showBanner("Fed Meal! +25 FD");
+      showBanner(TXT_BANNER_FED);
     } else if (y < 96) {
       myPet.happiness = min(100, myPet.happiness + 20);
       myPet.energy = max(0, myPet.energy - 10);
       myPet.xp += 20;
       engine.recordAction("play", 1);
-      showBanner("Played Minigame! +20 Happy");
+      showBanner(TXT_BANNER_PLAY);
     } else if (y < 144) {
       myPet.hygiene = 100;
       myPet.happiness = min(100, myPet.happiness + 10);
       engine.recordAction("bath", 1);
-      showBanner("Clean Bubble Bath! 🫧");
+      showBanner(TXT_BANNER_BATH);
     } else if (y < 192) {
       if (myPet.mana >= 20) {
         myPet.mana -= 20;
@@ -770,15 +816,15 @@ void handleTouchPress(uint16_t x, uint16_t y) {
         myPet.spellsCast++;
         engine.recordAction("magic", 1);
         soundTreatSent();
-        showBanner("Vitality Aura Cast! ✨");
+        showBanner(TXT_BANNER_AURA);
       } else {
-        showBanner("Need 20 Mana! ⚡");
+        showBanner(TXT_BANNER_NO_MANA20);
       }
     } else {
       // Long press SAVE or tap: Save to Cloud & trigger OTA check
       syncWithPHPServer();
       checkForOTAUpdate();
-      showBanner("Cloud Saved & OTA Checked! 💾");
+      showBanner(TXT_BANNER_SAVED);
     }
     checkLevelUp();
     screenNeedsRefresh = true;
@@ -793,10 +839,10 @@ void handleTouchPress(uint16_t x, uint16_t y) {
       myPet.treatsSent++;
       myPet.xp += 25;
       engine.recordAction("send_treat", 1);
-      showBanner("Treat Sent to Friend! 🍩");
+      showBanner(TXT_BANNER_TREAT_SENT);
     } else if (y < 96) {
       sendDirectSocketPacket("CHAT", "Hi Friend! ^_^");
-      showBanner("Chat Beamed over Socket! 💬");
+      showBanner(TXT_BANNER_CHAT_SENT);
     } else if (y < 144) {
       if (myPet.mana >= 30) {
         myPet.mana -= 30;
@@ -805,19 +851,19 @@ void handleTouchPress(uint16_t x, uint16_t y) {
         myPet.xp += 40;
         engine.recordAction("magic", 1);
         soundTreatSent();
-        showBanner("Blessing Beamed to Friend! 🌟");
+        showBanner(TXT_BANNER_BLESSING);
       } else {
-        showBanner("Need 30 Mana! ⚡");
+        showBanner(TXT_BANNER_NO_MANA30);
       }
     } else if (y < 192) {
       sendDirectSocketPacket("QUEST", "Co-op Scout");
       myPet.coins += 35;
       myPet.jobsCompleted++;
       myPet.xp += 45;
-      showBanner("Co-op Quest Complete! +$35 ⚔️");
+      showBanner(TXT_BANNER_QUEST);
     } else {
       sendDirectSocketPacket("TRADE", "Top Hat");
-      showBanner("Trade Proposal Sent! 🎁");
+      showBanner(TXT_BANNER_TRADE);
     }
     checkLevelUp();
     screenNeedsRefresh = true;
@@ -826,14 +872,29 @@ void handleTouchPress(uint16_t x, uint16_t y) {
 
   // 3. CENTRAL BRIDGE STATUS DOT (X: 150 to 170, Y: 105 to 135): Trigger OTA Check
   if (x >= 150 && x <= 170 && y >= 105 && y <= 135) {
-    showBanner("Checking Server for OTA... ⚡");
+    showBanner(TXT_BANNER_OTA_CHECK);
     checkForOTAUpdate();
     screenNeedsRefresh = true;
     return;
   }
 
-  // 4. FOOTER COINS / SHOP & MISSIONS TOUCH (X: 40 to 105, Y: 205 to 240)
+  // 4. FOOTER COINS / STREAK / MISSIONS / SHOP (X: 40 to 105, Y: 205 to 240)
   if (x >= 40 && x <= 105 && y >= 205 && y <= 240) {
+    // 4.1 Claim Daily Login Streak Bonus first if available
+    if (engine.canClaimStreakBonus()) {
+      uint16_t cReward = engine.getStreakBonusCoins();
+      uint16_t xReward = engine.getStreakBonusXP();
+      engine.claimDailyLoginStreakBonus();
+      myPet.coins += cReward;
+      myPet.xp += xReward;
+      soundLevelUp();
+      showBanner(String(TXT_BANNER_STREAK_CLAIMED) + engine.consecutiveLoginDays + "! +" + cReward + "$ +" + xReward + "XP", 3500);
+      checkLevelUp();
+      screenNeedsRefresh = true;
+      return;
+    }
+
+    // 4.2 Claim Completed Daily Missions
     bool missionClaimed = false;
     for (uint8_t m = 0; m < engine.missionCount; m++) {
       if (engine.missions[m].completed && !engine.missions[m].claimed) {
@@ -842,19 +903,20 @@ void handleTouchPress(uint16_t x, uint16_t y) {
         myPet.xp += engine.missions[m].xpReward;
         missionClaimed = true;
         soundLevelUp();
-        showBanner("Mission Claimed! +Coins & XP 🎁", 3000);
+        showBanner(TXT_BANNER_MISSION_CLAIMED, 3000);
         break;
       }
     }
+
+    // 4.3 Fallback: Quick Shop Purchase (Star Cookie) or balance show
     if (!missionClaimed) {
-      // Quick Shop Purchase: Star Cookie (15 coins)
       if (myPet.coins >= 15) {
         myPet.coins -= 15;
         myPet.hunger = min(100, myPet.hunger + 30);
         myPet.happiness = min(100, myPet.happiness + 15);
         myPet.xp += 10;
         soundMunch();
-        showBanner("Shop: Star Cookie Bought! 🍪", 2500);
+        showBanner(TXT_BANNER_SHOP_COOKIE, 2500);
       } else {
         showBanner(String("Shop Bazar: $") + myPet.coins + " Coins", 2000);
       }
@@ -872,13 +934,13 @@ void handleTouchPress(uint16_t x, uint16_t y) {
         strcpy(myPet.phase, "Baby");
 
         soundHatch();
-        showBanner("EGG HATCHED! Baby Born! 🐣", 3500);
+        showBanner(TXT_BANNER_EGG_HATCHED, 3500);
       } else {
-        showBanner("Egg Warmed! Keep Tapping 🥚");
+        showBanner(TXT_BANNER_EGG_WARMED);
       }
     } else {
       myPet.happiness = min(100, myPet.happiness + 5);
-      showBanner("Pet Cuddled! ❤️");
+      showBanner(TXT_BANNER_CUDDLED);
     }
     screenNeedsRefresh = true;
   }

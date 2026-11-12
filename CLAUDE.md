@@ -14,6 +14,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Key Commands
 
+### Web Simulator (React + TypeScript)
+```bash
+# Start local dev server (strictly port 3000)
+npm run dev
+
+# Check compilation and type linting
+npm run build
+npm run lint
+```
+
 ### PHP Server (Development)
 ```bash
 # Start local PHP server
@@ -24,13 +34,14 @@ cd php_server && php -S localhost:8080
 # Path: /petduet/
 ```
 
-### ESP32 Firmware (ESP-IDF)
+### ESP32 Firmware (PlatformIO & ESP-IDF)
 ```bash
-# Configure (first time)
+# PlatformIO build & flash to CYD
 cd esp32_firmware
-idf.py -p <CYD_USB_PORT> menuconfig  # Set flash speed, partition table
+pio run -t upload
 
-# Build and flash
+# ESP-IDF build and flash
+idf.py -p <CYD_USB_PORT> menuconfig  # Set flash speed, partition table
 idf.py build flash monitor
 
 # OTA update check (runs automatically on boot + every 6h)
