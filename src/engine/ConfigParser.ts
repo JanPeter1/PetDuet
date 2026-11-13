@@ -14,10 +14,12 @@ export interface ParsedRecipeRule {
   description_de?: string;
   minLevel: number;
   ingredients: { itemId: string; count: number; name?: string; name_de?: string }[];
+  resultItemId?: string;
   hungerGain: number;
   healthGain: number;
   energyGain: number;
   manaGain: number;
+  satietyTicks?: number;
   xpReward: number;
   icon: string;
 }
@@ -25,24 +27,30 @@ export interface ParsedRecipeRule {
 export interface ParsedJobRule {
   id: string;
   title: string;
+  title_de?: string;
   minLevel: number;
   durationSeconds: number;
   coinReward: number;
   xpReward: number;
   drop: { itemId: string; chance: number };
+  foodDrop?: { itemId: string; quantity: number; chance: number };
   icon: string;
 }
 
 export interface ParsedSpellRule {
   id: string;
   name: string;
+  name_de?: string;
   minLevel: number;
   manaCost: number;
   target: 'self' | 'friend' | 'both';
   healthBonus: number;
+  hungerBonus?: number;
   happinessBonus: number;
   energyBonus: number;
   hygieneBonus: number;
+  satietyTicks?: number;
+  curesSickness?: boolean;
   biome: string;
   icon: string;
 }
@@ -173,19 +181,55 @@ export interface ParsedShopConfig {
 export const DEFAULT_SHOP_CONFIG: ParsedShopConfig = {
   items: [
     {
-      id: 'item_apple',
-      name: 'Fresh Apple',
+      id: 'food_apple',
+      name: 'Crisp Apple',
       name_de: 'Frischer Apfel',
       priceCoins: 5,
       minLevel: 1,
       category: 'food',
       icon: '🍎',
-      description: 'Crisp red orchard apple that restores basic hunger.',
-      description_de: 'Knackiger roter Apfel, der den kleinen Hunger stillt.',
-      effects: { hunger: 15, happiness: 5 },
+      description: 'Healthy orchard apple (+12 Hunger, +5 Happy).',
+      description_de: 'Knackiger roter Apfel (+12 Hunger, +5 Glück).',
+      effects: { hunger: 12, happiness: 5, health: 2, satiety_ticks: 0, sick_chance: 0 },
     },
     {
-      id: 'item_herb',
+      id: 'food_snack',
+      name: 'Sweet Pixel Snack',
+      name_de: 'Süßer Pixel-Snack',
+      priceCoins: 8,
+      minLevel: 1,
+      category: 'food',
+      icon: '🥨',
+      description: 'Tasty snack (+25 Hunger) — 30% chance to cause sickness!',
+      description_de: 'Süßer Snack (+25 Hunger) — 30% Risiko auf Bauchweh!',
+      effects: { hunger: 25, happiness: 15, energy: 5, satiety_ticks: 0, sick_chance: 0.30 },
+    },
+    {
+      id: 'food_herb_salad',
+      name: 'Meadow Herb Salad',
+      name_de: 'Wiesenkräuter-Salat',
+      priceCoins: 22,
+      minLevel: 1,
+      category: 'food',
+      icon: '🥗',
+      description: 'Prepared meal (+35 Hunger, +10 HP). Freezes hunger for 4 ticks!',
+      description_de: 'Fertiggericht (+35 Hunger, +10 HP). Hält 4 Ticks ohne Abzug!',
+      effects: { hunger: 35, health: 10, happiness: 10, energy: 10, satiety_ticks: 4, sick_chance: 0 },
+    },
+    {
+      id: 'food_berry_pie',
+      name: 'Forest Berry Tart',
+      name_de: 'Waldbeeren-Tarte',
+      priceCoins: 40,
+      minLevel: 2,
+      category: 'food',
+      icon: '🥧',
+      description: 'Warm gourmet tart (+45 Hunger). Freezes hunger for 5 ticks!',
+      description_de: 'Gourmet-Tarte (+45 Hunger). Hält 5 Ticks ohne Abzug!',
+      effects: { hunger: 45, happiness: 25, health: 15, satiety_ticks: 5, sick_chance: 0 },
+    },
+    {
+      id: 'mat_herb',
       name: 'Meadow Herb Bundle',
       name_de: 'Wiesenkräuter-Bündel',
       priceCoins: 8,
@@ -201,11 +245,11 @@ export const DEFAULT_SHOP_CONFIG: ParsedShopConfig = {
       name: 'Healing Salve',
       name_de: 'Wohltuende Heilsalbe',
       priceCoins: 25,
-      minLevel: 2,
+      minLevel: 1,
       category: 'potion',
       icon: '🧴',
-      description: 'Herbal balm that restores 40 HP and cures illness.',
-      description_de: 'Heilende Kräutersalbe, die 40 HP wiederherstellt und Krankheiten heilt.',
+      description: 'Herbal balm that restores 40 HP and cures snack sickness.',
+      description_de: 'Heilende Kräutersalbe für +40 HP und sofortige Genesung.',
       effects: { health: 40, cure_sickness: true },
     },
     {
@@ -213,7 +257,7 @@ export const DEFAULT_SHOP_CONFIG: ParsedShopConfig = {
       name: 'Energy Tonic',
       name_de: 'Vitalitäts-Tonikum',
       priceCoins: 35,
-      minLevel: 3,
+      minLevel: 2,
       category: 'potion',
       icon: '🧪',
       description: 'Invigorating elixir restoring 60 Energy and 15 Mana.',
@@ -221,11 +265,11 @@ export const DEFAULT_SHOP_CONFIG: ParsedShopConfig = {
       effects: { energy: 60, mana: 15 },
     },
     {
-      id: 'item_sunstone',
+      id: 'mat_sunstone',
       name: 'Sun Salt Crystals',
       name_de: 'Sonnensalz-Kristalle',
-      priceCoins: 45,
-      minLevel: 3,
+      priceCoins: 25,
+      minLevel: 2,
       category: 'material',
       icon: '🧂',
       description: 'Rare desert mineral crystal required for gourmet curing.',
@@ -509,10 +553,12 @@ export function parseJsonGameRules(json: any): GameRulesConfig {
         description_de: r.description_de,
         minLevel: r.min_level || 1,
         ingredients,
+        resultItemId: r.result_item_id,
         hungerGain: r.effects?.food || 25,
         healthGain: r.effects?.health || 0,
         energyGain: r.effects?.energy || 0,
         manaGain: r.effects?.mana || 0,
+        satietyTicks: r.effects?.satiety_ticks || 0,
         xpReward: r.effects?.xp || 20,
         icon: r.icon || '🍲',
       });
@@ -522,17 +568,23 @@ export function parseJsonGameRules(json: any): GameRulesConfig {
   const jobs: ParsedJobRule[] = [];
   if (Array.isArray(json.jobs)) {
     for (const j of json.jobs) {
+      const foodKeys = Object.keys(j.rewards?.food || {});
+      const firstFood = foodKeys[0];
       jobs.push({
         id: j.id,
         title: j.name || j.id,
+        title_de: j.name_de,
         minLevel: j.min_level || 1,
         durationSeconds: j.duration_seconds || 60,
         coinReward: j.rewards?.coins || 15,
         xpReward: j.rewards?.xp || 25,
         drop: {
           itemId: Object.keys(j.rewards?.materials || {})[0] || 'mat_herb',
-          chance: 100,
+          chance: 1.0,
         },
+        foodDrop: firstFood
+          ? { itemId: firstFood, quantity: Number(j.rewards.food[firstFood]) || 1, chance: 1.0 }
+          : undefined,
         icon: j.icon || '🌿',
       });
     }
@@ -544,13 +596,17 @@ export function parseJsonGameRules(json: any): GameRulesConfig {
       spells.push({
         id: s.id,
         name: s.name || s.id,
+        name_de: s.name_de,
         minLevel: s.min_level || 1,
         manaCost: s.mana_cost || 15,
         target: s.target || 'self',
         healthBonus: s.effects?.health || 0,
+        hungerBonus: s.effects?.hunger || 0,
         happinessBonus: s.effects?.happiness || 0,
         energyBonus: s.effects?.energy || 0,
         hygieneBonus: s.effects?.clean_poop ? 100 : 0,
+        satietyTicks: s.effects?.satiety_ticks || 0,
+        curesSickness: Boolean(s.effects?.cure_sickness),
         biome: s.biome || 'universal',
         icon: s.icon || '✨',
       });
@@ -757,6 +813,7 @@ export function parseGameRules(cfgText: string): GameRulesConfig {
     let healthGain = 0;
     let energyGain = 0;
     let manaGain = 0;
+    let satietyTicks = 0;
     let xpReward = 30;
     let icon = '🍲';
     const ingredients: { itemId: string; count: number; name?: string; name_de?: string }[] = [];
@@ -776,6 +833,7 @@ export function parseGameRules(cfgText: string): GameRulesConfig {
         else if (k === 'hp') healthGain = parseInt(v) || 0;
         else if (k === 'energy') energyGain = parseInt(v) || 0;
         else if (k === 'mana') manaGain = parseInt(v) || 0;
+        else if (k === 'satiety_ticks') satietyTicks = parseInt(v) || 0;
         else if (k === 'xp') xpReward = parseInt(v) || 0;
         else if (k === 'icon') icon = v || '🍲';
         else if (k === 'ingredients' && v) {
@@ -800,6 +858,7 @@ export function parseGameRules(cfgText: string): GameRulesConfig {
       healthGain,
       energyGain,
       manaGain,
+      satietyTicks,
       xpReward,
       icon,
     });
@@ -816,6 +875,7 @@ export function parseGameRules(cfgText: string): GameRulesConfig {
     let coinReward = 25;
     let xpReward = 40;
     let drop = { itemId: 'mat_herb', chance: 0.8 };
+    let foodDrop: { itemId: string; quantity: number; chance: number } | undefined;
     let icon = '🧺';
 
     for (let i = 1; i < parts.length; i++) {
@@ -830,6 +890,11 @@ export function parseGameRules(cfgText: string): GameRulesConfig {
         if (dropParts.length >= 2) {
           drop = { itemId: dropParts[0], chance: parseFloat(dropParts[1]) || 0.5 };
         }
+      } else if (k === 'food_drop') {
+        const fdParts = parts[i].replace('food_drop:', '').split(':').map((s) => s.trim());
+        if (fdParts.length >= 2) {
+          foodDrop = { itemId: fdParts[0], quantity: 1, chance: parseFloat(fdParts[1]) || 0.5 };
+        }
       }
     }
 
@@ -841,6 +906,7 @@ export function parseGameRules(cfgText: string): GameRulesConfig {
       coinReward,
       xpReward,
       drop,
+      foodDrop,
       icon,
     });
   }
@@ -983,8 +1049,22 @@ export function convertParsedRecipeToRecipe(rule: ParsedRecipeRule): Recipe {
     name_de: ing.name_de || itemNamesDe[ing.itemId] || ing.name || ing.itemId.replace('mat_', '').replace('_', ' '),
   }));
 
-  const descEn = rule.description || `Restores ${rule.hungerGain || 0} Hunger${rule.healthGain ? ` & ${rule.healthGain} Health` : ''}.`;
-  const descDe = rule.description_de || `Stellt ${rule.hungerGain || 0} Hunger${rule.healthGain ? ` & ${rule.healthGain} Leben` : ''} wieder her.`;
+  const satiety = rule.satietyTicks || 0;
+  const resultIdMap: Record<string, string> = {
+    rcp_salad: 'food_herb_salad',
+    rcp_jerky: 'food_sun_jerky',
+    rcp_berry_pie: 'food_berry_pie',
+    rcp_stew: 'food_kelp_stew',
+    rcp_ambrosia: 'food_ambrosia',
+  };
+  const resolvedResultId = rule.resultItemId || resultIdMap[rule.id] || `food_${rule.id}`;
+
+  const descEn =
+    rule.description ||
+    `Restores ${rule.hungerGain || 0} Hunger${rule.healthGain ? ` & ${rule.healthGain} Health` : ''}.${satiety > 0 ? ` Holds hunger for ${satiety} ticks!` : ''}`;
+  const descDe =
+    rule.description_de ||
+    `Stellt ${rule.hungerGain || 0} Hunger${rule.healthGain ? ` & ${rule.healthGain} Leben` : ''} wieder her.${satiety > 0 ? ` Hält ${satiety} Ticks ohne Abzug!` : ''}`;
 
   return {
     id: rule.id,
@@ -996,11 +1076,11 @@ export function convertParsedRecipeToRecipe(rule: ParsedRecipeRule): Recipe {
     minLevel: rule.minLevel,
     ingredients,
     resultItem: {
-      id: `food_${rule.id}`,
+      id: resolvedResultId,
       name: rule.name,
       name_de: rule.name_de || rule.name,
       type: 'food',
-      rarity: rule.minLevel >= 7 ? 'legendary' : rule.minLevel >= 4 ? 'rare' : rule.minLevel >= 2 ? 'uncommon' : 'common',
+      rarity: rule.minLevel >= 6 ? 'legendary' : rule.minLevel >= 4 ? 'rare' : rule.minLevel >= 2 ? 'uncommon' : 'common',
       description: descEn,
       description_de: descDe,
       icon: rule.icon,
@@ -1009,6 +1089,8 @@ export function convertParsedRecipeToRecipe(rule: ParsedRecipeRule): Recipe {
       healthGain: rule.healthGain,
       energyGain: rule.energyGain,
       happinessGain: 15,
+      satietyTicks: satiety,
+      sickChance: 0,
     },
     xpReward: rule.xpReward,
   };

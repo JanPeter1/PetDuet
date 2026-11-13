@@ -19,10 +19,15 @@ import {
   getXPForNextLevel,
   checkEvolution,
   CATALOG_ITEMS,
+  SHOP_ITEMS_CATALOG,
+  ShopCatalogItem,
+  FOOD_CATALOG,
+  JOBS,
+  RECIPES,
 } from './utils/petLogic';
 import { cydAudio, toggleAudio } from './utils/audio';
 import { DualDeviceView } from './components/DualDeviceView';
-import { RPGSubsystemsModal } from './components/RPGSubsystemsModal';
+import { RPGSubsystemsModal, RPGModalTab } from './components/RPGSubsystemsModal';
 import { TradingModal } from './components/TradingModal';
 import { ChatModal } from './components/ChatModal';
 import { LeaderboardModal } from './components/LeaderboardModal';
@@ -32,7 +37,6 @@ import { PHPServerTab } from './components/PHPServerTab';
 import { RulesEditorTab } from './components/RulesEditorTab';
 import { TamagotchiCoreEngine } from './engine/TamagotchiCoreEngine';
 import { convertParsedRecipeToRecipe } from './engine/ConfigParser';
-import { RECIPES } from './utils/petLogic';
 import { translations, Language } from './utils/i18n';
 
 export default function App() {
@@ -66,6 +70,7 @@ export default function App() {
 
   // Active Modal: 'rpg' | 'trade' | 'chat' | 'leaderboard' | 'wifi' | null
   const [activeModal, setActiveModal] = useState<'rpg' | 'trade' | 'chat' | 'leaderboard' | 'wifi' | null>(null);
+  const [rpgInitialTab, setRpgInitialTab] = useState<RPGModalTab>('stats');
   const [wifiConfig, setWifiConfig] = useState({
     ssid: 'Home-WiFi-2.4G',
     deviceId: 'CYD-DEV1',
@@ -79,7 +84,12 @@ export default function App() {
     const saved = localStorage.getItem('cyd_dev1_pet');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        return {
+          ...parsed,
+          satietyTicks: parsed.satietyTicks ?? 0,
+          isSick: parsed.isSick ?? false,
+        };
       } catch {
         // Fallback
       }
@@ -92,7 +102,12 @@ export default function App() {
     const saved = localStorage.getItem('cyd_dev2_pet');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        return {
+          ...parsed,
+          satietyTicks: parsed.satietyTicks ?? 0,
+          isSick: parsed.isSick ?? false,
+        };
       } catch {
         // Fallback
       }
@@ -129,6 +144,18 @@ export default function App() {
     localStorage.setItem('cyd_dev2_pet', JSON.stringify(dev2Pet));
   }, [dev2Pet]);
 
+  // Periodic background auto-save every 2 minutes (120,000ms)
+  useEffect(() => {
+    const autoSaveInterval = setInterval(() => {
+      fetch('/api/cloud_save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceId: dev1Pet.deviceId, petData: dev1Pet }),
+      }).catch(() => {});
+    }, 120000);
+    return () => clearInterval(autoSaveInterval);
+  }, [dev1Pet]);
+
   // Daily Missions Login Streak Check on Startup
   useEffect(() => {
     engineRef.current.setState(dev1Pet);
@@ -142,59 +169,143 @@ export default function App() {
     }
   }, []);
 
-  // Lifecycle Game Loop (Hunger, Energy & Jobs)
+  // Lifecycle Game Loop (Hunger, Satiety Shield, Sickness & Jobs)
   useEffect(() => {
     const interval = setInterval(() => {
       // 1. Check Dev 1 decay
       setDev1Pet((prev) => {
         if (prev.phase === 'Egg') return prev; // Eggs don't decay stats
         const newStats = { ...prev.stats };
-        // Gradual decay
-        if (newStats.hunger > 0) newStats.hunger = Math.max(0, newStats.hunger - 1);
+        let nextSatiety = prev.satietyTicks || 0;
+
+        if (nextSatiety > 0) {
+          nextSatiety -= 1;
+        } else if (newStats.hunger > 0) {
+          newStats.hunger = Math.max(0, newStats.hunger - 1);
+        }
+
         if (newStats.energy > 0) newStats.energy = Math.max(0, newStats.energy - 1);
         if (newStats.hunger < 20 && newStats.health > 0) newStats.health = Math.max(0, newStats.health - 1);
+        if (prev.isSick && newStats.health > 0) newStats.health = Math.max(0, newStats.health - 1);
 
         // Natural mana regeneration
         if (newStats.mana < 100) newStats.mana = Math.min(100, newStats.mana + 2);
 
-        // Job completion check
-        let jobFinished = false;
-        if (prev.activeJob) {
-          const elapsed = (Date.now() - prev.activeJob.startedAt) / 1000;
-          if (elapsed >= prev.activeJob.durationSeconds) {
-            jobFinished = true;
-          }
-        }
-
-        if (jobFinished) {
-          cydAudio.levelUp();
-          triggerNotificationDev1('Job Completed! +Coins & XP 🧺');
-          return {
-            ...prev,
-            stats: newStats,
-            activeJob: null,
-            coins: prev.coins + 30,
-            xp: prev.xp + 45,
-            jobsCompletedCount: prev.jobsCompletedCount + 1,
-          };
-        }
-
-        return { ...prev, stats: newStats };
+        return { ...prev, stats: newStats, satietyTicks: nextSatiety };
       });
 
       // 2. Check Dev 2 decay
       setDev2Pet((prev) => {
         if (prev.phase === 'Egg') return prev;
         const newStats = { ...prev.stats };
-        if (newStats.hunger > 0) newStats.hunger = Math.max(0, newStats.hunger - 1);
+        let nextSatiety = prev.satietyTicks || 0;
+        if (nextSatiety > 0) {
+          nextSatiety -= 1;
+        } else if (newStats.hunger > 0) {
+          newStats.hunger = Math.max(0, newStats.hunger - 1);
+        }
         if (newStats.energy > 0) newStats.energy = Math.max(0, newStats.energy - 1);
+        if (prev.isSick && newStats.health > 0) newStats.health = Math.max(0, newStats.health - 1);
         if (newStats.mana < 100) newStats.mana = Math.min(100, newStats.mana + 2);
-        return { ...prev, stats: newStats };
+        return { ...prev, stats: newStats, satietyTicks: nextSatiety };
       });
     }, 8000);
 
     return () => clearInterval(interval);
   }, []);
+
+  // 1-second Active Job Completion Watcher (fires promptly when countdown hits 0)
+  useEffect(() => {
+    if (!dev1Pet.activeJob) return;
+    const jobTimer = setInterval(() => {
+      setDev1Pet((prev) => {
+        if (!prev.activeJob) return prev;
+        const elapsed = (Date.now() - prev.activeJob.startedAt) / 1000;
+        if (elapsed < prev.activeJob.durationSeconds) return prev;
+
+        const completedJob = JOBS.find((j) => j.id === prev.activeJob!.jobId);
+        const nextInv = prev.inventory.map((it) => ({ ...it }));
+
+        const pushDropToInv = (itemTemplate: InventoryItem, qty: number) => {
+          const idx = nextInv.findIndex((i) => i.id === itemTemplate.id);
+          if (idx >= 0) {
+            nextInv[idx].quantity += qty;
+          } else {
+            nextInv.push({ ...itemTemplate, quantity: qty });
+          }
+        };
+
+        const dropLabels: string[] = [];
+
+        if (completedJob) {
+          if (Math.random() <= completedJob.possibleDrop.chance) {
+            const matId = completedJob.possibleDrop.itemId;
+            const shopTemplate = SHOP_ITEMS_CATALOG.find((s) => s.id === matId)?.item;
+            const matItem: InventoryItem = shopTemplate
+              ? { ...shopTemplate }
+              : {
+                  id: matId,
+                  name: completedJob.possibleDrop.name,
+                  name_de: completedJob.possibleDrop.name_de,
+                  type: 'material',
+                  rarity: 'common',
+                  description: 'Foraged crafting ingredient.',
+                  description_de: 'Gesammelte Kochzutat.',
+                  icon: matId === 'mat_meat' ? '🥩' : matId === 'mat_kelp' ? '🥬' : matId === 'mat_sunstone' ? '🧂' : '🌿',
+                  quantity: 1,
+                };
+            pushDropToInv(matItem, 1);
+            dropLabels.push(language === 'de' ? (completedJob.possibleDrop.name_de || completedJob.possibleDrop.name) : completedJob.possibleDrop.name);
+          }
+
+          if (completedJob.bonusFoodDrop && Math.random() <= completedJob.bonusFoodDrop.chance) {
+            const foodTemplate = FOOD_CATALOG[completedJob.bonusFoodDrop.itemId];
+            if (foodTemplate) {
+              pushDropToInv(foodTemplate, completedJob.bonusFoodDrop.quantity);
+              dropLabels.push(`${completedJob.bonusFoodDrop.quantity}x ${foodTemplate.icon}`);
+            }
+          }
+        }
+
+        const coinsGain = completedJob?.coinReward || 30;
+        const xpGain = completedJob?.xpReward || 45;
+
+        cydAudio.levelUp();
+        triggerNotificationDev1(
+          dropLabels.length > 0
+            ? (language === 'de'
+                ? `Beruf fertig! +${coinsGain}🪙 +${xpGain}XP (${dropLabels.join(', ')})`
+                : `Job Done! +${coinsGain}🪙 +${xpGain}XP (${dropLabels.join(', ')})`)
+            : (language === 'de'
+                ? `Beruf abgeschlossen! +${coinsGain} Münzen & +${xpGain} XP 🧺`
+                : `Job Completed! +${coinsGain} Coins & +${xpGain} XP 🧺`)
+        );
+
+        let currentXP = prev.xp + xpGain;
+        let currentLevel = prev.level;
+        let nextReq = prev.xpNext;
+        while (currentXP >= nextReq) {
+          currentXP -= nextReq;
+          currentLevel += 1;
+          nextReq = getXPForNextLevel(currentLevel);
+        }
+
+        return {
+          ...prev,
+          activeJob: null,
+          inventory: nextInv,
+          coins: prev.coins + coinsGain,
+          xp: currentXP,
+          level: currentLevel,
+          xpNext: nextReq,
+          phase: checkEvolution(currentLevel, prev.phase),
+          jobsCompletedCount: prev.jobsCompletedCount + 1,
+        };
+      });
+    }, 1000);
+
+    return () => clearInterval(jobTimer);
+  }, [dev1Pet.activeJob?.startedAt, dev1Pet.activeJob?.jobId, language]);
 
   // Notifications Helpers with Auto-Dismiss
   const triggerNotificationDev1 = (msg: string) => {
@@ -326,6 +437,84 @@ export default function App() {
     }
   };
 
+  // Inventory-Gated Feed Handler (CYD #1 or CYD #2)
+  const handleFeedWithItem = (device: 'dev1' | 'dev2', itemId: string) => {
+    const targetPet = device === 'dev1' ? dev1Pet : dev2Pet;
+    const setTargetPet = device === 'dev1' ? setDev1Pet : setDev2Pet;
+    const notify = device === 'dev1' ? triggerNotificationDev1 : triggerNotificationDev2;
+    const setLed = device === 'dev1' ? setLedDev1 : setLedDev2;
+
+    const foodItem = targetPet.inventory.find(
+      (i) => i.id === itemId && i.type === 'food' && i.quantity > 0
+    );
+
+    if (!foodItem) {
+      cydAudio.warning();
+      notify(t.emptyFoodMsg);
+      return;
+    }
+
+    const rolledSick = Boolean(
+      foodItem.sickChance && foodItem.sickChance > 0 && Math.random() < foodItem.sickChance
+    );
+
+    setTargetPet((prev) => {
+      const updatedInv = prev.inventory
+        .map((it) => (it.id === itemId ? { ...it, quantity: it.quantity - 1 } : it))
+        .filter((it) => it.quantity > 0);
+
+      const newStats = {
+        ...prev.stats,
+        hunger: Math.min(100, prev.stats.hunger + (foodItem.hungerGain || 0)),
+        health: Math.max(0, Math.min(100, prev.stats.health + (foodItem.healthGain || 0) - (rolledSick ? 15 : 0))),
+        energy: Math.min(100, prev.stats.energy + (foodItem.energyGain || 0)),
+        happiness: Math.min(100, prev.stats.happiness + (foodItem.happinessGain || 0)),
+      };
+
+      const nextSatiety = Math.max(prev.satietyTicks || 0, foodItem.satietyTicks || 0);
+
+      return {
+        ...prev,
+        inventory: updatedInv,
+        stats: newStats,
+        satietyTicks: nextSatiety,
+        isSick: prev.isSick || rolledSick,
+        lastFedAt: Date.now(),
+      };
+    });
+
+    cydAudio.munch();
+    const foodLabel = language === 'de' ? (foodItem.name_de || foodItem.name) : foodItem.name;
+
+    if (rolledSick) {
+      setTimeout(() => cydAudio.warning(), 220);
+      setLed('red');
+      setTimeout(() => setLed('green'), 2200);
+      notify(
+        language === 'de'
+          ? `Oh nein! ${foodLabel} verursachte Bauchweh! 🤢 (-15 LP)`
+          : `Oh no! ${foodLabel} caused tummyache! 🤢 (-15 HP)`
+      );
+    } else if ((foodItem.satietyTicks || 0) > 0) {
+      notify(
+        language === 'de'
+          ? `${foodLabel} gefüttert! +${foodItem.hungerGain || 0} FD & 🛡️ ${foodItem.satietyTicks}T`
+          : `Fed ${foodLabel}! +${foodItem.hungerGain || 0} FD & 🛡️ ${foodItem.satietyTicks}T`
+      );
+    } else {
+      notify(
+        language === 'de'
+          ? `${foodLabel} gefüttert! +${foodItem.hungerGain || 0} FD`
+          : `Fed ${foodLabel}! +${foodItem.hungerGain || 0} FD`
+      );
+    }
+
+    if (device === 'dev1') {
+      addXPDev1(15);
+      recordMissionAction('feed', 1);
+    }
+  };
+
   // =========================================================================
   // ACTIONS DISPATCHER FOR DEVICE 1 (YOU)
   // =========================================================================
@@ -333,18 +522,13 @@ export default function App() {
   const handleDev1Action = (action: string) => {
     switch (action) {
       case 'feed': {
-        cydAudio.munch();
-        setDev1Pet((prev) => ({
-          ...prev,
-          stats: {
-            ...prev.stats,
-            hunger: Math.min(100, prev.stats.hunger + 25),
-            health: Math.min(100, prev.stats.health + 10),
-          },
-        }));
-        triggerNotificationDev1(t.notifFed);
-        addXPDev1(15);
-        recordMissionAction('feed', 1);
+        const firstFood = dev1Pet.inventory.find((i) => i.type === 'food' && i.quantity > 0);
+        if (firstFood) {
+          handleFeedWithItem('dev1', firstFood.id);
+        } else {
+          cydAudio.warning();
+          triggerNotificationDev1(t.emptyFoodMsg);
+        }
         break;
       }
 
@@ -418,6 +602,12 @@ export default function App() {
       }
 
       case 'open_rpg':
+        setRpgInitialTab('recipes');
+        setActiveModal('rpg');
+        break;
+
+      case 'open_stats':
+        setRpgInitialTab('stats');
         setActiveModal('rpg');
         break;
 
@@ -553,14 +743,16 @@ export default function App() {
   // =========================================================================
   const handleDev2Action = (action: string) => {
     switch (action) {
-      case 'feed':
-        cydAudio.munch();
-        setDev2Pet((prev) => ({
-          ...prev,
-          stats: { ...prev.stats, hunger: Math.min(100, prev.stats.hunger + 25) },
-        }));
-        triggerNotificationDev2('Friend fed their pet!');
+      case 'feed': {
+        const firstFriendFood = dev2Pet.inventory.find((i) => i.type === 'food' && i.quantity > 0);
+        if (firstFriendFood) {
+          handleFeedWithItem('dev2', firstFriendFood.id);
+        } else {
+          cydAudio.warning();
+          triggerNotificationDev2(t.emptyFoodMsg);
+        }
         break;
+      }
 
       case 'send_treat': {
         cydAudio.treatSend();
@@ -601,6 +793,16 @@ export default function App() {
         }));
         break;
       }
+
+      case 'open_rpg':
+        setRpgInitialTab('recipes');
+        setActiveModal('rpg');
+        break;
+
+      case 'open_stats':
+        setRpgInitialTab('stats');
+        setActiveModal('rpg');
+        break;
 
       default:
         cydAudio.click();
@@ -649,31 +851,59 @@ export default function App() {
 
   // Job Start Handler
   const handleStartJob = (job: Job) => {
-    setDev1Pet((prev) => ({
-      ...prev,
-      activeJob: {
-        jobId: job.id,
-        startedAt: Date.now(),
-        durationSeconds: job.durationSeconds,
-      },
-    }));
+    setDev1Pet((prev) => {
+      if (prev.activeJob) return prev;
+      return {
+        ...prev,
+        activeJob: {
+          jobId: job.id,
+          startedAt: Date.now(),
+          durationSeconds: job.durationSeconds,
+        },
+      };
+    });
     recordMissionAction('start_job', 1);
-    triggerNotificationDev1(`Dispatched to ${job.title}! ⛏️`);
+    const jobTitle = language === 'de' ? (job.title_de || job.title) : job.title;
+    triggerNotificationDev1(
+      language === 'de'
+        ? `Beruf gestartet: ${jobTitle} (${job.durationSeconds}s) ⛏️`
+        : `Dispatched to ${jobTitle} (${job.durationSeconds}s)! ⛏️`
+    );
   };
 
   // Magic Spell Handler
   const handleCastSpell = (spell: MagicSpell) => {
     setDev1Pet((prev) => {
-      const stats = { ...prev.stats, mana: prev.stats.mana - spell.manaCost };
+      const stats = { ...prev.stats, mana: Math.max(0, prev.stats.mana - spell.manaCost) };
+      let nextSatiety = prev.satietyTicks || 0;
+      let nextSick = prev.isSick;
+
       if (spell.target === 'self' || spell.target === 'both') {
-        stats.health = Math.min(100, stats.health + 25);
+        stats.health = Math.min(100, stats.health + (spell.healthGain ?? (spell.curesSickness ? 10 : 25)));
+        if (spell.hungerGain) {
+          stats.hunger = Math.min(100, stats.hunger + spell.hungerGain);
+        }
+        if (spell.happinessGain) {
+          stats.happiness = Math.min(100, stats.happiness + spell.happinessGain);
+        }
+        if (spell.satietyTicks) {
+          nextSatiety = Math.max(nextSatiety, spell.satietyTicks);
+        }
+        if (spell.curesSickness) {
+          nextSick = false;
+          stats.hygiene = 100;
+        }
       }
       return {
         ...prev,
         stats,
+        satietyTicks: nextSatiety,
+        isSick: nextSick,
         spellsCastCount: prev.spellsCastCount + 1,
       };
     });
+
+    const spellTitle = language === 'de' ? (spell.name_de || spell.name) : spell.name;
 
     if (spell.target === 'friend' || spell.target === 'both') {
       setActivePacket({ from: 'DEV1', type: 'MAGIC', label: '✨ MAGIC' });
@@ -683,17 +913,128 @@ export default function App() {
           ...p,
           stats: {
             ...p.stats,
-            health: Math.min(100, p.stats.health + 30),
-            happiness: Math.min(100, p.stats.happiness + 20),
+            health: Math.min(100, p.stats.health + (spell.healthGain ?? 30)),
+            happiness: Math.min(100, p.stats.happiness + (spell.happinessGain ?? 20)),
           },
         }));
-        triggerNotificationDev2(`Received ${spell.name}! ✨`);
+        triggerNotificationDev2(
+          language === 'de' ? `${spellTitle} empfangen! ✨` : `Received ${spellTitle}! ✨`
+        );
       }, 600);
     }
 
     addXPDev1(35);
     recordMissionAction('cast_spell', 1);
-    triggerNotificationDev1(`Cast ${spell.name}! ✨`);
+    triggerNotificationDev1(
+      spell.curesSickness && dev1Pet.isSick
+        ? `${spellTitle}: ${t.curedSickness}`
+        : language === 'de'
+        ? `${spellTitle} gewirkt! ✨`
+        : `Cast ${spellTitle}! ✨`
+    );
+  };
+
+  // Potion / Medicine Item Usage Handler
+  const handleUsePotionItem = (item: InventoryItem) => {
+    const owned = dev1Pet.inventory.find((i) => i.id === item.id && i.quantity > 0);
+    if (!owned) return;
+
+    cydAudio.clean();
+    setDev1Pet((prev) => {
+      const updatedInv = prev.inventory
+        .map((it) => (it.id === item.id ? { ...it, quantity: it.quantity - 1 } : it))
+        .filter((it) => it.quantity > 0);
+
+      const extraMana = item.id === 'item_energy_elixir' ? 15 : 0;
+
+      return {
+        ...prev,
+        inventory: updatedInv,
+        isSick: item.cureSickness ? false : prev.isSick,
+        stats: {
+          ...prev.stats,
+          health: Math.min(100, prev.stats.health + (item.healthGain || 0)),
+          energy: Math.min(100, prev.stats.energy + (item.energyGain || 0)),
+          mana: Math.min(100, prev.stats.mana + extraMana),
+        },
+      };
+    });
+
+    const itemName = language === 'de' ? (item.name_de || item.name) : item.name;
+    triggerNotificationDev1(
+      item.cureSickness
+        ? t.curedSickness
+        : language === 'de'
+        ? `${itemName} angewendet! ✨`
+        : `Used ${itemName}! ✨`
+    );
+  };
+
+  // Shop Purchase Handler
+  const handleBuyShopItem = (shopEntry: ShopCatalogItem) => {
+    if (dev1Pet.level < shopEntry.minLevel) {
+      cydAudio.warning();
+      triggerNotificationDev1(`${t.shopLevelReq}${shopEntry.minLevel}`);
+      return;
+    }
+    if (dev1Pet.coins < shopEntry.priceCoins) {
+      cydAudio.warning();
+      triggerNotificationDev1(t.shopNotEnoughCoins);
+      return;
+    }
+
+    cydAudio.fanfare();
+    setDev1Pet((prev) => {
+      const updatedInv = prev.inventory.map((it) => ({ ...it }));
+      const existing = updatedInv.find((it) => it.id === shopEntry.item.id);
+      if (existing) {
+        existing.quantity += 1;
+      } else {
+        updatedInv.push({ ...shopEntry.item, quantity: 1 });
+      }
+      return {
+        ...prev,
+        coins: prev.coins - shopEntry.priceCoins,
+        inventory: updatedInv,
+      };
+    });
+
+    const purchasedName = language === 'de' ? (shopEntry.item.name_de || shopEntry.item.name) : shopEntry.item.name;
+    triggerNotificationDev1(
+      language === 'de'
+        ? `Gekauft: ${purchasedName} (-${shopEntry.priceCoins} 🪙)`
+        : `Purchased: ${purchasedName} (-${shopEntry.priceCoins} 🪙)`
+    );
+  };
+
+  // Arcane Magic Research Handler
+  const handleResearchMagic = () => {
+    if (dev1Pet.stats.energy < 15) {
+      triggerNotificationDev1(
+        language === 'de'
+          ? 'Nicht genug Energie zum Erforschen! (min. 15 EN)'
+          : 'Not enough energy to research magic! (min. 15 EN)'
+      );
+      return;
+    }
+    cydAudio.magicCast();
+    setDev1Pet((prev) => ({
+      ...prev,
+      stats: {
+        ...prev.stats,
+        energy: Math.max(0, prev.stats.energy - 15),
+        mana: Math.min(100, prev.stats.mana + 15),
+      },
+      spellsCastCount: (prev.spellsCastCount || 0) + 1,
+    }));
+    addXPDev1(35);
+    recordMissionAction('cast_spell', 1);
+    confetti({ particleCount: 50, spread: 55, origin: { y: 0.55 } });
+    triggerNotificationDev1(
+      language === 'de'
+        ? 'Arkane Magie erforscht! +35 XP ✨'
+        : 'Arcane magic researched! +35 XP ✨'
+    );
   };
 
   // Equipment Wardrobe Handlers
@@ -991,6 +1332,12 @@ export default function App() {
             ledColorDev2={ledDev2}
             onDev1Action={handleDev1Action}
             onDev2Action={handleDev2Action}
+            onDev1FeedItem={(itemId) => handleFeedWithItem('dev1', itemId)}
+            onDev2FeedItem={(itemId) => handleFeedWithItem('dev2', itemId)}
+            onOpenShop={() => {
+              setRpgInitialTab('shop');
+              setActiveModal('rpg');
+            }}
             onDev1BiomeChange={(biome) => {
               cydAudio.click();
               setDev1Pet((prev) => ({
@@ -1040,16 +1387,20 @@ export default function App() {
           pet={dev1Pet}
           recipes={activeRecipes}
           language={language}
+          initialTab={rpgInitialTab}
           onClose={() => setActiveModal(null)}
           onCookRecipe={handleCookRecipe}
           onStartJob={handleStartJob}
           onCastSpell={handleCastSpell}
+          onResearchMagic={handleResearchMagic}
           onEquipItem={handleEquipItem}
           onUnequipItem={handleUnequipItem}
+          onFeedItem={(item) => handleFeedWithItem('dev1', item.id)}
+          onUseItem={handleUsePotionItem}
+          onBuyShopItem={handleBuyShopItem}
           onClaimMission={handleClaimMission}
           onClaimStreakBonus={handleClaimStreakBonus}
         />
-
       )}
 
       {activeModal === 'trade' && (

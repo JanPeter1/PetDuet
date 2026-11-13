@@ -31,6 +31,7 @@ export const translations = {
     btnBath: 'BATH',
     btnRpg: 'RPG',
     btnSave: 'SAVE',
+    btnStats: 'STATS',
 
     // CYD LCD 2.8" Buttons (Right Column - Friend Pet)
     btnTreat: 'TREAT',
@@ -112,11 +113,17 @@ export const translations = {
 
     // RPG Workshop Modal
     rpgTitle: 'CYD RPG WORKSHOP',
+    tabStats: 'Status',
     tabRecipes: 'Recipes',
-    tabJobs: 'Jobs & Quests',
+    tabJobs: 'Jobs',
     tabMagic: 'Magic Spells',
     tabGear: 'Gear & Bag',
+    tabShop: 'Shop / Bazar',
     tabMissions: 'Daily Missions',
+    magicResearchTitle: 'Arcane Magic Research',
+    magicResearchDesc: 'Study magical elements to unlock arcane knowledge and earn +35 XP!',
+    btnResearchMagic: 'Study & Research Magic ✨',
+    autoSaveIndicator: 'Auto-Save active (every 2m)',
     missionsTitle: 'Daily Quests & Login Streaks',
     missionsDesc: 'Complete daily activities to earn bonus coins and experience!',
     loginStreak: 'Login Streak',
@@ -132,7 +139,6 @@ export const translations = {
     streakBonusCoins: 'Extra Coins',
     btnClaimReward: 'Claim Reward',
 
-
     missionCompleted: 'Ready to Claim',
     missionClaimed: 'Claimed',
     missionProgress: 'Progress',
@@ -140,8 +146,23 @@ export const translations = {
     btnStartJob: 'Start Job 🚀',
     btnCastSpell: 'Cast Spell ✨',
     btnEquip: 'Equip',
+    btnBuy: 'Buy',
+    btnFeedItem: 'Feed 🍽️',
+    btnUseItem: 'Use 💊',
     equippedAccessories: 'Equipped Accessories',
     bagItems: 'Bag Items & Ingredients',
+    emptyFoodMsg: 'No food in inventory!',
+    feedMenuEmptyShop: 'No food! Go to Shop/Jobs',
+    satietyLabel: 'Satiety Shield',
+    satietyTicksUnit: 'Ticks no decay',
+    sickStatus: 'SICK (Tummyache)',
+    healthyStatus: 'Healthy',
+    snackRiskHint: '30% Sick Risk',
+    curedSickness: 'Sickness cured! Pet feels great!',
+    shopTitle: 'CYD Bazar & Marketplace',
+    shopDesc: 'Buy food, cooking ingredients, healing salves, and accessories with earned coins.',
+    shopNotEnoughCoins: 'Not enough coins',
+    shopLevelReq: 'Requires Lv.',
 
     // Trading Post Modal
     tradingTitle: 'CYD PEER TRADING POST',
@@ -198,6 +219,7 @@ export const translations = {
     btnBath: 'BAD',
     btnRpg: 'RPG',
     btnSave: 'SPEICH',
+    btnStats: 'STATUS',
 
     // CYD LCD 2.8" Buttons (Right Column - Haustier des Freundes)
     btnTreat: 'SNACK',
@@ -279,11 +301,17 @@ export const translations = {
 
     // RPG Workshop Modal
     rpgTitle: 'CYD RPG WERKSTATT',
+    tabStats: 'Status',
     tabRecipes: 'Rezepte',
-    tabJobs: 'Berufe & Quests',
+    tabJobs: 'Berufe',
     tabMagic: 'Zaubersprüche',
     tabGear: 'Ausrüstung & Tasche',
+    tabShop: 'Shop / Bazar',
     tabMissions: 'Tagesmissionen',
+    magicResearchTitle: 'Arkane Magie-Forschung',
+    magicResearchDesc: 'Erforsche arkane Geheimnisse, um dein magisches Wissen zu erweitern und +35 XP zu erhalten!',
+    btnResearchMagic: 'Magie studieren & erforschen ✨',
+    autoSaveIndicator: 'Auto-Save aktiv (alle 2 Min)',
     missionsTitle: 'Tagesquests & Login-Serien',
     missionsDesc: 'Schließe tägliche Aktivitäten ab, um Bonus-Münzen und Erfahrung zu verdienen!',
     loginStreak: 'Login-Serie',
@@ -299,7 +327,6 @@ export const translations = {
     streakBonusCoins: 'Extra-Münzen',
     btnClaimReward: 'Belohnung abholen',
 
-
     missionCompleted: 'Bereit zum Abholen',
     missionClaimed: 'Eingelöst',
     missionProgress: 'Fortschritt',
@@ -307,8 +334,23 @@ export const translations = {
     btnStartJob: 'Beruf starten 🚀',
     btnCastSpell: 'Zauber wirken ✨',
     btnEquip: 'Ausrüsten',
+    btnBuy: 'Kaufen',
+    btnFeedItem: 'Füttern 🍽️',
+    btnUseItem: 'Anwenden 💊',
     equippedAccessories: 'Angelegtes Zubehör',
     bagItems: 'Inventar & Kochzutaten',
+    emptyFoodMsg: 'Kein Essen im Inventar!',
+    feedMenuEmptyShop: 'Kein Essen! Zum Shop/Beruf',
+    satietyLabel: 'Sättigungs-Schutz',
+    satietyTicksUnit: 'Ticks ohne Abzug',
+    sickStatus: 'KRANK (Bauchweh)',
+    healthyStatus: 'Kerngesund',
+    snackRiskHint: '30% Bauchweh-Risiko',
+    curedSickness: 'Krankheit geheilt! Pet ist wieder fit!',
+    shopTitle: 'CYD Bazar & Marktplatz',
+    shopDesc: 'Kaufe Essen, Kochzutaten, Heilsalben und Zubehör mit deinen verdienten Münzen.',
+    shopNotEnoughCoins: 'Zu wenig Münzen',
+    shopLevelReq: 'Ab Lv.',
 
     // Trading Post Modal
     tradingTitle: 'CYD PEER-TAUSCHBÖRSE',

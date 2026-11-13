@@ -91,11 +91,12 @@ bool inAPConfigMode = false;
   #define TXT_BATH       "BAD"
   #define TXT_MAGIC      "ZAUB"
   #define TXT_SAVE       "SPEICH"
+  #define TXT_STATS      "STAT"
   #define TXT_TREAT      "SNACK"
   #define TXT_CHAT       "CHAT"
   #define TXT_MAGIC_PLUS "MGC+"
   #define TXT_QUEST      "QUEST"
-  #define TXT_TRADE      "TAUSCH"
+  #define TXT_TRADE      "TAUS."
   #define TXT_ONLINE     "ONLINE"
   #define TXT_ASLEEP     "SCHLAFT"
   #define TXT_TAP_EGG    "TIPPEN!"
@@ -125,6 +126,7 @@ bool inAPConfigMode = false;
   #define TXT_BATH       "BATH"
   #define TXT_MAGIC      "MGC"
   #define TXT_SAVE       "SAVE"
+  #define TXT_STATS      "STAT"
   #define TXT_TREAT      "TREAT"
   #define TXT_CHAT       "CHAT"
   #define TXT_MAGIC_PLUS "MGC+"
@@ -198,13 +200,49 @@ struct FriendPet {
   unsigned long lastSeen = 0;
 } friendPet;
 
-// Timing State
+// Timing & UI Navigation State
 unsigned long lastTickTime = 0;
 unsigned long lastServerSyncTime = 0;
 unsigned long lastOtaCheckTime = 0;
 unsigned long lastRenderTime = 0;
+unsigned long lastAutoSaveTime = 0;
+unsigned long lastJobCountdownRefresh = 0;
+const unsigned long AUTO_SAVE_INTERVAL_MS = 120000; // Auto-save every 2 minutes
+int8_t activeJobIdx = -1;                           // -1 = idle, 0 = Forager (60s), 1 = Scout (120s), 2 = Miner (180s)
+unsigned long activeJobEndMs = 0;
+bool feedMenuOpen = false;   // Horizontal food flyout beside FEED button
+bool chatMenuOpen = false;   // Quick-Chat preset selector modal overlay
+bool inSubScreen = false;
+uint8_t subScreenTab = 0;    // 0 = STATS, 1 = BAG/COOK/SHOP, 2 = JOBS, 3 = MAGIC, 4 = QUESTS
+uint8_t bagSubMode = 0;      // 0 = Bag, 1 = Cook Recipes, 2 = Shop/Bazar
 bool screenNeedsRefresh = true;
-char activeBannerMessage[32] = "";
+
+// 8 Bilingual Quick-Chat Presets (ASCII-safe <=18 chars to fit CYD buttons & friend speech balloon)
+const char* getChatPreset(uint8_t idx) {
+  static const char* const PRESETS_DE[8] = {
+    "Hallo Freund! :D",
+    "Lass uns Questen!",
+    "Schicke Snacks!",
+    "Wirke Zauber! *",
+    "Toller Hut! ^_^",
+    "Pet hat Hunger!",
+    "Lass uns tauschen!",
+    "Super CYD Setup!"
+  };
+  static const char* const PRESETS_EN[8] = {
+    "Hello friend! :)",
+    "Co-op quest time!",
+    "Sending treats!",
+    "Cast magic spell!",
+    "Nice hat! ^_^",
+    "My pet is hungry!",
+    "Let's trade gear!",
+    "Awesome CYD! :D"
+  };
+  if (idx >= 8) idx = 0;
+  return LANG_DE ? PRESETS_DE[idx] : PRESETS_EN[idx];
+}
+char activeBannerMessage[40] = "";
 unsigned long bannerTimeout = 0;
 bool inServerErrorState = false;
 
@@ -272,8 +310,16 @@ void soundHatch() {
   setRGB(false, true, false);
 }
 
+void soundWarning() {
+  setRGB(true, false, false);
+  playTone(220, 90); delay(20);
+  playTone(170, 120);
+  setRGB(false, true, false);
+}
+
 void showBanner(const char* msg, uint16_t durationMs = 2500) {
   strncpy(activeBannerMessage, msg, sizeof(activeBannerMessage) - 1);
+  activeBannerMessage[sizeof(activeBannerMessage) - 1] = '\0';
   bannerTimeout = millis() + durationMs;
   screenNeedsRefresh = true;
 }
@@ -282,10 +328,43 @@ void showBanner(const String& msg, uint16_t durationMs = 2500) {
   showBanner(msg.c_str(), durationMs);
 }
 
+void syncToEngine() {
+  strncpy(engine.name, myPet.name, sizeof(engine.name) - 1);
+  strncpy(engine.biome, myPet.biome, sizeof(engine.biome) - 1);
+  strncpy(engine.phase, myPet.phase, sizeof(engine.phase) - 1);
+  engine.level = myPet.level;
+  engine.xp = myPet.xp;
+  engine.xpNext = myPet.xpNext;
+  engine.coins = myPet.coins;
+  engine.eggWarmth = myPet.eggWarmth;
+  engine.stats.health = myPet.health;
+  engine.stats.hunger = myPet.hunger;
+  engine.stats.energy = myPet.energy;
+  engine.stats.hygiene = myPet.hygiene;
+  engine.stats.happiness = myPet.happiness;
+  engine.stats.mana = myPet.mana;
+}
+
+void syncFromEngine() {
+  strncpy(myPet.phase, engine.phase, sizeof(myPet.phase) - 1);
+  myPet.level = engine.level;
+  myPet.xp = engine.xp;
+  myPet.xpNext = engine.xpNext;
+  myPet.coins = engine.coins;
+  myPet.eggWarmth = engine.eggWarmth;
+  myPet.health = engine.stats.health;
+  myPet.hunger = engine.stats.hunger;
+  myPet.energy = engine.stats.energy;
+  myPet.hygiene = engine.stats.hygiene;
+  myPet.happiness = engine.stats.happiness;
+  myPet.mana = engine.stats.mana;
+}
+
 // ----------------------------------------------------------------------------
 // Forward Declarations
 // ----------------------------------------------------------------------------
 void renderCYDScreen();
+void renderSubScreen();
 void handleTouchPress(uint16_t x, uint16_t y);
 void pollDirectSockets();
 void sendDirectSocketPacket(const char* type, const char* textPayload = "");
@@ -297,6 +376,8 @@ void startAPConfigPortal();
 void renderAPPortalScreen();
 bool testPHPServerConnection();
 void showServerErrorScreen();
+void loadRulesFromSPIFFS();
+void checkForOTAUpdate();
 
 // ============================================================================
 // NVS SETTINGS LOAD / SAVE (ESP32 Preferences)
@@ -624,10 +705,11 @@ void setup() {
   // 4. Load persistent settings from NVS
   loadSettingsFromNVS();
 
-  // Apply trainer name to local pet (was defaulting to "Leafkin")
+  // Apply trainer name to local pet & sync engine
   if (cfg_trainer_name.length() > 0) {
     strncpy(myPet.name, cfg_trainer_name.c_str(), sizeof(myPet.name) - 1);
   }
+  syncToEngine();
 
   // Check if BOOT button (GPIO 0) is held down during power-on
   pinMode(0, INPUT_PULLUP);
@@ -741,17 +823,60 @@ void loop() {
     lastOtaCheckTime = now;
   }
 
-
-  // 4. Pet Decay Loop (Every 6 seconds)
-  if (now - lastTickTime > PET_TICK_INTERVAL_MS) {
-    if (strcmp(myPet.phase, "Egg") != 0) {
-      if (myPet.hunger > 0) myPet.hunger--;
-      if (myPet.happiness > 0) myPet.happiness--;
-      if (myPet.hunger < 20 && myPet.health > 0) myPet.health--;
-      if (myPet.mana < 100) myPet.mana = min(100, myPet.mana + 2);
+  // 3c. Automatic Save Loop (Every 2 minutes: saves to NVS Flash and Cloud)
+  if (now - lastAutoSaveTime > AUTO_SAVE_INTERVAL_MS) {
+    saveSettingsToNVS();
+    if (WiFi.status() == WL_CONNECTED && !inServerErrorState) {
+      syncWithPHPServer();
     }
+    Serial.println("[AutoSave] Periodic state saved to NVS and Server.");
+    lastAutoSaveTime = now;
+  }
+
+  // 4. Pet Decay Loop (Every 6 seconds - uses Engine Satiety Shield & Sickness)
+  if (now - lastTickTime > PET_TICK_INTERVAL_MS) {
+    syncToEngine();
+    engine.tick();
+    syncFromEngine();
     screenNeedsRefresh = true;
     lastTickTime = now;
+  }
+
+  // 4b. Active Job Completion & 1s Sub-Screen Countdown Refresh
+  if (activeJobIdx >= 0) {
+    if ((long)(now - activeJobEndMs) >= 0) {
+      int8_t finishedJob = activeJobIdx;
+      activeJobIdx = -1;
+      syncToEngine();
+      if (finishedJob == 0) {
+        engine.coins += 15;
+        engine.addXP(25);
+        engine.addKnownItemById("mat_herb", 1);
+        engine.addKnownItemById("food_apple", 2);
+        showBanner(LANG_DE ? "Beruf fertig! +$15 +Kraut +2 Apfel" : "Job Done! +$15 +Herb +2 Apple", 3200);
+      } else if (finishedJob == 1) {
+        engine.coins += 30;
+        engine.addXP(50);
+        engine.addKnownItemById("mat_meat", 1);
+        engine.addKnownItemById("food_snack", 1);
+        showBanner(LANG_DE ? "Wache fertig! +$30 +Fleisch +Snack" : "Scout Done! +$30 +Meat +Snack", 3200);
+      } else {
+        engine.coins += 55;
+        engine.addXP(90);
+        engine.addKnownItemById("mat_mushroom", 1);
+        engine.addKnownItemById("mat_sunstone", 1);
+        engine.addKnownItemById("food_sun_jerky", 1);
+        showBanner(LANG_DE ? "Mine fertig! +$55 +Salz +Jerky" : "Mine Done! +$55 +Salt +Jerky", 3200);
+      }
+      syncFromEngine();
+      myPet.jobsCompleted++;
+      soundLevelUp();
+      checkLevelUp();
+      screenNeedsRefresh = true;
+    } else if (inSubScreen && (subScreenTab == 0 || subScreenTab == 2) && (now - lastJobCountdownRefresh >= 1000)) {
+      lastJobCountdownRefresh = now;
+      screenNeedsRefresh = true;
+    }
   }
 
   // 5. Speech balloon / Banner expiration
@@ -767,12 +892,511 @@ void loop() {
 
   // 6. Refresh Display if dirty (throttle to max 10 FPS to prevent flicker)
   if (screenNeedsRefresh && (now - lastRenderTime > 100)) {
-    renderCYDScreen();
+    if (inSubScreen) {
+      renderSubScreen();
+    } else {
+      renderCYDScreen();
+    }
     screenNeedsRefresh = false;
     lastRenderTime = now;
   }
 
   delay(15);
+}
+
+// ============================================================================
+// 2.8" LCD 320x240 SUB-SCREEN (Stats, Bag/Cook/Shop, Jobs, Magic, Quests)
+// ============================================================================
+void renderSubScreen() {
+  tft.fillScreen(COLOR_UI_PANEL);
+
+  // 1. TOP TABS NAVIGATION BAR (5 Tabs + Close X, Y: 3 to 27)
+  // Tab 0: STAT (X: 2 to 56)
+  bool act0 = (subScreenTab == 0);
+  tft.fillRoundRect(2, 3, 54, 24, 3, act0 ? 0x028A : 0x18C5);
+  tft.drawRoundRect(2, 3, 54, 24, 3, act0 ? TFT_GOLD : COLOR_UI_BORDER);
+  tft.setTextColor(act0 ? TFT_WHITE : TFT_LIGHTGREY, act0 ? 0x028A : 0x18C5);
+  tft.setTextDatum(MC_DATUM);
+  tft.drawString(LANG_DE ? "STAT" : "STAT", 29, 15, 1);
+
+  // Tab 1: BAG / COOK / SHOP (X: 58 to 112)
+  bool act1 = (subScreenTab == 1);
+  tft.fillRoundRect(58, 3, 54, 24, 3, act1 ? 0x028A : 0x18C5);
+  tft.drawRoundRect(58, 3, 54, 24, 3, act1 ? TFT_GOLD : COLOR_UI_BORDER);
+  tft.setTextColor(act1 ? TFT_WHITE : TFT_LIGHTGREY, act1 ? 0x028A : 0x18C5);
+  tft.drawString(LANG_DE ? "TASCH" : "BAG", 85, 15, 1);
+
+  // Tab 2: JOBS (X: 114 to 168)
+  bool act2 = (subScreenTab == 2);
+  tft.fillRoundRect(114, 3, 54, 24, 3, act2 ? 0x028A : 0x18C5);
+  tft.drawRoundRect(114, 3, 54, 24, 3, act2 ? TFT_GOLD : COLOR_UI_BORDER);
+  tft.setTextColor(act2 ? TFT_WHITE : TFT_LIGHTGREY, act2 ? 0x028A : 0x18C5);
+  tft.drawString(LANG_DE ? "JOBS" : "JOBS", 141, 15, 1);
+
+  // Tab 3: MAGIC (X: 170 to 225)
+  bool act3 = (subScreenTab == 3);
+  tft.fillRoundRect(170, 3, 55, 24, 3, act3 ? 0x78D8 : 0x18C5);
+  tft.drawRoundRect(170, 3, 55, 24, 3, act3 ? TFT_GOLD : COLOR_UI_BORDER);
+  tft.setTextColor(act3 ? TFT_WHITE : TFT_LIGHTGREY, act3 ? 0x78D8 : 0x18C5);
+  tft.drawString(LANG_DE ? "MAGIE" : "MAGIC", 197, 15, 1);
+
+  // Tab 4: QUESTS & MISSIONS (X: 227 to 285)
+  bool act4 = (subScreenTab == 4);
+  tft.fillRoundRect(227, 3, 58, 24, 3, act4 ? 0x1404 : 0x18C5);
+  tft.drawRoundRect(227, 3, 58, 24, 3, act4 ? TFT_GOLD : COLOR_UI_BORDER);
+  tft.setTextColor(act4 ? TFT_WHITE : TFT_LIGHTGREY, act4 ? 0x1404 : 0x18C5);
+  tft.drawString(LANG_DE ? "QUEST" : "QUEST", 256, 15, 1);
+
+  // Close Button: [ X ] (X: 288 to 317)
+  tft.fillRoundRect(288, 3, 29, 24, 3, TFT_RED);
+  tft.drawRoundRect(288, 3, 29, 24, 3, TFT_WHITE);
+  tft.setTextColor(TFT_WHITE, TFT_RED);
+  tft.drawString("X", 302, 15, 2);
+
+  // Divider Line
+  tft.drawFastHLine(0, 30, 320, COLOR_UI_BORDER);
+
+  // --------------------------------------------------------------------------
+  // TAB 0: COMPLETE STATS & VITALS OVERVIEW
+  // --------------------------------------------------------------------------
+  if (subScreenTab == 0) {
+    tft.fillRoundRect(6, 34, 150, 178, 4, 0x0842);
+    tft.drawRoundRect(6, 34, 150, 178, 4, COLOR_UI_BORDER);
+
+    tft.setTextDatum(TL_DATUM);
+    tft.setTextColor(COLOR_GOLD, 0x0842);
+    tft.drawString(myPet.name, 12, 40, 2);
+
+    tft.setTextColor(TFT_WHITE, 0x0842);
+    tft.drawString(String("Lv.") + myPet.level + " (" + myPet.phase + ")", 12, 58, 1);
+
+    tft.setTextColor(TFT_CYAN, 0x0842);
+    tft.drawString(String("Biom: ") + myPet.biome, 12, 70, 1);
+
+    // XP Bar
+    tft.setTextColor(COLOR_MANA_PURPLE, 0x0842);
+    tft.drawString(String("XP: ") + myPet.xp + "/" + myPet.xpNext, 12, 84, 1);
+    uint8_t xpPct = (myPet.xpNext > 0) ? (uint8_t)min((int)100, (int)((myPet.xp * 100) / myPet.xpNext)) : 0;
+    drawMiniBar(tft, 12, 95, 138, 6, xpPct, COLOR_MANA_PURPLE);
+
+    // Coins & Streak
+    tft.setTextColor(COLOR_GOLD, 0x0842);
+    tft.drawString(String("Muenzen: $") + myPet.coins, 12, 106, 1);
+    tft.setTextColor(TFT_ORANGE, 0x0842);
+    tft.drawString(String("Streak: ") + engine.consecutiveLoginDays + (LANG_DE ? " Tage" : " days"), 12, 118, 1);
+
+    // Satiety Shield & Health Condition
+    tft.setTextColor(engine.satietyTicks > 0 ? TFT_GREEN : TFT_LIGHTGREY, 0x0842);
+    tft.drawString((LANG_DE ? "Satt-Schutz: " : "Satiety: ") + String(engine.satietyTicks) + "T", 12, 132, 1);
+
+    tft.setTextColor(engine.isSick ? TFT_RED : TFT_GREEN, 0x0842);
+    tft.drawString(engine.isSick ? (LANG_DE ? "Zustand: KRANK!" : "Status: SICK!") : (LANG_DE ? "Zustand: Gesund" : "Status: Healthy"), 12, 144, 1);
+
+    // Records & Active Job Countdown
+    tft.setTextColor(TFT_LIGHTGREY, 0x0842);
+    tft.drawString(String("Rezepte: ") + myPet.recipesCrafted + " | Jobs: " + myPet.jobsCompleted, 12, 158, 1);
+    tft.drawString(String("Zauber: ") + myPet.spellsCast + " | Inv: " + engine.inventoryCount, 12, 170, 1);
+
+    if (activeJobIdx >= 0) {
+      long remMs = (long)(activeJobEndMs - millis());
+      long remSec = (remMs > 0) ? (remMs / 1000L) : 0L;
+      const char* jShort = (activeJobIdx == 0) ? (LANG_DE ? "Kraeuter" : "Forage")
+                         : (activeJobIdx == 1) ? (LANG_DE ? "Wache" : "Scout")
+                         : (LANG_DE ? "Mine" : "Mine");
+      tft.setTextColor(TFT_YELLOW, 0x0842);
+      tft.drawString(String(LANG_DE ? "Beruf: " : "Job: ") + jShort + " (" + remSec + "s)", 12, 184, 1);
+    } else {
+      tft.setTextColor(TFT_GREEN, 0x0842);
+      tft.drawString(LANG_DE ? "* Auto-Save: 2 Min aktiv" : "* Auto-Save: 2m active", 12, 184, 1);
+    }
+
+    // Right Box: Full 6 Vitals Bars
+    tft.fillRoundRect(162, 34, 152, 178, 4, 0x0842);
+    tft.drawRoundRect(162, 34, 152, 178, 4, COLOR_UI_BORDER);
+
+    tft.setTextColor(TFT_RED, 0x0842);
+    tft.drawString(String("HP (Leben): ") + myPet.health + "/100", 170, 40, 1);
+    drawMiniBar(tft, 170, 52, 136, 8, myPet.health, TFT_RED);
+
+    tft.setTextColor(TFT_ORANGE, 0x0842);
+    tft.drawString(String("FD (Hunger): ") + myPet.hunger + "/100", 170, 66, 1);
+    drawMiniBar(tft, 170, 78, 136, 8, myPet.hunger, TFT_ORANGE);
+
+    tft.setTextColor(TFT_CYAN, 0x0842);
+    tft.drawString(String("EN (Energie): ") + myPet.energy + "/100", 170, 92, 1);
+    drawMiniBar(tft, 170, 104, 136, 8, myPet.energy, TFT_CYAN);
+
+    tft.setTextColor(TFT_GREEN, 0x0842);
+    tft.drawString(String("SAUB (Hygiene): ") + myPet.hygiene + "/100", 170, 118, 1);
+    drawMiniBar(tft, 170, 130, 136, 8, myPet.hygiene, TFT_GREEN);
+
+    tft.setTextColor(TFT_PINK, 0x0842);
+    tft.drawString(String("GLUECK: ") + myPet.happiness + "/100", 170, 144, 1);
+    drawMiniBar(tft, 170, 156, 136, 8, myPet.happiness, TFT_PINK);
+
+    tft.setTextColor(COLOR_MANA_PURPLE, 0x0842);
+    tft.drawString(String("MP (Mana): ") + myPet.mana + "/100", 170, 170, 1);
+    drawMiniBar(tft, 170, 182, 136, 8, myPet.mana, COLOR_MANA_PURPLE);
+  }
+
+  // --------------------------------------------------------------------------
+  // TAB 1: INVENTORY / RECIPES / SHOP SUB-MODES
+  // --------------------------------------------------------------------------
+  else if (subScreenTab == 1) {
+    // Sub-mode pills (Y: 33 to 51)
+    tft.fillRoundRect(6, 33, 98, 18, 3, bagSubMode == 0 ? 0x028A : 0x18C5);
+    tft.drawRoundRect(6, 33, 98, 18, 3, bagSubMode == 0 ? TFT_WHITE : COLOR_UI_BORDER);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(TFT_WHITE, bagSubMode == 0 ? 0x028A : 0x18C5);
+    tft.drawString(LANG_DE ? "TASCHE" : "BAG", 55, 42, 1);
+
+    tft.fillRoundRect(110, 33, 98, 18, 3, bagSubMode == 1 ? 0x9300 : 0x18C5);
+    tft.drawRoundRect(110, 33, 98, 18, 3, bagSubMode == 1 ? TFT_WHITE : COLOR_UI_BORDER);
+    tft.setTextColor(TFT_WHITE, bagSubMode == 1 ? 0x9300 : 0x18C5);
+    tft.drawString(LANG_DE ? "KOCHEN" : "COOK", 159, 42, 1);
+
+    tft.fillRoundRect(214, 33, 100, 18, 3, bagSubMode == 2 ? 0x1404 : 0x18C5);
+    tft.drawRoundRect(214, 33, 100, 18, 3, bagSubMode == 2 ? TFT_WHITE : COLOR_UI_BORDER);
+    tft.setTextColor(TFT_WHITE, bagSubMode == 2 ? 0x1404 : 0x18C5);
+    tft.drawString(String("SHOP $") + myPet.coins, 264, 42, 1);
+
+    if (bagSubMode == 0) {
+      // REAL BAG INVENTORY (up to 4 visible slots at Y: 55, 94, 133, 172)
+      if (engine.inventoryCount == 0) {
+        tft.setTextColor(TFT_ORANGE, COLOR_UI_PANEL);
+        tft.drawString(LANG_DE ? "Tasche leer! Kaufe im SHOP oder starte JOBS." : "Bag empty! Visit SHOP or start JOBS.", 160, 120, 2);
+      } else {
+        uint8_t shown = min((uint8_t)4, engine.inventoryCount);
+        for (uint8_t i = 0; i < shown; i++) {
+          EngineInventorySlot& sl = engine.inventory[i];
+          int ry = 55 + i * 39;
+          tft.fillRoundRect(6, ry, 308, 35, 4, 0x0842);
+          tft.drawRoundRect(6, ry, 308, 35, 4, sl.category == 0 ? TFT_ORANGE : (sl.category == 2 ? TFT_CYAN : COLOR_UI_BORDER));
+
+          tft.setTextDatum(TL_DATUM);
+          tft.setTextColor(sl.category == 0 ? TFT_YELLOW : (sl.category == 2 ? TFT_CYAN : TFT_GREEN), 0x0842);
+          tft.drawString(String(LANG_DE ? sl.name_de : sl.name) + " x" + String(sl.quantity), 14, ry + 5, 2);
+
+          tft.setTextColor(TFT_LIGHTGREY, 0x0842);
+          char infoBuf[44];
+          if (sl.category == 0) {
+            if (sl.satietyTicks > 0) snprintf(infoBuf, sizeof(infoBuf), "+%d FD | Schutz: %dT", sl.hungerGain, sl.satietyTicks);
+            else if (sl.sickChancePct > 0) snprintf(infoBuf, sizeof(infoBuf), "+%d FD | ! %d%% Krank", sl.hungerGain, sl.sickChancePct);
+            else snprintf(infoBuf, sizeof(infoBuf), "+%d FD | +%d Happy", sl.hungerGain, sl.happyGain);
+          } else if (sl.category == 2) {
+            if (sl.cureSickness) {
+              snprintf(infoBuf, sizeof(infoBuf), "+%d HP | %s", sl.healthGain, LANG_DE ? "Heilt Krank!" : "Cures Sick!");
+            } else {
+              snprintf(infoBuf, sizeof(infoBuf), "+%d EN | +15 MP", sl.energyGain);
+            }
+          } else {
+            snprintf(infoBuf, sizeof(infoBuf), "%s", LANG_DE ? "Kochzutat (siehe KOCHEN)" : "Ingredient (see COOK)");
+          }
+          tft.drawString(infoBuf, 14, ry + 22, 1);
+
+          // Action button (X: 238 to 308)
+          uint16_t bCol = (sl.category == 0) ? 0x1404 : (sl.category == 2 ? 0x7800 : 0x9300);
+          tft.fillRoundRect(238, ry + 5, 70, 25, 3, bCol);
+          tft.drawRoundRect(238, ry + 5, 70, 25, 3, TFT_WHITE);
+          tft.setTextDatum(MC_DATUM);
+          tft.setTextColor(TFT_WHITE, bCol);
+          const char* actLbl = (sl.category == 0) ? (LANG_DE ? "FUETTERN" : "FEED")
+                            : (sl.category == 2) ? (LANG_DE ? "NUTZEN" : "USE")
+                            : (LANG_DE ? "KOCHEN" : "COOK");
+          tft.drawString(actLbl, 273, ry + 17, 1);
+        }
+      }
+    } else if (bagSubMode == 1) {
+      // COOK RECIPES INTO INVENTORY (3 recipes at Y: 56, 108, 160)
+      uint8_t qtyHerb = engine.getItemQuantity("mat_herb");
+      uint8_t qtyMush = engine.getItemQuantity("mat_mushroom");
+      uint8_t qtyMeat = engine.getItemQuantity("mat_meat");
+      uint8_t qtySalt = engine.getItemQuantity("mat_sunstone");
+
+      // Recipe 0: Herb Salad
+      tft.fillRoundRect(6, 56, 308, 48, 4, 0x0842);
+      tft.drawRoundRect(6, 56, 308, 48, 4, TFT_GREEN);
+      tft.setTextDatum(TL_DATUM);
+      tft.setTextColor(TFT_GREEN, 0x0842);
+      tft.drawString(LANG_DE ? "1. Kraeuter-Salat (+35 FD, 4T)" : "1. Herb Salad (+35 FD, 4T)", 14, 62, 2);
+      tft.setTextColor(TFT_WHITE, 0x0842);
+      tft.drawString(String(LANG_DE ? "Zutaten: 2x Kraeuter (" : "Need: 2x Herb (") + String(qtyHerb) + "/2)", 14, 84, 1);
+      tft.fillRoundRect(238, 65, 70, 30, 3, qtyHerb >= 2 ? 0x1404 : 0x3186);
+      tft.drawRoundRect(238, 65, 70, 30, 3, TFT_WHITE);
+      tft.setTextDatum(MC_DATUM);
+      tft.setTextColor(TFT_WHITE, qtyHerb >= 2 ? 0x1404 : 0x3186);
+      tft.drawString(LANG_DE ? "KOCHEN" : "COOK", 273, 80, 1);
+
+      // Recipe 1: Berry Tart
+      bool canR1 = (myPet.level >= 2 && qtyHerb >= 1 && qtyMush >= 1);
+      tft.fillRoundRect(6, 108, 308, 48, 4, 0x0842);
+      tft.drawRoundRect(6, 108, 308, 48, 4, COLOR_GOLD);
+      tft.setTextDatum(TL_DATUM);
+      tft.setTextColor(COLOR_GOLD, 0x0842);
+      tft.drawString(LANG_DE ? "2. Beeren-Tarte (+45 FD, 5T)" : "2. Berry Tart (+45 FD, 5T)", 14, 114, 2);
+      tft.setTextColor(TFT_WHITE, 0x0842);
+      tft.drawString(String("Lv.2 | Kraeut:") + qtyHerb + "/1 Pilz:" + qtyMush + "/1", 14, 136, 1);
+      tft.fillRoundRect(238, 117, 70, 30, 3, canR1 ? 0x9300 : 0x3186);
+      tft.drawRoundRect(238, 117, 70, 30, 3, TFT_WHITE);
+      tft.setTextDatum(MC_DATUM);
+      tft.setTextColor(TFT_WHITE, canR1 ? 0x9300 : 0x3186);
+      tft.drawString(LANG_DE ? "KOCHEN" : "COOK", 273, 132, 1);
+
+      // Recipe 2: Sun Jerky
+      bool canR2 = (myPet.level >= 2 && qtyMeat >= 2 && qtySalt >= 1);
+      tft.fillRoundRect(6, 160, 308, 48, 4, 0x0842);
+      tft.drawRoundRect(6, 160, 308, 48, 4, TFT_ORANGE);
+      tft.setTextDatum(TL_DATUM);
+      tft.setTextColor(TFT_ORANGE, 0x0842);
+      tft.drawString(LANG_DE ? "3. Doerrfleisch (+55 FD, 6T)" : "3. Sun Jerky (+55 FD, 6T)", 14, 166, 2);
+      tft.setTextColor(TFT_WHITE, 0x0842);
+      tft.drawString(String("Lv.2 | Fleisch:") + qtyMeat + "/2 Salz:" + qtySalt + "/1", 14, 188, 1);
+      tft.fillRoundRect(238, 169, 70, 30, 3, canR2 ? 0x9300 : 0x3186);
+      tft.drawRoundRect(238, 169, 70, 30, 3, TFT_WHITE);
+      tft.setTextDatum(MC_DATUM);
+      tft.setTextColor(TFT_WHITE, canR2 ? 0x9300 : 0x3186);
+      tft.drawString(LANG_DE ? "KOCHEN" : "COOK", 273, 184, 1);
+    } else {
+      // SHOP / BAZAR (4 items at Y: 55, 94, 133, 172)
+      const char* sIds[4] = {"food_apple", "food_snack", "food_herb_salad", "item_salve"};
+      const uint16_t sPrices[4] = {5, 8, 22, 25};
+      const char* sTitleDe[4] = {"Frischer Apfel", "Pixel-Snack", "Kraeuter-Salat", "Heilsalbe (Med)"};
+      const char* sTitleEn[4] = {"Crisp Apple", "Pixel Snack", "Herb Salad", "Healing Salve"};
+      const char* sSubDe[4]   = {"+12 FD | Sicher", "+25 FD | 30% Krank!", "+35 FD | 4T Schutz", "+40 HP | Heilt Krank!"};
+      const char* sSubEn[4]   = {"+12 FD | Safe", "+25 FD | 30% Sick!", "+35 FD | 4T Satiety", "+40 HP | Cures Sick!"};
+
+      for (uint8_t i = 0; i < 4; i++) {
+        int ry = 55 + i * 39;
+        bool afford = (myPet.coins >= sPrices[i]);
+        tft.fillRoundRect(6, ry, 308, 35, 4, 0x0842);
+        tft.drawRoundRect(6, ry, 308, 35, 4, afford ? TFT_GREEN : COLOR_UI_BORDER);
+        tft.setTextDatum(TL_DATUM);
+        tft.setTextColor(TFT_WHITE, 0x0842);
+        tft.drawString(String(LANG_DE ? sTitleDe[i] : sTitleEn[i]) + " (x" + engine.getItemQuantity(sIds[i]) + ")", 14, ry + 5, 2);
+        tft.setTextColor(i == 1 ? TFT_ORANGE : TFT_CYAN, 0x0842);
+        tft.drawString(LANG_DE ? sSubDe[i] : sSubEn[i], 14, ry + 22, 1);
+
+        tft.fillRoundRect(236, ry + 5, 72, 25, 3, afford ? 0x1404 : 0x3186);
+        tft.drawRoundRect(236, ry + 5, 72, 25, 3, TFT_WHITE);
+        tft.setTextDatum(MC_DATUM);
+        tft.setTextColor(TFT_WHITE, afford ? 0x1404 : 0x3186);
+        tft.drawString((LANG_DE ? "KAUF $" : "BUY $") + String(sPrices[i]), 272, ry + 17, 1);
+      }
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // TAB 2: JOBS & PROFESSIONS (Earn Coins, XP & Food/Ingredients)
+  // --------------------------------------------------------------------------
+  else if (subScreenTab == 2) {
+    tft.setTextDatum(TL_DATUM);
+    tft.setTextColor(TFT_GREEN, COLOR_UI_PANEL);
+    tft.drawString(LANG_DE ? "BERUFE: Muenzen, Zutaten & Essen verdienen" : "JOBS: Earn Coins, Materials & Food", 10, 34, 1);
+
+    long jobRemMs = (activeJobIdx >= 0) ? (long)(activeJobEndMs - millis()) : 0L;
+    long jobRemSec = (jobRemMs > 0) ? (jobRemMs / 1000L) : 0L;
+
+    // Job 1: Orchard & Herbs (60s)
+    bool j0Active = (activeJobIdx == 0);
+    tft.fillRoundRect(8, 48, 304, 44, 4, 0x0842);
+    tft.drawRoundRect(8, 48, 304, 44, 4, j0Active ? TFT_GREEN : COLOR_UI_BORDER);
+    tft.setTextColor(TFT_GREEN, 0x0842);
+    tft.drawString(LANG_DE ? "1. Kraeutersammler (60s)" : "1. Herb Forager (60s)", 16, 54, 2);
+    tft.setTextColor(TFT_WHITE, 0x0842);
+    tft.drawString(LANG_DE ? "-15 EN | +$15 +25XP +2 Aepfel +Kraut" : "-15 EN | +$15 +25XP +2 Apple +Herb", 16, 74, 1);
+    tft.fillRoundRect(236, 54, 70, 32, 3, (activeJobIdx >= 0) ? 0x3186 : 0x1404);
+    tft.drawRoundRect(236, 54, 70, 32, 3, TFT_WHITE);
+    tft.setTextColor(TFT_WHITE, (activeJobIdx >= 0) ? 0x3186 : 0x1404);
+    tft.setTextDatum(MC_DATUM);
+    tft.drawString(j0Active ? (String(jobRemSec) + "s") : "START", 271, 70, 1);
+
+    // Job 2: Village Scout (120s)
+    bool j1Active = (activeJobIdx == 1);
+    tft.fillRoundRect(8, 96, 304, 44, 4, 0x0842);
+    tft.drawRoundRect(8, 96, 304, 44, 4, j1Active ? TFT_YELLOW : COLOR_UI_BORDER);
+    tft.setTextDatum(TL_DATUM);
+    tft.setTextColor(COLOR_GOLD, 0x0842);
+    tft.drawString(LANG_DE ? "2. Dorfwache Lv.2 (120s)" : "2. Village Scout Lv.2 (120s)", 16, 102, 2);
+    tft.setTextColor(TFT_WHITE, 0x0842);
+    tft.drawString(LANG_DE ? "-20 EN | +$30 +50XP +Snack +Fleisch" : "-20 EN | +$30 +50XP +Snack +Meat", 16, 122, 1);
+    tft.fillRoundRect(236, 102, 70, 32, 3, (activeJobIdx >= 0) ? 0x3186 : 0x9300);
+    tft.drawRoundRect(236, 102, 70, 32, 3, TFT_WHITE);
+    tft.setTextColor(TFT_WHITE, (activeJobIdx >= 0) ? 0x3186 : 0x9300);
+    tft.setTextDatum(MC_DATUM);
+    tft.drawString(j1Active ? (String(jobRemSec) + "s") : "START", 271, 118, 1);
+
+    // Job 3: Crystal & Mushroom Mine (180s)
+    bool j2Active = (activeJobIdx == 2);
+    tft.fillRoundRect(8, 144, 304, 44, 4, 0x0842);
+    tft.drawRoundRect(8, 144, 304, 44, 4, j2Active ? TFT_CYAN : COLOR_UI_BORDER);
+    tft.setTextDatum(TL_DATUM);
+    tft.setTextColor(TFT_CYAN, 0x0842);
+    tft.drawString(LANG_DE ? "3. Kristallmine Lv.3 (180s)" : "3. Crystal Mine Lv.3 (180s)", 16, 150, 2);
+    tft.setTextColor(TFT_WHITE, 0x0842);
+    tft.drawString(LANG_DE ? "-30 EN | +$55 +90XP +Salz +Jerky" : "-30 EN | +$55 +90XP +Salt +Jerky", 16, 170, 1);
+    tft.fillRoundRect(236, 150, 70, 32, 3, (activeJobIdx >= 0) ? 0x3186 : 0x028A);
+    tft.drawRoundRect(236, 150, 70, 32, 3, TFT_WHITE);
+    tft.setTextColor(TFT_WHITE, (activeJobIdx >= 0) ? 0x3186 : 0x028A);
+    tft.setTextDatum(MC_DATUM);
+    tft.drawString(j2Active ? (String(jobRemSec) + "s") : "START", 271, 166, 1);
+
+    tft.setTextDatum(TL_DATUM);
+    tft.setTextColor(TFT_LIGHTGREY, COLOR_UI_PANEL);
+    tft.drawString(String("Energie: ") + myPet.energy + " EN | Jobs: " + myPet.jobsCompleted, 10, 196, 1);
+  }
+
+  // --------------------------------------------------------------------------
+  // TAB 3: SELECTABLE MAGIC SPELLS & ARCANE RESEARCH
+  // --------------------------------------------------------------------------
+  else if (subScreenTab == 3) {
+    tft.setTextDatum(TL_DATUM);
+    tft.setTextColor(COLOR_MANA_PURPLE, COLOR_UI_PANEL);
+    tft.drawString(String(LANG_DE ? "ZAUBER AUSWAHL | Mana: " : "SELECT SPELL | Mana: ") + myPet.mana + "/100 | EN: " + myPet.energy, 10, 33, 1);
+
+    // Spell 0: Purify / Laeuterung (15 MP, cures sickness!)
+    tft.fillRoundRect(8, 45, 304, 39, 4, 0x0842);
+    tft.drawRoundRect(8, 45, 304, 39, 4, engine.isSick ? TFT_GREEN : COLOR_UI_BORDER);
+    tft.setTextColor(TFT_CYAN, 0x0842);
+    tft.drawString(LANG_DE ? "1. Laeuterung (15 MP)" : "1. Purify (15 MP)", 16, 49, 2);
+    tft.setTextColor(TFT_WHITE, 0x0842);
+    tft.drawString(LANG_DE ? "Heilt Bauchweh/Krankheit & 100% Sauber" : "Cures Sickness & 100% Hygiene", 16, 68, 1);
+    tft.fillRoundRect(236, 51, 70, 27, 3, myPet.mana >= 15 ? 0x028A : 0x3186);
+    tft.drawRoundRect(236, 51, 70, 27, 3, TFT_WHITE);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(TFT_WHITE, myPet.mana >= 15 ? 0x028A : 0x3186);
+    tft.drawString(LANG_DE ? "WIRKEN" : "CAST", 271, 64, 1);
+
+    // Spell 1: Vitality Aura (20 MP)
+    tft.fillRoundRect(8, 87, 304, 39, 4, 0x0842);
+    tft.drawRoundRect(8, 87, 304, 39, 4, COLOR_UI_BORDER);
+    tft.setTextDatum(TL_DATUM);
+    tft.setTextColor(TFT_PINK, 0x0842);
+    tft.drawString(LANG_DE ? "2. Heilaura (20 MP)" : "2. Vitality Aura (20 MP)", 16, 91, 2);
+    tft.setTextColor(TFT_WHITE, 0x0842);
+    tft.drawString(LANG_DE ? "+30 HP Lebenspunkte & +10 Glueck" : "+30 Health & +10 Happiness", 16, 110, 1);
+    tft.fillRoundRect(236, 93, 70, 27, 3, myPet.mana >= 20 ? 0x78D8 : 0x3186);
+    tft.drawRoundRect(236, 93, 70, 27, 3, TFT_WHITE);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(TFT_WHITE, myPet.mana >= 20 ? 0x78D8 : 0x3186);
+    tft.drawString(LANG_DE ? "WIRKEN" : "CAST", 271, 106, 1);
+
+    // Spell 2: Astral Feast / Friend Blessing (30 MP)
+    tft.fillRoundRect(8, 129, 304, 39, 4, 0x0842);
+    tft.drawRoundRect(8, 129, 304, 39, 4, COLOR_UI_BORDER);
+    tft.setTextDatum(TL_DATUM);
+    tft.setTextColor(COLOR_GOLD, 0x0842);
+    tft.drawString(LANG_DE ? "3. Astral-Festmahl (30 MP)" : "3. Astral Feast (30 MP)", 16, 133, 2);
+    tft.setTextColor(TFT_WHITE, 0x0842);
+    tft.drawString(LANG_DE ? "+35 Hunger, 3T Schutz + Partner-Segen!" : "+35 Hunger, 3T Satiety + Buddy Heal!", 16, 152, 1);
+    tft.fillRoundRect(236, 135, 70, 27, 3, myPet.mana >= 30 ? 0x78D8 : 0x3186);
+    tft.drawRoundRect(236, 135, 70, 27, 3, TFT_WHITE);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(TFT_WHITE, myPet.mana >= 30 ? 0x78D8 : 0x3186);
+    tft.drawString(LANG_DE ? "WIRKEN" : "CAST", 271, 148, 1);
+
+    // Research Magic Button
+    tft.fillRoundRect(8, 173, 304, 36, 4, myPet.energy >= 15 ? 0x78D8 : 0x3186);
+    tft.drawRoundRect(8, 173, 304, 36, 4, TFT_WHITE);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(TFT_WHITE, myPet.energy >= 15 ? 0x78D8 : 0x3186);
+    tft.drawString(LANG_DE ? "MAGIE ERFORSCHEN (-15 EN -> +35 XP +15 MP)" : "RESEARCH MAGIC (-15 EN -> +35 XP +15 MP)", 160, 191, 1);
+  }
+
+  // --------------------------------------------------------------------------
+  // TAB 4: SELECTABLE QUESTS & DAILY MISSIONS
+  // --------------------------------------------------------------------------
+  else if (subScreenTab == 4) {
+    tft.setTextDatum(TL_DATUM);
+    tft.setTextColor(TFT_YELLOW, COLOR_UI_PANEL);
+    tft.drawString(LANG_DE ? "QUESTS, TAGESMISSIONEN & STREAK" : "QUESTS, DAILY MISSIONS & STREAK", 10, 33, 1);
+
+    // Card 0: Daily Login Streak Bonus
+    bool canStreak = engine.canClaimStreakBonus();
+    tft.fillRoundRect(8, 45, 304, 39, 4, 0x0842);
+    tft.drawRoundRect(8, 45, 304, 39, 4, canStreak ? COLOR_GOLD : COLOR_UI_BORDER);
+    tft.setTextColor(COLOR_GOLD, 0x0842);
+    tft.drawString(String(LANG_DE ? "Login-Streak Tag " : "Login Streak Day ") + engine.consecutiveLoginDays, 16, 49, 2);
+    tft.setTextColor(TFT_WHITE, 0x0842);
+    tft.drawString(String("Bonus: +$") + engine.getStreakBonusCoins() + " | +" + engine.getStreakBonusXP() + " XP", 16, 68, 1);
+    tft.fillRoundRect(236, 51, 70, 27, 3, canStreak ? 0x9300 : 0x3186);
+    tft.drawRoundRect(236, 51, 70, 27, 3, TFT_WHITE);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(TFT_WHITE, canStreak ? 0x9300 : 0x3186);
+    tft.drawString(canStreak ? (LANG_DE ? "ABHOLEN" : "CLAIM") : (LANG_DE ? "ERLEDIGT" : "DONE"), 271, 64, 1);
+
+    // Card 1: Next Active / Claimable Daily Mission
+    int8_t activeMissionIdx = -1;
+    for (uint8_t m = 0; m < engine.missionCount; m++) {
+      if (engine.missions[m].completed && !engine.missions[m].claimed) {
+        activeMissionIdx = (int8_t)m;
+        break;
+      }
+    }
+    if (activeMissionIdx < 0) {
+      for (uint8_t m = 0; m < engine.missionCount; m++) {
+        if (!engine.missions[m].claimed) {
+          activeMissionIdx = (int8_t)m;
+          break;
+        }
+      }
+    }
+    tft.fillRoundRect(8, 87, 304, 39, 4, 0x0842);
+    bool mReady = (activeMissionIdx >= 0 && engine.missions[activeMissionIdx].completed && !engine.missions[activeMissionIdx].claimed);
+    tft.drawRoundRect(8, 87, 304, 39, 4, mReady ? TFT_GREEN : COLOR_UI_BORDER);
+    tft.setTextDatum(TL_DATUM);
+    if (activeMissionIdx >= 0) {
+      EngineDailyMission& dm = engine.missions[activeMissionIdx];
+      tft.setTextColor(TFT_CYAN, 0x0842);
+      tft.drawString(LANG_DE ? dm.name_de : dm.name, 16, 91, 2);
+      tft.setTextColor(TFT_WHITE, 0x0842);
+      tft.drawString(String(dm.currentCount) + "/" + dm.targetCount + " | +$" + dm.coinReward + " +" + dm.xpReward + "XP", 16, 110, 1);
+      tft.fillRoundRect(236, 93, 70, 27, 3, mReady ? 0x1404 : 0x3186);
+      tft.drawRoundRect(236, 93, 70, 27, 3, TFT_WHITE);
+      tft.setTextDatum(MC_DATUM);
+      tft.setTextColor(TFT_WHITE, mReady ? 0x1404 : 0x3186);
+      tft.drawString(mReady ? (LANG_DE ? "EINLOESEN" : "CLAIM") : (LANG_DE ? "LAEUFT" : "ACTIVE"), 271, 106, 1);
+    } else {
+      tft.setTextColor(TFT_GREEN, 0x0842);
+      tft.drawString(LANG_DE ? "Alle Tagesmissionen erledigt!" : "All Daily Missions Complete!", 16, 100, 2);
+    }
+
+    // Card 2: Co-op Quest 1 - Scout
+    tft.fillRoundRect(8, 129, 304, 39, 4, 0x0842);
+    tft.drawRoundRect(8, 129, 304, 39, 4, COLOR_UI_BORDER);
+    tft.setTextDatum(TL_DATUM);
+    tft.setTextColor(TFT_GREEN, 0x0842);
+    tft.drawString(LANG_DE ? "Koop-Quest: Spaeher-Patrouille" : "Co-op Quest: Scout Patrol", 16, 133, 2);
+    tft.setTextColor(TFT_WHITE, 0x0842);
+    tft.drawString(LANG_DE ? "-15 EN | +$40 +50XP +1 Apfel" : "-15 EN | +$40 +50XP +1 Apple", 16, 152, 1);
+    tft.fillRoundRect(236, 135, 70, 27, 3, myPet.energy >= 15 ? 0x1404 : 0x3186);
+    tft.drawRoundRect(236, 135, 70, 27, 3, TFT_WHITE);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(TFT_WHITE, myPet.energy >= 15 ? 0x1404 : 0x3186);
+    tft.drawString("START", 271, 148, 1);
+
+    // Card 3: Co-op Quest 2 - Treasure Hunt
+    tft.fillRoundRect(8, 171, 304, 39, 4, 0x0842);
+    tft.drawRoundRect(8, 171, 304, 39, 4, COLOR_UI_BORDER);
+    tft.setTextDatum(TL_DATUM);
+    tft.setTextColor(TFT_ORANGE, 0x0842);
+    tft.drawString(LANG_DE ? "Koop-Quest: Schatzsuche" : "Co-op Quest: Treasure Hunt", 16, 175, 2);
+    tft.setTextColor(TFT_WHITE, 0x0842);
+    tft.drawString(LANG_DE ? "-25 EN | +$65 +75XP +Heilsalbe" : "-25 EN | +$65 +75XP +Salve", 16, 194, 1);
+    tft.fillRoundRect(236, 177, 70, 27, 3, myPet.energy >= 25 ? 0x9300 : 0x3186);
+    tft.drawRoundRect(236, 177, 70, 27, 3, TFT_WHITE);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(TFT_WHITE, myPet.energy >= 25 ? 0x9300 : 0x3186);
+    tft.drawString("START", 271, 190, 1);
+  }
+
+  // --------------------------------------------------------------------------
+  // BOTTOM RETURN BAR (Tap to Exit)
+  // --------------------------------------------------------------------------
+  tft.fillRoundRect(8, 216, 304, 20, 3, 0x028A);
+  tft.drawRoundRect(8, 216, 304, 20, 3, TFT_WHITE);
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextColor(TFT_WHITE, 0x028A);
+  tft.drawString(LANG_DE ? "< ZURUECK ZUM PET <" : "< RETURN TO PET SCREEN <", 160, 226, 1);
 }
 
 // ============================================================================
@@ -788,7 +1412,6 @@ void renderCYDScreen() {
 
   // 2. Center Partition Line
   tft.drawFastVLine(160, 0, 240, COLOR_UI_BORDER);
-  // Connection Status Dot
   tft.fillCircle(160, 120, 5, friendPet.isOnline ? TFT_GREEN : TFT_RED);
   tft.drawCircle(160, 120, 5, TFT_WHITE);
 
@@ -798,11 +1421,11 @@ void renderCYDScreen() {
   tft.fillRect(0, 0, 38, 240, COLOR_UI_PANEL);
   tft.drawFastVLine(37, 0, 240, COLOR_UI_BORDER);
 
-  drawTouchButton(tft, 2, 2,   34, 44, TXT_FEED,  0x1404, TFT_WHITE, 1);
-  drawTouchButton(tft, 2, 50,  34, 44, TXT_PLAY,  0x02F5, TFT_WHITE, 2);
-  drawTouchButton(tft, 2, 98,  34, 44, TXT_BATH,  0x047A, TFT_WHITE, 3);
-  drawTouchButton(tft, 2, 146, 34, 44, TXT_MAGIC, 0x78D8, TFT_WHITE, 4);
-  drawTouchButton(tft, 2, 194, 34, 44, TXT_SAVE,  0x9300, TFT_WHITE, 5);
+  drawTouchButton(tft, 1, 2,   36, 44, TXT_FEED,  feedMenuOpen ? 0x03E5 : 0x0243, feedMenuOpen ? COLOR_GOLD : 0x2E69, 1, 0xA7F4);
+  drawTouchButton(tft, 1, 50,  36, 44, TXT_PLAY,  0x0189, 0x3DDF, 2, 0xBDF7);
+  drawTouchButton(tft, 1, 98,  36, 44, TXT_BATH,  0x020A, 0x05BB, 3, 0xA7FF);
+  drawTouchButton(tft, 1, 146, 36, 44, TXT_MAGIC, 0x286B, 0x99FD, 4, 0xE5FF);
+  drawTouchButton(tft, 1, 194, 36, 44, TXT_STATS, 0x0229, 0x26BF, 5, 0xBFFB);
 
   // =========================================================================
   // LEFT VIEWPORT: YOUR PET HUD & SPRITE (X: 38 to 160)
@@ -828,12 +1451,25 @@ void renderCYDScreen() {
   // EXP Bar
   tft.setTextColor(COLOR_MANA_PURPLE, myBiome.bgColor);
   tft.drawString("XP", 42, 54, 1);
-  uint8_t xpPct = (myPet.xp * 100) / myPet.xpNext;
+  uint8_t xpPct = (myPet.xpNext > 0) ? (uint8_t)min((int)100, (int)((myPet.xp * 100) / myPet.xpNext)) : 0;
   drawMiniBar(tft, 58, 54, 56, 5, xpPct, COLOR_MANA_PURPLE);
+
+  // Satiety & Sickness HUD Badges (Y: 64)
+  if (engine.satietyTicks > 0) {
+    tft.fillRoundRect(42, 63, 46, 12, 2, 0x0320);
+    tft.setTextColor(TFT_GREEN, 0x0320);
+    tft.drawString(String("SATT:") + engine.satietyTicks + "T", 45, 65, 1);
+  }
+  if (engine.isSick) {
+    int sx = (engine.satietyTicks > 0) ? 92 : 42;
+    tft.fillRoundRect(sx, 63, 44, 12, 2, TFT_RED);
+    tft.setTextColor(TFT_WHITE, TFT_RED);
+    tft.drawString(LANG_DE ? "KRANK!" : "SICK!", sx + 4, 65, 1);
+  }
 
   // Center Sprite
   if (strcmp(myPet.phase, "Egg") == 0) {
-    drawPixelEgg(tft, 95, 126, myBiome.petColor, myPet.eggWarmth);
+    drawPixelEgg(tft, 95, 126, myBiome.petColor, myPet.eggWarmth, myPet.biome);
     tft.setTextColor(TFT_YELLOW, myBiome.bgColor);
     tft.setTextDatum(MC_DATUM);
     tft.drawString(TXT_TAP_EGG, 95, 170, 1);
@@ -846,9 +1482,9 @@ void renderCYDScreen() {
   tft.setTextColor(COLOR_GOLD, myBiome.bgColor);
   tft.drawString(String("$") + myPet.coins, 42, 218, 1);
   tft.setTextColor(engine.canClaimStreakBonus() ? TFT_YELLOW : TFT_ORANGE, myBiome.bgColor);
-  tft.drawString(String("S:") + engine.consecutiveLoginDays + (engine.canClaimStreakBonus() ? "!" : ""), 70, 218, 1);
+  tft.drawString(String("S:") + engine.consecutiveLoginDays + (engine.canClaimStreakBonus() ? "!" : ""), 72, 218, 1);
   tft.setTextColor(TFT_CYAN, myBiome.bgColor);
-  tft.drawString(String("EN:") + myPet.energy, 98, 218, 1);
+  tft.drawString(String("EN:") + myPet.energy, 102, 218, 1);
 
   // =========================================================================
   // RIGHT VIEWPORT: FRIEND'S PET (X: 160 to 282)
@@ -860,15 +1496,12 @@ void renderCYDScreen() {
   tft.setTextColor(friendPet.isOnline ? TFT_GREEN : TFT_LIGHTGREY, frBiome.bgColor);
   tft.drawString(friendPet.isOnline ? TXT_ONLINE : TXT_ASLEEP, 166, 22, 1);
 
-  // Friend HP
   tft.setTextColor(TFT_RED, frBiome.bgColor);
   tft.drawString("HP", 166, 34, 1);
   drawMiniBar(tft, 182, 34, 56, 7, friendPet.health, TFT_RED);
 
-  // Friend Sprite
   drawPixelPet(tft, 220, 126, friendPet.biome, friendPet.phase, true);
 
-  // Friend Live Speech Balloon
   if (friendPet.balloonTimeout > 0 || strlen(friendPet.speechBalloon) > 0) {
     tft.fillRoundRect(164, 154, 114, 26, 4, TFT_WHITE);
     tft.drawRoundRect(164, 154, 114, 26, 4, TFT_BLACK);
@@ -877,7 +1510,6 @@ void renderCYDScreen() {
     tft.drawString(friendPet.speechBalloon, 221, 167, 1);
   }
 
-  // Friend Footer
   tft.setTextDatum(TL_DATUM);
   tft.setTextColor(TFT_CYAN, frBiome.bgColor);
   tft.drawString(friendPet.deviceId, 166, 218, 1);
@@ -888,19 +1520,117 @@ void renderCYDScreen() {
   tft.fillRect(282, 0, 38, 240, COLOR_UI_PANEL);
   tft.drawFastVLine(282, 0, 240, COLOR_UI_BORDER);
 
-  drawTouchButton(tft, 284, 2,   34, 44, TXT_TREAT,      0xD9E0, TFT_WHITE, 6);
-  drawTouchButton(tft, 284, 50,  34, 44, TXT_CHAT,       0x03FF, TFT_BLACK, 7);
-  drawTouchButton(tft, 284, 98,  34, 44, TXT_MAGIC_PLUS, 0x78D8, TFT_WHITE, 8);
-  drawTouchButton(tft, 284, 146, 34, 44, TXT_QUEST,      0x1404, TFT_WHITE, 9);
-  drawTouchButton(tft, 284, 194, 34, 44, TXT_TRADE,      COLOR_GOLD, TFT_BLACK, 10);
+  drawTouchButton(tft, 283, 2,   36, 44, TXT_TREAT,      0x4044, 0xF9CA, 6,  0xFDDD);
+  drawTouchButton(tft, 283, 50,  36, 44, TXT_CHAT,       chatMenuOpen ? 0x026F : 0x012B, chatMenuOpen ? COLOR_GOLD : 0x3C3F, 7, 0xBEFF);
+  drawTouchButton(tft, 283, 98,  36, 44, TXT_MAGIC_PLUS, 0x186B, 0x633F, 8,  0xCFD9);
+  drawTouchButton(tft, 283, 146, 36, 44, TXT_QUEST,      0x0244, 0x2E69, 9,  0xA7F4);
+  drawTouchButton(tft, 283, 194, 36, 44, TXT_TRADE,      0x41C0, COLOR_GOLD, 10, 0xFEF2);
 
-  // Top Notification Toast
-  if (strlen(activeBannerMessage) > 0) {
-    tft.fillRoundRect(48, 2, 224, 20, 4, 0x18E3);
-    tft.drawRoundRect(48, 2, 224, 20, 4, TFT_GOLD);
+  // =========================================================================
+  // HORIZONTAL FEED FLYOUT BAR BESIDE TOP-LEFT FEED BUTTON (X: 39 to 280, Y: 2 to 46)
+  // =========================================================================
+  if (feedMenuOpen) {
+    tft.fillRoundRect(39, 2, 241, 44, 4, 0x0842);
+    tft.drawRoundRect(39, 2, 241, 44, 4, TFT_GREEN);
+
+    uint8_t foodIdx[6];
+    uint8_t foodCnt = engine.getAvailableFoods(foodIdx, 6);
+    if (foodCnt == 0) {
+      tft.setTextDatum(TL_DATUM);
+      tft.setTextColor(TFT_ORANGE, 0x0842);
+      tft.drawString(LANG_DE ? "Kein Essen im Inventar!" : "No food in bag!", 46, 16, 1);
+
+      tft.fillRoundRect(216, 7, 58, 34, 3, 0x1404);
+      tft.drawRoundRect(216, 7, 58, 34, 3, TFT_WHITE);
+      tft.setTextDatum(MC_DATUM);
+      tft.setTextColor(TFT_WHITE, 0x1404);
+      tft.drawString("SHOP", 245, 24, 1);
+    } else {
+      uint8_t showCnt = min((uint8_t)5, foodCnt);
+      for (uint8_t k = 0; k < showCnt; k++) {
+        EngineInventorySlot& f = engine.inventory[foodIdx[k]];
+        int bx = 43 + k * 47;
+        uint16_t slotBg = (f.sickChancePct > 0) ? 0x3800 : 0x10A2;
+        uint16_t slotBorder = (f.satietyTicks > 0) ? TFT_GREEN : (f.sickChancePct > 0 ? TFT_ORANGE : TFT_WHITE);
+        tft.fillRoundRect(bx, 5, 44, 38, 3, slotBg);
+        tft.drawRoundRect(bx, 5, 44, 38, 3, slotBorder);
+
+        drawFoodIcon(tft, bx + 15, 17, f.id);
+
+        tft.setTextDatum(TR_DATUM);
+        tft.setTextColor(TFT_YELLOW, slotBg);
+        tft.drawString(String("x") + f.quantity, bx + 42, 7, 1);
+
+        tft.setTextDatum(TL_DATUM);
+        tft.setTextColor(TFT_WHITE, slotBg);
+        tft.drawString(String("+") + f.hungerGain, bx + 3, 30, 1);
+
+        if (f.satietyTicks > 0) {
+          tft.setTextDatum(TR_DATUM);
+          tft.setTextColor(TFT_GREEN, slotBg);
+          tft.drawString(String("S") + f.satietyTicks, bx + 42, 30, 1);
+        } else if (f.sickChancePct > 0) {
+          tft.setTextDatum(TR_DATUM);
+          tft.setTextColor(TFT_RED, slotBg);
+          tft.drawString("!", bx + 41, 30, 1);
+        }
+      }
+    }
+  }
+
+  // Top Notification Toast (rendered below flyout if open so it stays visible)
+  if (!chatMenuOpen && strlen(activeBannerMessage) > 0) {
+    int bannerY = feedMenuOpen ? 50 : 2;
+    tft.fillRoundRect(46, bannerY, 228, 20, 4, 0x18E3);
+    tft.drawRoundRect(46, bannerY, 228, 20, 4, TFT_GOLD);
     tft.setTextColor(TFT_YELLOW, 0x18E3);
     tft.setTextDatum(MC_DATUM);
-    tft.drawString(activeBannerMessage, 160, 12, 1);
+    tft.drawString(activeBannerMessage, 160, bannerY + 10, 1);
+  }
+
+  // =========================================================================
+  // QUICK-CHAT PRESET PICKER MODAL OVERLAY (X: 8..312, Y: 12..228)
+  // =========================================================================
+  if (chatMenuOpen) {
+    tft.fillRoundRect(8, 12, 304, 216, 6, 0x0842);
+    tft.drawRoundRect(8, 12, 304, 216, 6, 0x3C3F);
+
+    // Header
+    tft.fillRoundRect(10, 14, 300, 24, 4, 0x012B);
+    tft.setTextDatum(ML_DATUM);
+    tft.setTextColor(TFT_WHITE, 0x012B);
+    tft.drawString(String(LANG_DE ? "CHAT AN: " : "CHAT TO: ") + friendPet.name, 16, 26, 2);
+
+    // Close [X] button (X: 280..308, Y: 16..36)
+    tft.fillRoundRect(280, 16, 28, 20, 3, TFT_RED);
+    tft.drawRoundRect(280, 16, 28, 20, 3, TFT_WHITE);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(TFT_WHITE, TFT_RED);
+    tft.drawString("X", 294, 26, 2);
+
+    // 8 Selectable Preset Buttons (2 columns x 4 rows)
+    static const uint16_t presetBorders[8] = {
+      0x3C3F, TFT_GREEN, TFT_ORANGE, 0x99FD,
+      COLOR_GOLD, TFT_RED, COLOR_GOLD, TFT_CYAN
+    };
+    for (uint8_t i = 0; i < 8; i++) {
+      uint8_t col = i % 2;
+      uint8_t row = i / 2;
+      int bx = (col == 0) ? 14 : 164;
+      int by = 42 + row * 38;
+      tft.fillRoundRect(bx, by, 142, 33, 4, 0x10A2);
+      tft.drawRoundRect(bx, by, 142, 33, 4, presetBorders[i]);
+      tft.setTextDatum(MC_DATUM);
+      tft.setTextColor(TFT_WHITE, 0x10A2);
+      tft.drawString(getChatPreset(i), bx + 71, by + 16, 1);
+    }
+
+    // Bottom Cancel Bar
+    tft.fillRoundRect(14, 196, 292, 24, 4, 0x028A);
+    tft.drawRoundRect(14, 196, 292, 24, 4, TFT_WHITE);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(TFT_WHITE, 0x028A);
+    tft.drawString(LANG_DE ? "< ABBRECHEN <" : "< CANCEL <", 160, 208, 1);
   }
 }
 
@@ -910,42 +1640,481 @@ void renderCYDScreen() {
 void handleTouchPress(uint16_t x, uint16_t y) {
   soundClick();
 
+  // If in Sub-Screen (Stats, Bag/Cook/Shop, Jobs, Magic, Quests)
+  if (inSubScreen) {
+    // 1. Close button (X: 288 to 320, Y: 0 to 32) or bottom exit bar (Y >= 215)
+    if ((x >= 288 && y <= 32) || y >= 215) {
+      soundClick();
+      inSubScreen = false;
+      screenNeedsRefresh = true;
+      return;
+    }
+
+    // 2. Tab selection (Y: 0 to 32)
+    if (y <= 32) {
+      if (x < 57) subScreenTab = 0;        // STAT
+      else if (x < 113) subScreenTab = 1;  // BAG / COOK / SHOP
+      else if (x < 169) subScreenTab = 2;  // JOBS
+      else if (x < 226) subScreenTab = 3;  // MAGIC
+      else subScreenTab = 4;               // QUESTS
+      soundClick();
+      renderSubScreen();
+      return;
+    }
+
+    // 3. Tab 1: BAG / COOK / SHOP
+    if (subScreenTab == 1) {
+      if (y >= 32 && y <= 52) {
+        if (x < 108) bagSubMode = 0;
+        else if (x < 212) bagSubMode = 1;
+        else bagSubMode = 2;
+        soundClick();
+        renderSubScreen();
+        return;
+      }
+
+      if (bagSubMode == 0) {
+        // Real inventory slots (Y: 55, 94, 133, 172)
+        for (uint8_t i = 0; i < 4 && i < engine.inventoryCount; i++) {
+          int ry = 55 + i * 39;
+          if (y >= (uint16_t)ry && y <= (uint16_t)(ry + 35)) {
+            EngineInventorySlot& sl = engine.inventory[i];
+            if (sl.category == 0) {
+              syncToEngine();
+              FeedResult res = engine.feedWithItem(sl.id);
+              syncFromEngine();
+              if (res.success) {
+                soundMunch();
+                if (res.becameSick) {
+                  soundWarning();
+                  showBanner(LANG_DE ? "Bauchweh vom Snack! -15 HP" : "Snack Tummyache! -15 HP", 3000);
+                } else {
+                  showBanner(LANG_DE ? "Gefuettert! +" + String(res.hungerGain) + " FD" : "Fed! +" + String(res.hungerGain) + " FD");
+                }
+              }
+            } else if (sl.category == 2) {
+              bool wasSick = engine.isSick;
+              syncToEngine();
+              if (engine.usePotionItem(sl.id)) {
+                syncFromEngine();
+                soundTreatSent();
+                if (wasSick && !engine.isSick) {
+                  showBanner(LANG_DE ? "Geheilt! Pet wieder fit!" : "Cured! Pet feels great!");
+                } else {
+                  showBanner(LANG_DE ? "Arznei benutzt!" : "Item used!");
+                }
+              }
+            } else {
+              bagSubMode = 1; // Switch to Cook Recipes
+            }
+            checkLevelUp();
+            renderSubScreen();
+            return;
+          }
+        }
+      } else if (bagSubMode == 1) {
+        // Cook Recipes (Y: 56, 108, 160)
+        uint8_t rIdx = 255;
+        if (y >= 56 && y <= 104) rIdx = 0;
+        else if (y >= 108 && y <= 156) rIdx = 1;
+        else if (y >= 160 && y <= 208) rIdx = 2;
+
+        if (rIdx < 3) {
+          syncToEngine();
+          if (engine.craftRecipe(rIdx)) {
+            syncFromEngine();
+            myPet.recipesCrafted++;
+            soundLevelUp();
+            showBanner(LANG_DE ? "Gericht gekocht -> Tasche!" : "Cooked dish -> Bag!");
+            checkLevelUp();
+          } else {
+            soundWarning();
+            showBanner(LANG_DE ? "Zutaten/Level fehlen!" : "Missing items/level!");
+          }
+          renderSubScreen();
+          return;
+        }
+      } else {
+        // Shop / Bazar purchases (Y: 55, 94, 133, 172)
+        const char* sIds[4] = {"food_apple", "food_snack", "food_herb_salad", "item_salve"};
+        for (uint8_t i = 0; i < 4; i++) {
+          int ry = 55 + i * 39;
+          if (y >= (uint16_t)ry && y <= (uint16_t)(ry + 35)) {
+            syncToEngine();
+            if (engine.purchaseItem(sIds[i])) {
+              syncFromEngine();
+              soundLevelUp();
+              showBanner(LANG_DE ? "Gekauft -> im Inventar!" : "Bought -> added to Bag!");
+            } else {
+              soundWarning();
+              showBanner(LANG_DE ? "Zu wenig Muenzen!" : "Not enough coins!");
+            }
+            renderSubScreen();
+            return;
+          }
+        }
+      }
+      return;
+    }
+
+    // 4. Tab 2: JOBS (Start timed job, rewards payout upon completion)
+    if (subScreenTab == 2) {
+      if (activeJobIdx >= 0) {
+        long remMs = (long)(activeJobEndMs - millis());
+        long rem = (remMs > 0) ? (remMs / 1000L) : 0L;
+        soundWarning();
+        showBanner(String(LANG_DE ? "Beruf laeuft noch " : "Job running for ") + rem + "s");
+        renderSubScreen();
+        return;
+      }
+      if (y >= 48 && y <= 92) { // Job 1: Herbs + Apples (60s)
+        if (myPet.energy >= 15) {
+          myPet.energy -= 15;
+          activeJobIdx = 0;
+          activeJobEndMs = millis() + 60000UL;
+          syncToEngine();
+          engine.recordAction("play", 1);
+          soundClick();
+          showBanner(LANG_DE ? "Kraeutersammler gestartet (60s)!" : "Forager dispatched (60s)!");
+        } else {
+          soundWarning();
+          showBanner(LANG_DE ? "Braucht 15 Energie!" : "Need 15 Energy!");
+        }
+        renderSubScreen();
+        return;
+      }
+      if (y >= 96 && y <= 140) { // Job 2: Village Scout (120s)
+        if (myPet.level < 2) {
+          soundWarning();
+          showBanner(LANG_DE ? "Benoetigt Level 2!" : "Requires Level 2!");
+        } else if (myPet.energy >= 20) {
+          myPet.energy -= 20;
+          activeJobIdx = 1;
+          activeJobEndMs = millis() + 120000UL;
+          syncToEngine();
+          soundClick();
+          showBanner(LANG_DE ? "Dorfwache gestartet (120s)!" : "Scout dispatched (120s)!");
+        } else {
+          soundWarning();
+          showBanner(LANG_DE ? "Braucht 20 Energie!" : "Need 20 Energy!");
+        }
+        renderSubScreen();
+        return;
+      }
+      if (y >= 144 && y <= 188) { // Job 3: Crystal & Mushroom Mine (180s)
+        if (myPet.level < 3) {
+          soundWarning();
+          showBanner(LANG_DE ? "Benoetigt Level 3!" : "Requires Level 3!");
+        } else if (myPet.energy >= 30) {
+          myPet.energy -= 30;
+          activeJobIdx = 2;
+          activeJobEndMs = millis() + 180000UL;
+          syncToEngine();
+          soundClick();
+          showBanner(LANG_DE ? "Kristallmine gestartet (180s)!" : "Miner dispatched (180s)!");
+        } else {
+          soundWarning();
+          showBanner(LANG_DE ? "Braucht 30 Energie!" : "Need 30 Energy!");
+        }
+        renderSubScreen();
+        return;
+      }
+      return;
+    }
+
+    // 5. Tab 3: SELECTABLE MAGIC SPELLS & RESEARCH
+    if (subScreenTab == 3) {
+      if (y >= 45 && y <= 84) { // Spell 0: Purify (15 MP)
+        if (myPet.mana >= 15) {
+          myPet.mana -= 15;
+          myPet.hygiene = 100;
+          myPet.health = (uint8_t)min(100, (int)myPet.health + 10);
+          engine.isSick = false;
+          myPet.spellsCast++;
+          syncToEngine();
+          engine.addXP(25);
+          engine.recordAction("magic", 1);
+          syncFromEngine();
+          soundTreatSent();
+          showBanner(LANG_DE ? "Laeuterung! Bauchweh geheilt!" : "Purified! Sickness cured!");
+          checkLevelUp();
+        } else {
+          soundWarning();
+          showBanner(LANG_DE ? "Braucht 15 Mana!" : "Need 15 Mana!");
+        }
+        renderSubScreen();
+        return;
+      }
+      if (y >= 87 && y <= 126) { // Spell 1: Vitality Aura (20 MP)
+        if (myPet.mana >= 20) {
+          myPet.mana -= 20;
+          myPet.health = (uint8_t)min(100, (int)myPet.health + 30);
+          myPet.happiness = (uint8_t)min(100, (int)myPet.happiness + 10);
+          myPet.spellsCast++;
+          syncToEngine();
+          engine.addXP(30);
+          engine.recordAction("magic", 1);
+          syncFromEngine();
+          soundTreatSent();
+          showBanner(TXT_BANNER_AURA);
+          checkLevelUp();
+        } else {
+          soundWarning();
+          showBanner(TXT_BANNER_NO_MANA20);
+        }
+        renderSubScreen();
+        return;
+      }
+      if (y >= 129 && y <= 168) { // Spell 2: Astral Feast + Buddy Bless (30 MP)
+        if (myPet.mana >= 30) {
+          myPet.mana -= 30;
+          myPet.hunger = (uint8_t)min(100, (int)myPet.hunger + 35);
+          if (engine.satietyTicks < 3) engine.satietyTicks = 3;
+          myPet.spellsCast++;
+          sendDirectSocketPacket("MAGIC", "Astral Feast Blessing");
+          syncToEngine();
+          engine.addXP(40);
+          engine.recordAction("magic", 1);
+          syncFromEngine();
+          soundLevelUp();
+          showBanner(LANG_DE ? "Astral-Festmahl! +35 FD & 3T" : "Astral Feast! +35 FD & 3T");
+          checkLevelUp();
+        } else {
+          soundWarning();
+          showBanner(TXT_BANNER_NO_MANA30);
+        }
+        renderSubScreen();
+        return;
+      }
+      if (y >= 173 && y <= 210) { // Research Magic
+        if (myPet.energy >= 15) {
+          myPet.energy -= 15;
+          myPet.mana = (uint8_t)min(100, (int)myPet.mana + 15);
+          myPet.spellsCast++;
+          syncToEngine();
+          engine.addXP(35);
+          engine.recordAction("magic", 1);
+          syncFromEngine();
+          soundTreatSent();
+          showBanner(LANG_DE ? "Magie erforscht! +35 XP +15 MP" : "Magic studied! +35 XP +15 MP");
+          checkLevelUp();
+        } else {
+          soundWarning();
+          showBanner(LANG_DE ? "Braucht 15 Energie!" : "Need 15 Energy!");
+        }
+        renderSubScreen();
+        return;
+      }
+      return;
+    }
+
+    // 6. Tab 4: SELECTABLE QUESTS & DAILY MISSIONS
+    if (subScreenTab == 4) {
+      if (y >= 45 && y <= 84) { // Streak Claim
+        syncToEngine();
+        if (engine.canClaimStreakBonus()) {
+          uint16_t cR = engine.getStreakBonusCoins();
+          uint16_t xR = engine.getStreakBonusXP();
+          engine.claimDailyLoginStreakBonus();
+          syncFromEngine();
+          soundLevelUp();
+          showBanner(String(TXT_BANNER_STREAK_CLAIMED) + engine.consecutiveLoginDays + " +$" + cR, 3000);
+          checkLevelUp();
+        } else {
+          showBanner(LANG_DE ? "Heute schon abgeholt!" : "Already claimed today!");
+        }
+        renderSubScreen();
+        return;
+      }
+      if (y >= 87 && y <= 126) { // Claim Completed Daily Mission
+        syncToEngine();
+        bool claimedAny = false;
+        for (uint8_t m = 0; m < engine.missionCount; m++) {
+          if (engine.missions[m].completed && !engine.missions[m].claimed) {
+            engine.claimMission(engine.missions[m].id);
+            syncFromEngine();
+            claimedAny = true;
+            soundLevelUp();
+            showBanner(TXT_BANNER_MISSION_CLAIMED, 3000);
+            checkLevelUp();
+            break;
+          }
+        }
+        if (!claimedAny) {
+          soundWarning();
+          showBanner(LANG_DE ? "Noch keine Mission fertig!" : "No mission ready yet!");
+        }
+        renderSubScreen();
+        return;
+      }
+      if (y >= 129 && y <= 168) { // Co-op Quest 1: Scout Patrol
+        if (myPet.energy >= 15) {
+          myPet.energy -= 15;
+          sendDirectSocketPacket("QUEST", "Co-op Scout");
+          syncToEngine();
+          engine.coins += 40;
+          engine.addXP(50);
+          engine.addKnownItemById("food_apple", 1);
+          syncFromEngine();
+          myPet.jobsCompleted++;
+          soundLevelUp();
+          showBanner(LANG_DE ? "Spaeher fertig! +$40 +1 Apfel" : "Scout Done! +$40 +1 Apple");
+          checkLevelUp();
+        } else {
+          soundWarning();
+          showBanner(LANG_DE ? "Braucht 15 Energie!" : "Need 15 Energy!");
+        }
+        renderSubScreen();
+        return;
+      }
+      if (y >= 171 && y <= 210) { // Co-op Quest 2: Treasure Hunt
+        if (myPet.energy >= 25) {
+          myPet.energy -= 25;
+          sendDirectSocketPacket("QUEST", "Treasure Hunt");
+          syncToEngine();
+          engine.coins += 65;
+          engine.addXP(75);
+          engine.addKnownItemById("item_salve", 1);
+          syncFromEngine();
+          myPet.jobsCompleted++;
+          soundLevelUp();
+          showBanner(LANG_DE ? "Schatz! +$65 +1 Heilsalbe" : "Treasure! +$65 +1 Salve");
+          checkLevelUp();
+        } else {
+          soundWarning();
+          showBanner(LANG_DE ? "Braucht 25 Energie!" : "Need 25 Energy!");
+        }
+        renderSubScreen();
+        return;
+      }
+      return;
+    }
+    return;
+  }
+
+  // =========================================================================
+  // MAIN SCREEN: CHECK QUICK-CHAT SELECTOR MODAL IF OPEN
+  // =========================================================================
+  if (chatMenuOpen) {
+    // Close [X] (x >= 276 && y <= 40), Bottom Cancel Bar (y >= 194), or outside modal
+    if ((x >= 276 && y <= 40) || y >= 194 || x < 8 || x > 312 || y < 12) {
+      chatMenuOpen = false;
+      screenNeedsRefresh = true;
+      return;
+    }
+    // Check 8 Preset Buttons (2 columns x 4 rows)
+    for (uint8_t i = 0; i < 8; i++) {
+      uint8_t col = i % 2;
+      uint8_t row = i / 2;
+      int bx = (col == 0) ? 14 : 164;
+      int by = 42 + row * 38;
+      if ((int)x >= bx && (int)x <= bx + 142 && (int)y >= by && (int)y <= by + 33) {
+        const char* msg = getChatPreset(i);
+        chatMenuOpen = false;
+        soundTreatSent();
+        sendDirectSocketPacket("CHAT", msg);
+        showBanner(String(LANG_DE ? "Chat: " : "Sent: ") + msg, 2500);
+        screenNeedsRefresh = true;
+        return;
+      }
+    }
+    return;
+  }
+
+  // =========================================================================
+  // MAIN SCREEN: CHECK OPEN HORIZONTAL FEED FLYOUT FIRST (X: 39..281, Y: 2..46)
+  // =========================================================================
+  if (feedMenuOpen && x >= 39 && x <= 281 && y >= 2 && y <= 46) {
+    uint8_t foodIdx[6];
+    uint8_t foodCnt = engine.getAvailableFoods(foodIdx, 6);
+
+    if (foodCnt == 0) {
+      if (x >= 214) {
+        // Go straight to Shop in SubScreen
+        feedMenuOpen = false;
+        inSubScreen = true;
+        subScreenTab = 1;
+        bagSubMode = 2;
+        soundClick();
+        renderSubScreen();
+        return;
+      }
+      feedMenuOpen = false;
+      screenNeedsRefresh = true;
+      return;
+    }
+
+    uint8_t showCnt = min((uint8_t)5, foodCnt);
+    for (uint8_t k = 0; k < showCnt; k++) {
+      int bx = 43 + k * 47;
+      if ((int)x >= bx && (int)x <= bx + 44) {
+        syncToEngine();
+        FeedResult res = engine.feedWithItem(engine.inventory[foodIdx[k]].id);
+        syncFromEngine();
+        feedMenuOpen = false;
+        if (res.success) {
+          soundMunch();
+          if (res.becameSick) {
+            soundWarning();
+            showBanner(LANG_DE ? "Bauchweh vom Snack! -15 HP" : "Snack Tummyache! -15 HP", 3000);
+          } else if (res.satietyGained > 0) {
+            showBanner(String("+") + res.hungerGain + " FD & SATT:" + res.satietyGained + "T", 2800);
+          } else {
+            showBanner(String(LANG_DE ? "Gefuettert! +" : "Fed! +") + res.hungerGain + " FD");
+          }
+          checkLevelUp();
+        } else {
+          soundWarning();
+          showBanner(LANG_DE ? "Kein Essen vorhanden!" : "Food not available!");
+        }
+        screenNeedsRefresh = true;
+        return;
+      }
+    }
+    return;
+  }
+
   // 1. LEFT COLUMN: Your Actions (X: 0 to 38)
   if (x < 38) {
     if (y < 48) {
-      soundMunch();
-      myPet.hunger = min(100, myPet.hunger + 25);
-      myPet.xp += 15;
-      engine.recordAction("feed", 1);
-      showBanner(TXT_BANNER_FED);
+      // Button 1: Toggle horizontal Feed Flyout Bar right next to FEED button
+      feedMenuOpen = !feedMenuOpen;
+      screenNeedsRefresh = true;
+      return;
     } else if (y < 96) {
-      myPet.happiness = min(100, myPet.happiness + 20);
-      myPet.energy = max(0, myPet.energy - 10);
-      myPet.xp += 20;
+      feedMenuOpen = false;
+      myPet.happiness = (uint8_t)min(100, (int)myPet.happiness + 20);
+      myPet.energy = (uint8_t)max(0, (int)myPet.energy - 10);
+      syncToEngine();
+      engine.addXP(20);
       engine.recordAction("play", 1);
+      syncFromEngine();
       showBanner(TXT_BANNER_PLAY);
     } else if (y < 144) {
+      feedMenuOpen = false;
       myPet.hygiene = 100;
-      myPet.happiness = min(100, myPet.happiness + 10);
+      myPet.happiness = (uint8_t)min(100, (int)myPet.happiness + 10);
+      syncToEngine();
+      engine.addXP(10);
       engine.recordAction("bath", 1);
+      syncFromEngine();
       showBanner(TXT_BANNER_BATH);
     } else if (y < 192) {
-      if (myPet.mana >= 20) {
-        myPet.mana -= 20;
-        myPet.health = min(100, myPet.health + 30);
-        myPet.xp += 30;
-        myPet.spellsCast++;
-        engine.recordAction("magic", 1);
-        soundTreatSent();
-        showBanner(TXT_BANNER_AURA);
-      } else {
-        showBanner(TXT_BANNER_NO_MANA20);
-      }
+      // Button 4 Left: Open Selectable Magic Spells & Research Menu
+      feedMenuOpen = false;
+      inSubScreen = true;
+      subScreenTab = 3;
+      soundClick();
+      renderSubScreen();
+      return;
     } else {
-      // Long press SAVE or tap: Save to Cloud & trigger OTA check
-      syncWithPHPServer();
-      checkForOTAUpdate();
-      showBanner(TXT_BANNER_SAVED);
+      // Button 5 Left: Open Full Stats & Overview Sub-Screen
+      feedMenuOpen = false;
+      inSubScreen = true;
+      subScreenTab = 0;
+      soundClick();
+      renderSubScreen();
+      return;
     }
     checkLevelUp();
     screenNeedsRefresh = true;
@@ -954,39 +2123,56 @@ void handleTouchPress(uint16_t x, uint16_t y) {
 
   // 2. RIGHT COLUMN: Friend Actions (X: 282 to 320)
   if (x > 282) {
+    feedMenuOpen = false;
     if (y < 48) {
       soundTreatSent();
       sendDirectSocketPacket("TREAT", "Heart Donut");
       myPet.treatsSent++;
-      myPet.xp += 25;
+      syncToEngine();
+      engine.addXP(25);
       engine.recordAction("send_treat", 1);
+      syncFromEngine();
       showBanner(TXT_BANNER_TREAT_SENT);
     } else if (y < 96) {
-      sendDirectSocketPacket("CHAT", "Hi Friend! ^_^");
-      showBanner(TXT_BANNER_CHAT_SENT);
+      // Button 2 Right: Open Selectable Quick-Chat Preset Menu
+      chatMenuOpen = true;
+      soundClick();
+      screenNeedsRefresh = true;
+      return;
     } else if (y < 144) {
       if (myPet.mana >= 30) {
         myPet.mana -= 30;
         sendDirectSocketPacket("MAGIC", "Friend Blessing");
         myPet.spellsCast++;
-        myPet.xp += 40;
+        syncToEngine();
+        engine.addXP(40);
         engine.recordAction("magic", 1);
+        syncFromEngine();
         soundTreatSent();
         showBanner(TXT_BANNER_BLESSING);
       } else {
+        soundWarning();
         showBanner(TXT_BANNER_NO_MANA30);
       }
     } else if (y < 192) {
-      sendDirectSocketPacket("QUEST", "Co-op Scout");
-      myPet.coins += 35;
-      myPet.jobsCompleted++;
-      myPet.xp += 45;
-      showBanner(TXT_BANNER_QUEST);
+      // Button 4 Right: Open Selectable Quests & Daily Missions Menu
+      inSubScreen = true;
+      subScreenTab = 4;
+      soundClick();
+      renderSubScreen();
+      return;
     } else {
       sendDirectSocketPacket("TRADE", "Top Hat");
       showBanner(TXT_BANNER_TRADE);
     }
     checkLevelUp();
+    screenNeedsRefresh = true;
+    return;
+  }
+
+  // Any other tap on the viewport closes open feed flyout if active
+  if (feedMenuOpen) {
+    feedMenuOpen = false;
     screenNeedsRefresh = true;
     return;
   }
@@ -1001,49 +2187,24 @@ void handleTouchPress(uint16_t x, uint16_t y) {
 
   // 4. FOOTER COINS / STREAK / MISSIONS / SHOP (X: 40 to 105, Y: 205 to 240)
   if (x >= 40 && x <= 105 && y >= 205 && y <= 240) {
-    // 4.1 Claim Daily Login Streak Bonus first if available
+    // Open Shop or Missions directly cleanly
     if (engine.canClaimStreakBonus()) {
+      syncToEngine();
       uint16_t cReward = engine.getStreakBonusCoins();
       uint16_t xReward = engine.getStreakBonusXP();
       engine.claimDailyLoginStreakBonus();
-      myPet.coins += cReward;
-      myPet.xp += xReward;
+      syncFromEngine();
       soundLevelUp();
-      showBanner(String(TXT_BANNER_STREAK_CLAIMED) + engine.consecutiveLoginDays + "! +" + cReward + "$ +" + xReward + "XP", 3500);
+      showBanner(String(TXT_BANNER_STREAK_CLAIMED) + engine.consecutiveLoginDays + "! +$" + cReward + " +" + xReward + "XP", 3500);
       checkLevelUp();
       screenNeedsRefresh = true;
       return;
     }
-
-    // 4.2 Claim Completed Daily Missions
-    bool missionClaimed = false;
-    for (uint8_t m = 0; m < engine.missionCount; m++) {
-      if (engine.missions[m].completed && !engine.missions[m].claimed) {
-        engine.claimMission(engine.missions[m].id);
-        myPet.coins += engine.missions[m].coinReward;
-        myPet.xp += engine.missions[m].xpReward;
-        missionClaimed = true;
-        soundLevelUp();
-        showBanner(TXT_BANNER_MISSION_CLAIMED, 3000);
-        break;
-      }
-    }
-
-    // 4.3 Fallback: Quick Shop Purchase (Star Cookie) or balance show
-    if (!missionClaimed) {
-      if (myPet.coins >= 15) {
-        myPet.coins -= 15;
-        myPet.hunger = min(100, myPet.hunger + 30);
-        myPet.happiness = min(100, myPet.happiness + 15);
-        myPet.xp += 10;
-        soundMunch();
-        showBanner(TXT_BANNER_SHOP_COOKIE, 2500);
-      } else {
-        showBanner(String("Shop Bazar: $") + myPet.coins + " Coins", 2000);
-      }
-    }
-    checkLevelUp();
-    screenNeedsRefresh = true;
+    inSubScreen = true;
+    subScreenTab = 1;
+    bagSubMode = 2; // Open Shop directly
+    soundClick();
+    renderSubScreen();
     return;
   }
 
@@ -1053,14 +2214,15 @@ void handleTouchPress(uint16_t x, uint16_t y) {
       myPet.eggWarmth += 25;
       if (myPet.eggWarmth >= 100) {
         strcpy(myPet.phase, "Baby");
-
+        syncToEngine();
         soundHatch();
         showBanner(TXT_BANNER_EGG_HATCHED, 3500);
       } else {
         showBanner(TXT_BANNER_EGG_WARMED);
       }
     } else {
-      myPet.happiness = min(100, myPet.happiness + 5);
+      myPet.happiness = (uint8_t)min(100, (int)myPet.happiness + 5);
+      syncToEngine();
       showBanner(TXT_BANNER_CUDDLED);
     }
     screenNeedsRefresh = true;
@@ -1071,17 +2233,21 @@ void handleTouchPress(uint16_t x, uint16_t y) {
 // LEVEL UP PROGRESSION
 // ============================================================================
 void checkLevelUp() {
-  if (myPet.xp >= myPet.xpNext) {
+  bool evolved = false;
+  while (myPet.xp >= myPet.xpNext) {
     myPet.xp -= myPet.xpNext;
     myPet.level++;
-    myPet.xpNext = 100 * myPet.level * 1.3;
+    myPet.xpNext = (uint16_t)(100 * pow(1.30f, myPet.level - 1));
     myPet.health = 100;
     myPet.energy = 100;
 
     if (myPet.level >= 15) strcpy(myPet.phase, "Elder");
     else if (myPet.level >= 8) strcpy(myPet.phase, "Adult");
     else if (myPet.level >= 4 && strcmp(myPet.phase, "Egg") != 0) strcpy(myPet.phase, "Youth");
-
+    evolved = true;
+  }
+  if (evolved) {
+    syncToEngine();
     soundLevelUp();
     showBanner("LEVEL UP! Pet Evolved! 🌟", 3000);
   }
@@ -1103,19 +2269,22 @@ void pollDirectSockets() {
 
       if (strcmp(type, "TREAT") == 0) {
         soundTreatReceived();
-        myPet.hunger = min(100, myPet.hunger + 25);
-        myPet.happiness = min(100, myPet.happiness + 20);
+        myPet.hunger = (uint8_t)min(100, (int)myPet.hunger + 25);
+        myPet.happiness = (uint8_t)min(100, (int)myPet.happiness + 20);
+        syncToEngine();
         showBanner("Friend Sent You a Treat! 🍩", 3000);
       } else if (strcmp(type, "CHAT") == 0) {
         soundTreatReceived();
         if (text) {
           strncpy(friendPet.speechBalloon, text, sizeof(friendPet.speechBalloon) - 1);
+          friendPet.speechBalloon[sizeof(friendPet.speechBalloon) - 1] = '\0';
           friendPet.balloonTimeout = millis() + 6000;
         }
       } else if (strcmp(type, "MAGIC") == 0) {
         soundTreatReceived();
-        myPet.health = min(100, myPet.health + 30);
-        myPet.happiness = min(100, myPet.happiness + 25);
+        myPet.health = (uint8_t)min(100, (int)myPet.health + 30);
+        myPet.happiness = (uint8_t)min(100, (int)myPet.happiness + 25);
+        syncToEngine();
         showBanner("Received Friend Blessing! ✨", 3000);
       }
       screenNeedsRefresh = true;

@@ -1,5 +1,5 @@
 {
-  "version": "1.0.4",
+  "version": "1.1.0",
   "engine": "PetDuet-Unified-Rules",
   "meta": {
     "title": "PetDuet Core Game Rules",
@@ -10,11 +10,123 @@
   },
   "stats": {
     "food": { "min": 0, "max": 100, "default": 80, "decay_per_tick": 0.25 },
-    "health": { "min": 0, "max": 100, "default": 100, "decay_per_tick": 0.0, "starve_decay": 1.5 },
+    "health": { "min": 0, "max": 100, "default": 100, "decay_per_tick": 0.0, "starve_decay": 1.5, "sick_decay": 1.0 },
     "happiness": { "min": 0, "max": 100, "default": 75, "decay_per_tick": 0.20 },
     "energy": { "min": 0, "max": 100, "default": 100, "decay_per_tick": 0.15, "sleep_regen_per_tick": 1.2 },
     "mana": { "min": 0, "max": 100, "default": 50, "decay_per_tick": 0.0, "regen_per_tick": 0.5 }
   },
+  "foods": [
+    {
+      "id": "food_apple",
+      "name": "Crisp Apple",
+      "name_de": "Frischer Apfel",
+      "icon": "🍎",
+      "rarity": "common",
+      "hunger_gain": 12,
+      "happiness_gain": 5,
+      "health_gain": 2,
+      "energy_gain": 0,
+      "satiety_ticks": 0,
+      "sick_chance": 0.0,
+      "description": "Light healthy snack (+12 Hunger). Safe, no hunger freeze.",
+      "description_de": "Kleiner gesunder Apfel (+12 Hunger). Verursacht keine Bauchschmerzen."
+    },
+    {
+      "id": "food_snack",
+      "name": "Sweet Pixel Snack",
+      "name_de": "Süßer Pixel-Snack",
+      "icon": "🥨",
+      "rarity": "common",
+      "hunger_gain": 25,
+      "happiness_gain": 15,
+      "health_gain": 0,
+      "energy_gain": 5,
+      "satiety_ticks": 0,
+      "sick_chance": 0.30,
+      "description": "Tasty treat (+25 Hunger, +15 Happy) — 30% chance to make your pet sick!",
+      "description_de": "Leckerer Snack (+25 Hunger, +15 Glück) — 30% Risiko auf Bauchweh!"
+    },
+    {
+      "id": "food_herb_salad",
+      "name": "Meadow Herb Salad",
+      "name_de": "Wiesenkräuter-Salat",
+      "icon": "🥗",
+      "rarity": "common",
+      "hunger_gain": 35,
+      "happiness_gain": 10,
+      "health_gain": 10,
+      "energy_gain": 10,
+      "satiety_ticks": 4,
+      "sick_chance": 0.0,
+      "description": "Fresh cooked meal (+35 Hunger, +10 HP). Holds hunger for 4 ticks!",
+      "description_de": "Zubereiteter Salat (+35 Hunger, +10 HP). Hält 4 Ticks ohne Hunger-Abzug!"
+    },
+    {
+      "id": "food_berry_pie",
+      "name": "Forest Berry Tart",
+      "name_de": "Waldbeeren-Tarte",
+      "icon": "🥧",
+      "rarity": "uncommon",
+      "hunger_gain": 45,
+      "happiness_gain": 25,
+      "health_gain": 15,
+      "energy_gain": 5,
+      "satiety_ticks": 5,
+      "sick_chance": 0.0,
+      "description": "Baked woodland tart (+45 Hunger, +25 Happy). Holds hunger for 5 ticks!",
+      "description_de": "Gebackener Waldkuchen (+45 Hunger, +25 Glück). Hält 5 Ticks lang satt!"
+    },
+    {
+      "id": "food_sun_jerky",
+      "name": "Sun-Dried Jerky",
+      "name_de": "Sonnen-Dörrfleisch",
+      "icon": "🥩",
+      "rarity": "uncommon",
+      "hunger_gain": 55,
+      "happiness_gain": 15,
+      "health_gain": 10,
+      "energy_gain": 20,
+      "satiety_ticks": 6,
+      "sick_chance": 0.0,
+      "description": "Hearty protein meal (+55 Hunger, +20 EN). Holds hunger for 6 ticks!",
+      "description_de": "Herzhaftes Dörrfleisch (+55 Hunger, +20 EN). Hält 6 Ticks ohne Abzug!"
+    },
+    {
+      "id": "food_kelp_stew",
+      "name": "Kelp & Mushroom Stew",
+      "name_de": "Tang- & Pilzeintopf",
+      "icon": "🍲",
+      "rarity": "rare",
+      "hunger_gain": 75,
+      "happiness_gain": 30,
+      "health_gain": 30,
+      "energy_gain": 15,
+      "satiety_ticks": 8,
+      "sick_chance": 0.0,
+      "description": "Rich gourmet stew (+75 Hunger, +30 HP). Holds hunger for 8 ticks!",
+      "description_de": "Kräftiger Eintopf (+75 Hunger, +30 HP). Hält 8 Ticks ohne Abzug!"
+    },
+    {
+      "id": "food_ambrosia",
+      "name": "Elemental Ambrosia",
+      "name_de": "Elementar-Ambrosia",
+      "icon": "🧁",
+      "rarity": "legendary",
+      "hunger_gain": 100,
+      "happiness_gain": 100,
+      "health_gain": 100,
+      "energy_gain": 100,
+      "satiety_ticks": 12,
+      "sick_chance": 0.0,
+      "description": "Legendary feast restoring all vitals. Holds hunger for 12 ticks!",
+      "description_de": "Legendäres Festmahl für volle Werte. Hält 12 Ticks ohne Abzug!"
+    }
+  ],
+  "starting_inventory": [
+    { "id": "food_apple", "quantity": 2 },
+    { "id": "food_snack", "quantity": 1 },
+    { "id": "mat_herb", "quantity": 2 }
+  ],
   "lifecycle": {
     "phases": [
       { "id": "egg", "name": "Egg", "name_de": "Ei", "duration_minutes": 5, "warmth_required": 50 },
@@ -66,86 +178,101 @@
       "name_de": "Wiesenkräuter-Salat",
       "min_level": 1,
       "ingredients": { "mat_herb": 2 },
-      "effects": { "food": 25, "energy": 10, "xp": 20 },
+      "result_item_id": "food_herb_salad",
+      "effects": { "food": 35, "health": 10, "energy": 10, "satiety_ticks": 4, "xp": 35 },
       "icon": "🥗",
-      "description": "A crisp, fresh salad of wild meadow herbs.",
-      "description_de": "Ein frischer, knackiger Salat aus wilden Wiesenkräutern."
+      "description": "A crisp salad of wild meadow herbs. Keeps pet full for 4 ticks!",
+      "description_de": "Frischer Salat aus Wiesenkräutern. Hält 4 Ticks ohne Hunger-Abzug!"
     },
     {
       "id": "rcp_jerky",
-      "name": "Desert Jerky",
-      "name_de": "Wüsten-Dörrfleisch",
+      "name": "Sun-Dried Jerky",
+      "name_de": "Sonnen-Dörrfleisch",
       "min_level": 2,
-      "ingredients": { "mat_cactus": 2 },
-      "effects": { "food": 35, "health": 10, "xp": 30 },
+      "ingredients": { "mat_meat": 2, "mat_sunstone": 1 },
+      "result_item_id": "food_sun_jerky",
+      "effects": { "food": 55, "health": 10, "energy": 20, "satiety_ticks": 6, "xp": 60 },
       "icon": "🥩",
-      "description": "Sun-dried spiced cactus jerky providing enduring stamina.",
-      "description_de": "Sonnengereiftes Kaktus-Dörrfleisch für ausdauernde Energie."
+      "description": "Sun-dried spiced jerky providing enduring satiety for 6 ticks.",
+      "description_de": "Sonnengereiftes Dörrfleisch, hält 6 Ticks ohne Hunger-Abzug."
     },
     {
       "id": "rcp_berry_pie",
-      "name": "Forest Berry Pie",
-      "name_de": "Waldbeerenkuchen",
-      "min_level": 3,
-      "ingredients": { "mat_mushroom": 2, "mat_herb": 1 },
-      "effects": { "food": 50, "happiness": 20, "xp": 45 },
+      "name": "Forest Berry Tart",
+      "name_de": "Waldbeeren-Tarte",
+      "min_level": 2,
+      "ingredients": { "mat_mushroom": 1, "mat_herb": 1 },
+      "result_item_id": "food_berry_pie",
+      "effects": { "food": 45, "happiness": 25, "health": 15, "satiety_ticks": 5, "xp": 80 },
       "icon": "🥧",
-      "description": "A sweet forest pie that sparks high joy.",
-      "description_de": "Ein süßer Waldkuchen, der große Freude bringt."
+      "description": "A sweet forest tart that sparks joy and lasts 5 ticks.",
+      "description_de": "Ein süßer Waldkuchen für große Freude, hält 5 Ticks satt."
     },
     {
       "id": "rcp_stew",
-      "name": "Hearty River Stew",
-      "name_de": "Herzhafter Flusseintopf",
+      "name": "Kelp & Mushroom Stew",
+      "name_de": "Tang- & Pilzeintopf",
       "min_level": 4,
-      "ingredients": { "mat_pearl": 1, "mat_herb": 2 },
-      "effects": { "food": 70, "health": 30, "mana": 15, "xp": 65 },
+      "ingredients": { "mat_kelp": 2, "mat_mushroom": 2 },
+      "result_item_id": "food_kelp_stew",
+      "effects": { "food": 75, "health": 30, "energy": 15, "satiety_ticks": 8, "xp": 110 },
       "icon": "🍲",
-      "description": "Slow-simmered chowder that restores HP and Mana.",
-      "description_de": "Langsam geköchelter Fischeintopf, der HP und Mana regeneriert."
+      "description": "Slow-simmered stew restoring HP and keeping full for 8 ticks.",
+      "description_de": "Langsam geköchelter Eintopf, hält 8 Ticks ohne Hunger-Abzug."
     },
     {
       "id": "rcp_ambrosia",
-      "name": "Celestial Ambrosia",
-      "name_de": "Himmlische Ambrosia",
-      "min_level": 5,
-      "ingredients": { "mat_sunstone": 1, "mat_pearl": 1, "mat_mushroom": 2 },
-      "effects": { "food": 100, "health": 50, "energy": 40, "mana": 30, "xp": 120 },
-      "icon": "✨",
-      "description": "Legendary nectar restoring all vital attributes.",
-      "description_de": "Legendärer Nektar, der alle Vitalwerte regeneriert."
+      "name": "Elemental Ambrosia",
+      "name_de": "Elementar-Ambrosia",
+      "min_level": 6,
+      "ingredients": { "mat_sunstone": 2, "mat_kelp": 2, "mat_mushroom": 2, "mat_herb": 2 },
+      "result_item_id": "food_ambrosia",
+      "effects": { "food": 100, "health": 100, "energy": 100, "satiety_ticks": 12, "xp": 250 },
+      "icon": "🧁",
+      "description": "Legendary nectar restoring all vitals and lasting 12 ticks.",
+      "description_de": "Legendärer Nektar für volle Werte, hält 12 Ticks ohne Abzug."
     }
   ],
   "jobs": [
     {
       "id": "job_forage",
-      "name": "Biome Foraging",
-      "name_de": "Kräuter Sammeln",
+      "name": "Herb & Apple Forager",
+      "name_de": "Kräuter- & Apfelsammler",
       "min_level": 1,
-      "energy_cost": 20,
+      "energy_cost": 15,
       "duration_seconds": 60,
-      "rewards": { "xp": 25, "coins": 15, "materials": { "mat_herb": 2 } },
-      "icon": "🌿"
+      "rewards": { "xp": 25, "coins": 15, "materials": { "mat_herb": 2 }, "food": { "food_apple": 2 } },
+      "icon": "🧺"
+    },
+    {
+      "id": "job_patrol",
+      "name": "CYD Village Scout",
+      "name_de": "Dorfwache & Bote",
+      "min_level": 2,
+      "energy_cost": 20,
+      "duration_seconds": 120,
+      "rewards": { "xp": 50, "coins": 30, "materials": { "mat_meat": 1 }, "food": { "food_snack": 1 } },
+      "icon": "🛡️"
     },
     {
       "id": "job_mine",
-      "name": "Crystal Mining",
-      "name_de": "Kristall-Bergbau",
+      "name": "Biome Crystal Miner",
+      "name_de": "Kristall- & Pilzsammler",
       "min_level": 3,
-      "energy_cost": 35,
+      "energy_cost": 30,
       "duration_seconds": 180,
-      "rewards": { "xp": 50, "coins": 35, "materials": { "mat_sunstone": 1 } },
+      "rewards": { "xp": 90, "coins": 55, "materials": { "mat_sunstone": 1, "mat_mushroom": 1 }, "food": { "food_sun_jerky": 1 } },
       "icon": "⛏️"
     },
     {
-      "id": "job_pearl",
-      "name": "Pearl Diving",
-      "name_de": "Perlen-Tauchen",
-      "min_level": 2,
-      "energy_cost": 30,
-      "duration_seconds": 120,
-      "rewards": { "xp": 40, "coins": 25, "materials": { "mat_pearl": 1 } },
-      "icon": "🤿"
+      "id": "job_alchemist",
+      "name": "Royal CYD Alchemist",
+      "name_de": "Hof-Alchemist",
+      "min_level": 5,
+      "energy_cost": 35,
+      "duration_seconds": 300,
+      "rewards": { "xp": 150, "coins": 90, "materials": { "mat_kelp": 2 }, "food": { "food_herb_salad": 1 } },
+      "icon": "⚗️"
     }
   ],
   "spells": [
@@ -153,11 +280,31 @@
       "id": "spl_cleanse",
       "name": "Purify",
       "name_de": "Läuterung",
-      "min_level": 2,
+      "min_level": 1,
       "mana_cost": 15,
       "target": "self",
-      "effects": { "clean_poop": true, "cure_sickness": true, "xp": 20 },
+      "effects": { "clean_poop": true, "cure_sickness": true, "health": 10, "xp": 20 },
       "icon": "🫧"
+    },
+    {
+      "id": "spl_heal",
+      "name": "Vitality Aura",
+      "name_de": "Vitalitäts-Aura",
+      "min_level": 2,
+      "mana_cost": 20,
+      "target": "self",
+      "effects": { "health": 25, "happiness": 10, "xp": 35 },
+      "icon": "💖"
+    },
+    {
+      "id": "spl_treat_burst",
+      "name": "Astral Feast",
+      "name_de": "Astral-Festmahl",
+      "min_level": 3,
+      "mana_cost": 25,
+      "target": "self",
+      "effects": { "hunger": 35, "satiety_ticks": 3, "xp": 40 },
+      "icon": "🍓"
     },
     {
       "id": "spl_friend_blessing",
@@ -187,8 +334,8 @@
       "target_count": 3,
       "name": "Nourish Pet",
       "name_de": "Pet Füttern",
-      "description": "Feed your pet 3 times today",
-      "description_de": "Füttere dein Haustier heute 3 Mal",
+      "description": "Feed your pet 3 times from your inventory",
+      "description_de": "Füttere dein Haustier heute 3 Mal aus dem Inventar",
       "rewards": { "coins": 40, "xp": 50 },
       "icon": "🍖"
     },
@@ -240,27 +387,87 @@
   "shop": {
     "items": [
       {
-        "id": "item_apple",
-        "name": "Fresh Apple",
+        "id": "food_apple",
+        "name": "Crisp Apple",
         "name_de": "Frischer Apfel",
         "price_coins": 5,
         "min_level": 1,
         "category": "food",
         "icon": "🍎",
-        "description": "Crisp red orchard apple that restores basic hunger.",
-        "description_de": "Knackiger roter Apfel, der den kleinen Hunger stillt.",
-        "effects": { "hunger": 15, "happiness": 5 }
+        "description": "Healthy orchard apple (+12 Hunger, +5 Happy).",
+        "description_de": "Knackiger roter Apfel (+12 Hunger, +5 Glück).",
+        "effects": { "hunger": 12, "happiness": 5, "health": 2, "satiety_ticks": 0, "sick_chance": 0 }
       },
       {
-        "id": "item_herb",
+        "id": "food_snack",
+        "name": "Sweet Pixel Snack",
+        "name_de": "Süßer Pixel-Snack",
+        "price_coins": 8,
+        "min_level": 1,
+        "category": "food",
+        "icon": "🥨",
+        "description": "Rich snack (+25 Hunger, +15 Happy) — 30% chance to cause sickness!",
+        "description_de": "Süßer Snack (+25 Hunger, +15 Glück) — 30% Risiko auf Bauchweh!",
+        "effects": { "hunger": 25, "happiness": 15, "energy": 5, "satiety_ticks": 0, "sick_chance": 0.30 }
+      },
+      {
+        "id": "food_herb_salad",
+        "name": "Meadow Herb Salad",
+        "name_de": "Wiesenkräuter-Salat",
+        "price_coins": 22,
+        "min_level": 1,
+        "category": "food",
+        "icon": "🥗",
+        "description": "Prepared meal (+35 Hunger, +10 HP). Freezes hunger for 4 ticks!",
+        "description_de": "Fertiggericht (+35 Hunger, +10 HP). Hält 4 Ticks ohne Abzug!",
+        "effects": { "hunger": 35, "health": 10, "happiness": 10, "energy": 10, "satiety_ticks": 4, "sick_chance": 0 }
+      },
+      {
+        "id": "food_berry_pie",
+        "name": "Forest Berry Tart",
+        "name_de": "Waldbeeren-Tarte",
+        "price_coins": 40,
+        "min_level": 2,
+        "category": "food",
+        "icon": "🥧",
+        "description": "Warm gourmet tart (+45 Hunger, +25 Happy). Freezes hunger for 5 ticks!",
+        "description_de": "Gourmet-Tarte (+45 Hunger, +25 Glück). Hält 5 Ticks ohne Abzug!",
+        "effects": { "hunger": 45, "happiness": 25, "health": 15, "satiety_ticks": 5, "sick_chance": 0 }
+      },
+      {
+        "id": "mat_herb",
         "name": "Meadow Herb Bundle",
         "name_de": "Wiesenkräuter-Bündel",
         "price_coins": 8,
         "min_level": 1,
         "category": "material",
         "icon": "🌿",
-        "description": "Wild medicinal herb used for brewing remedies and salads.",
-        "description_de": "Frisch gepflückte Wiesenkräuter für Salate und Tinkturen.",
+        "description": "Wild medicinal herb used for cooking salads & berry tarts.",
+        "description_de": "Frisch gepflückte Wiesenkräuter für Salate und Tarten.",
+        "effects": {}
+      },
+      {
+        "id": "mat_meat",
+        "name": "Raw Meat",
+        "name_de": "Rohes Fleisch",
+        "price_coins": 12,
+        "min_level": 1,
+        "category": "material",
+        "icon": "🥩",
+        "description": "Cooking ingredient needed for Sun-Dried Jerky.",
+        "description_de": "Kochzutat für herzhaftes Sonnen-Dörrfleisch.",
+        "effects": {}
+      },
+      {
+        "id": "mat_mushroom",
+        "name": "Forest Mushroom",
+        "name_de": "Waldpilz",
+        "price_coins": 12,
+        "min_level": 1,
+        "category": "material",
+        "icon": "🍄",
+        "description": "Aromatic woodland mushroom for Berry Tarts and Stews.",
+        "description_de": "Aromatischer Waldpilz für Tarten und Eintöpfe.",
         "effects": {}
       },
       {
@@ -268,11 +475,11 @@
         "name": "Healing Salve",
         "name_de": "Wohltuende Heilsalbe",
         "price_coins": 25,
-        "min_level": 2,
+        "min_level": 1,
         "category": "potion",
         "icon": "🧴",
-        "description": "Herbal balm that restores 40 HP and cures illness.",
-        "description_de": "Heilende Kräutersalbe, die 40 HP wiederherstellt und Krankheiten heilt.",
+        "description": "Herbal balm that restores 40 HP and cures snack sickness.",
+        "description_de": "Heilsalbe für +40 HP — heilt Bauchweh & Krankheiten sofort!",
         "effects": { "health": 40, "cure_sickness": true }
       },
       {
@@ -280,7 +487,7 @@
         "name": "Energy Tonic",
         "name_de": "Vitalitäts-Tonikum",
         "price_coins": 35,
-        "min_level": 3,
+        "min_level": 2,
         "category": "potion",
         "icon": "🧪",
         "description": "Invigorating elixir restoring 60 Energy and 15 Mana.",
@@ -288,11 +495,11 @@
         "effects": { "energy": 60, "mana": 15 }
       },
       {
-        "id": "item_sunstone",
+        "id": "mat_sunstone",
         "name": "Sun Salt Crystals",
         "name_de": "Sonnensalz-Kristalle",
-        "price_coins": 45,
-        "min_level": 3,
+        "price_coins": 25,
+        "min_level": 2,
         "category": "material",
         "icon": "🧂",
         "description": "Rare desert mineral crystal required for gourmet curing.",
@@ -300,7 +507,7 @@
         "effects": {}
       },
       {
-        "id": "item_blossom_crown",
+        "id": "acc_flower",
         "name": "Blossom Crown",
         "name_de": "Blütenkrone",
         "price_coins": 75,
@@ -313,7 +520,7 @@
         "effects": { "happiness": 10, "xp_bonus_pct": 5 }
       },
       {
-        "id": "item_wizard_cowl",
+        "id": "acc_wizard",
         "name": "Starry Wizard Cowl",
         "name_de": "Sternen-Zauberkappe",
         "price_coins": 110,
@@ -326,7 +533,7 @@
         "effects": { "max_mana_bonus": 15 }
       },
       {
-        "id": "item_tophat",
+        "id": "acc_tophat",
         "name": "Fancy Top Hat",
         "name_de": "Vornehmer Zylinder",
         "price_coins": 140,
@@ -337,18 +544,6 @@
         "description": "Distinguished velvet top hat granting +15% coin rewards on jobs.",
         "description_de": "Eleganter Samtzylinder für +15% Münzgewinn bei Berufen.",
         "effects": { "job_coin_bonus_pct": 15 }
-      },
-      {
-        "id": "item_evo_prism",
-        "name": "Astral Evolution Prism",
-        "name_de": "Astrales Evolutionsprisma",
-        "price_coins": 250,
-        "min_level": 8,
-        "category": "evolution",
-        "icon": "🔮",
-        "description": "Legendary radiant prism catalyzing evolution into Elder forms.",
-        "description_de": "Legendäres Prisma zur Beschleunigung der Evolution zur Meisterstufe.",
-        "effects": { "evolution_unlock": true }
       }
     ],
     "recipes": [
@@ -362,55 +557,55 @@
         "description": "Blueprint teaching the synthesis of crisp meadow herbs.",
         "description_de": "Rezeptrolle zum Zubereiten von frischem Wiesensalat.",
         "ingredients": { "mat_herb": 2 },
-        "effects": { "food": 25, "energy": 10, "xp": 20 }
+        "effects": { "food": 35, "energy": 10, "satiety_ticks": 4, "xp": 35 }
       },
       {
         "id": "rcp_jerky",
-        "name": "Desert Jerky",
-        "name_de": "Wüsten-Dörrfleisch",
+        "name": "Sun-Dried Jerky",
+        "name_de": "Sonnen-Dörrfleisch",
         "price_coins": 35,
         "min_level": 2,
         "icon": "🥩",
         "description": "Blueprint for hearty sun-dried cured protein rations.",
         "description_de": "Rezeptrolle für sonnengetrocknetes Dörrfleisch.",
         "ingredients": { "mat_meat": 2, "mat_sunstone": 1 },
-        "effects": { "food": 45, "energy": 20, "happiness": 15, "xp": 60 }
+        "effects": { "food": 55, "energy": 20, "happiness": 15, "satiety_ticks": 6, "xp": 60 }
       },
       {
         "id": "rcp_berry_pie",
         "name": "Forest Berry Tart",
         "name_de": "Waldbeeren-Tarte",
         "price_coins": 65,
-        "min_level": 3,
+        "min_level": 2,
         "icon": "🥧",
         "description": "Blueprint for warm, sweet woodland berry pastries.",
         "description_de": "Rezeptrolle für süße, duftende Waldbeerenkuchen.",
         "ingredients": { "mat_herb": 1, "mat_mushroom": 1 },
-        "effects": { "food": 35, "happiness": 25, "health": 15, "xp": 80 }
+        "effects": { "food": 45, "happiness": 25, "health": 15, "satiety_ticks": 5, "xp": 80 }
       },
       {
         "id": "rcp_stew",
-        "name": "Hearty River Stew",
-        "name_de": "Herzhafter Flusseintopf",
+        "name": "Kelp & Mushroom Stew",
+        "name_de": "Tang- & Pilzeintopf",
         "price_coins": 110,
         "min_level": 4,
         "icon": "🍲",
-        "description": "Blueprint for deep mineral and seafood chowder.",
-        "description_de": "Rezeptrolle für kräftigenden Flusseintopf.",
-        "ingredients": { "mat_mushroom": 2, "mat_pearl": 1 },
-        "effects": { "food": 70, "health": 30, "mana": 15, "xp": 110 }
+        "description": "Blueprint for deep mineral and mushroom chowder.",
+        "description_de": "Rezeptrolle für kräftigenden Tang- & Pilzeintopf.",
+        "ingredients": { "mat_mushroom": 2, "mat_kelp": 2 },
+        "effects": { "food": 75, "health": 30, "satiety_ticks": 8, "xp": 110 }
       },
       {
         "id": "rcp_ambrosia",
-        "name": "Celestial Ambrosia",
-        "name_de": "Himmlische Ambrosia",
+        "name": "Elemental Ambrosia",
+        "name_de": "Elementar-Ambrosia",
         "price_coins": 240,
         "min_level": 6,
-        "icon": "✨",
+        "icon": "🧁",
         "description": "Master recipe synthesizing essences of all 4 biomes.",
         "description_de": "Meisterrezept mit Essenzen aller vier Biome.",
-        "ingredients": { "mat_sunstone": 1, "mat_pearl": 1, "mat_mushroom": 2, "mat_herb": 2 },
-        "effects": { "food": 100, "health": 50, "energy": 50, "mana": 50, "xp": 250 }
+        "ingredients": { "mat_sunstone": 2, "mat_kelp": 2, "mat_mushroom": 2, "mat_herb": 2 },
+        "effects": { "food": 100, "health": 100, "energy": 100, "satiety_ticks": 12, "xp": 250 }
       }
     ],
     "spells": [
@@ -419,11 +614,11 @@
         "name": "Purify",
         "name_de": "Läuterung",
         "price_coins": 40,
-        "min_level": 2,
+        "min_level": 1,
         "mana_cost": 15,
         "target": "self",
         "icon": "🫧",
-        "description": "Tome teaching the instant cleansing of waste and disease.",
+        "description": "Tome teaching instant cleansing and curing sickness.",
         "description_de": "Zauberbuch zur sofortigen Reinigung und Krankheitsheilung.",
         "effects": { "clean_poop": true, "cure_sickness": true, "xp": 20 }
       },
@@ -441,6 +636,19 @@
         "effects": { "health": 25, "happiness": 10, "xp": 35 }
       },
       {
+        "id": "spl_treat_burst",
+        "name": "Astral Feast",
+        "name_de": "Astral-Festmahl",
+        "price_coins": 130,
+        "min_level": 3,
+        "mana_cost": 25,
+        "target": "self",
+        "icon": "🍓",
+        "description": "Tome conjuring spectral mana berries restoring hunger for 3 ticks.",
+        "description_de": "Zauberbuch zur Beschwörung von Mana-Beeren (3 Ticks satt).",
+        "effects": { "hunger": 35, "satiety_ticks": 3, "xp": 40 }
+      },
+      {
         "id": "spl_friend_blessing",
         "name": "Friend Blessing",
         "name_de": "Freundes-Segen",
@@ -454,24 +662,11 @@
         "effects": { "health": 35, "happiness": 25, "xp": 45 }
       },
       {
-        "id": "spl_treat_burst",
-        "name": "Astral Feast",
-        "name_de": "Astral-Festmahl",
-        "price_coins": 130,
-        "min_level": 4,
-        "mana_cost": 25,
-        "target": "self",
-        "icon": "🍓",
-        "description": "Tome conjuring spectral mana fruits that fulfill hunger.",
-        "description_de": "Zauberbuch zur Beschwörung nahrhafter Mana-Beeren.",
-        "effects": { "hunger": 35, "energy": 15, "xp": 50 }
-      },
-      {
         "id": "spl_astral_harmony",
         "name": "Dual Astral Harmony",
         "name_de": "Astrale Harmonie",
         "price_coins": 260,
-        "min_level": 6,
+        "min_level": 5,
         "mana_cost": 45,
         "target": "both",
         "icon": "🌟",

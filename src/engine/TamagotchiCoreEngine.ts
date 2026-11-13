@@ -116,23 +116,47 @@ export class TamagotchiCoreEngine {
       coins: 50,
       inventory: [
         {
+          id: 'food_apple',
+          name: 'Crisp Apple',
+          name_de: 'Frischer Apfel',
+          type: 'food',
+          rarity: 'common',
+          description: 'Light healthy snack (+12 Hunger). Safe, no hunger freeze.',
+          description_de: 'Kleiner gesunder Apfel (+12 Hunger).',
+          icon: '🍎',
+          quantity: 2,
+          hungerGain: 12,
+          happinessGain: 5,
+          healthGain: 2,
+          satietyTicks: 0,
+          sickChance: 0,
+        },
+        {
+          id: 'food_snack',
+          name: 'Sweet Pixel Snack',
+          name_de: 'Süßer Pixel-Snack',
+          type: 'food',
+          rarity: 'common',
+          description: 'Tasty treat (+25 Hunger, +15 Happy) — 30% chance to make your pet sick!',
+          description_de: 'Leckerer Snack (+25 Hunger) — 30% Risiko auf Bauchweh!',
+          icon: '🥨',
+          quantity: 1,
+          hungerGain: 25,
+          happinessGain: 15,
+          energyGain: 5,
+          satietyTicks: 0,
+          sickChance: 0.30,
+        },
+        {
           id: 'mat_herb',
           name: 'Meadow Herb',
+          name_de: 'Wiesenkräuter',
           type: 'material',
           rarity: 'common',
           description: 'Wild medicinal herb.',
+          description_de: 'Frisch gepflückte Wiesenkräuter.',
           icon: '🌿',
-          quantity: 4,
-        },
-        {
-          id: 'food_apple',
-          name: 'Crisp Apple',
-          type: 'food',
-          rarity: 'common',
-          description: 'Restores 15 Hunger.',
-          icon: '🍎',
-          quantity: 3,
-          hungerGain: 15,
+          quantity: 2,
         },
       ],
       equipped: {},
@@ -143,6 +167,8 @@ export class TamagotchiCoreEngine {
       treatsSentCount: 0,
       poopCount: 0,
       isSleeping: false,
+      isSick: false,
+      satietyTicks: 0,
       eggWarmth: 20,
       createdAt: Date.now(),
       lastFedAt: Date.now(),
@@ -201,20 +227,28 @@ export class TamagotchiCoreEngine {
 
     const stats = { ...this.state.stats };
 
-    // Apply Biome Hunger Modifier
+    // Apply Biome Hunger Modifier (paused when Satiety Shield is active!)
     let hungerDecay = decay.hungerDecay;
     if (biomeRules?.hungerDecayBonusPct) {
       hungerDecay += (decay.hungerDecay * biomeRules.hungerDecayBonusPct) / 100;
     }
 
-    if (stats.hunger > 0) stats.hunger = Math.max(0, stats.hunger - hungerDecay);
+    if ((this.state.satietyTicks || 0) > 0) {
+      this.state.satietyTicks = (this.state.satietyTicks || 0) - 1;
+    } else if (stats.hunger > 0) {
+      stats.hunger = Math.max(0, stats.hunger - hungerDecay);
+    }
+
     if (stats.energy > 0) stats.energy = Math.max(0, stats.energy - decay.energyDecay);
     if (stats.happiness > 0) stats.happiness = Math.max(0, stats.happiness - decay.happinessDecay);
     if (stats.hygiene > 0) stats.hygiene = Math.max(0, stats.hygiene - decay.hygieneDecay);
 
-    // Starvation penalty
+    // Starvation or Sickness penalty
     if (stats.hunger < decay.starveThreshold && stats.health > 0) {
       stats.health = Math.max(0, stats.health - decay.healthStarveDecay);
+    }
+    if (this.state.isSick && stats.health > 0) {
+      stats.health = Math.max(0, stats.health - 1);
     }
 
     // Natural Mana Regeneration
@@ -236,9 +270,84 @@ export class TamagotchiCoreEngine {
   }
 
   // --------------------------------------------------------------------------
-  // Pet Lifecycle & Interactions
+  // Pet Lifecycle & Inventory-Gated Feeding Interactions
   // --------------------------------------------------------------------------
+  public getAvailableFoods() {
+    return this.state.inventory.filter((item) => item.type === 'food' && item.quantity > 0);
+  }
+
+  public feedWithItem(itemId: string): {
+    success: boolean;
+    gotSick: boolean;
+    satietyTicks: number;
+    message: string;
+  } {
+    const invIndex = this.state.inventory.findIndex(
+      (i) => i.id === itemId && i.type === 'food' && i.quantity > 0
+    );
+    if (invIndex === -1) {
+      return {
+        success: false,
+        gotSick: false,
+        satietyTicks: 0,
+        message: 'Food not found in inventory!',
+      };
+    }
+
+    const item = this.state.inventory[invIndex];
+    const maxStat = this.rules.general.maxStatValue;
+
+    // Consume 1 unit from inventory
+    item.quantity -= 1;
+    if (item.quantity <= 0) {
+      this.state.inventory.splice(invIndex, 1);
+    }
+
+    // Apply food stats
+    const hungerGain = item.hungerGain ?? 15;
+    const healthGain = item.healthGain ?? 0;
+    const happyGain = item.happinessGain ?? 5;
+    const energyGain = item.energyGain ?? 0;
+    const satiety = item.satietyTicks ?? 0;
+
+    this.state.stats.hunger = Math.min(maxStat, this.state.stats.hunger + hungerGain);
+    this.state.stats.health = Math.min(maxStat, this.state.stats.health + healthGain);
+    this.state.stats.happiness = Math.min(maxStat, this.state.stats.happiness + happyGain);
+    this.state.stats.energy = Math.min(maxStat, this.state.stats.energy + energyGain);
+    this.state.lastFedAt = Date.now();
+
+    if (satiety > 0) {
+      this.state.satietyTicks = Math.max(this.state.satietyTicks || 0, satiety);
+    }
+
+    let gotSick = false;
+    if ((item.sickChance || 0) > 0 && Math.random() < (item.sickChance || 0)) {
+      this.state.isSick = true;
+      this.state.stats.health = Math.max(0, this.state.stats.health - 15);
+      gotSick = true;
+    }
+
+    this.addXP(15);
+    this.recordAction('feed', 1);
+    const msg = gotSick
+      ? `Fed ${item.name}, but tummyache hit! (-15 HP)`
+      : satiety > 0
+      ? `Fed ${item.name}! +${hungerGain} Hunger (${satiety} Ticks Satiety!)`
+      : `Fed ${item.name}! +${hungerGain} Hunger`;
+
+    this.emit('notification', { message: msg });
+    this.emit('stat_change', this.state);
+    return { success: true, gotSick, satietyTicks: satiety, message: msg };
+  }
+
   public feed(hungerAmount = 25, healthAmount = 10): void {
+    // Prefer inventory-gated feed if any food exists
+    const available = this.getAvailableFoods();
+    if (available.length > 0) {
+      this.feedWithItem(available[0].id);
+      return;
+    }
+    // Fallback only if called programmatically
     this.state.stats.hunger = Math.min(
       this.rules.general.maxStatValue,
       this.state.stats.hunger + hungerAmount
@@ -368,36 +477,106 @@ export class TamagotchiCoreEngine {
     }
     this.state.inventory = this.state.inventory.filter((i) => i.quantity > 0);
 
-    // Apply stat bonuses
-    if (recipe.hungerGain) {
-      this.state.stats.hunger = Math.min(
-        this.rules.general.maxStatValue,
-        this.state.stats.hunger + recipe.hungerGain
-      );
-    }
-    if (recipe.healthGain) {
-      this.state.stats.health = Math.min(
-        this.rules.general.maxStatValue,
-        this.state.stats.health + recipe.healthGain
-      );
-    }
-    if (recipe.energyGain) {
-      this.state.stats.energy = Math.min(
-        this.rules.general.maxStatValue,
-        this.state.stats.energy + recipe.energyGain
-      );
-    }
-    if (recipe.manaGain) {
-      this.state.stats.mana = Math.min(
-        this.rules.general.maxStatValue,
-        this.state.stats.mana + recipe.manaGain
-      );
+    // Add cooked dish into food inventory so player can feed it anytime
+    const cookedId = recipe.resultItemId || `food_${recipe.id.replace('rcp_', '')}`;
+    const existingFood = this.state.inventory.find((i) => i.id === cookedId);
+    if (existingFood) {
+      existingFood.quantity += 1;
+    } else {
+      this.state.inventory.push({
+        id: cookedId,
+        name: recipe.name,
+        name_de: recipe.name_de || recipe.name,
+        type: 'food',
+        rarity: recipe.minLevel >= 6 ? 'legendary' : recipe.minLevel >= 4 ? 'rare' : recipe.minLevel >= 2 ? 'uncommon' : 'common',
+        description: recipe.description || `Restores ${recipe.hungerGain} Hunger (${recipe.satietyTicks || 0} Ticks satiety).`,
+        description_de: recipe.description_de || `Stellt ${recipe.hungerGain} Hunger wieder her (${recipe.satietyTicks || 0} Ticks Schutz).`,
+        icon: recipe.icon,
+        quantity: 1,
+        hungerGain: recipe.hungerGain,
+        healthGain: recipe.healthGain,
+        energyGain: recipe.energyGain,
+        happinessGain: 15,
+        satietyTicks: recipe.satietyTicks || 0,
+        sickChance: 0,
+      });
     }
 
     this.state.recipesCraftedCount += 1;
     this.addXP(recipe.xpReward);
     this.recordAction('cook', 1);
-    this.emit('notification', { message: `Cooked ${recipe.name}! ${recipe.icon}` });
+    this.emit('notification', { message: `Cooked ${recipe.name} into inventory! ${recipe.icon}` });
+    return true;
+  }
+
+  // --------------------------------------------------------------------------
+  // Potion Usage & Shop Purchases (Added to Inventory)
+  // --------------------------------------------------------------------------
+  public useInventoryItem(itemId: string): boolean {
+    const idx = this.state.inventory.findIndex((i) => i.id === itemId && i.quantity > 0);
+    if (idx === -1) return false;
+    const item = this.state.inventory[idx];
+
+    if (item.type === 'food') {
+      return this.feedWithItem(itemId).success;
+    }
+    if (item.type !== 'potion') return false;
+
+    item.quantity -= 1;
+    if (item.quantity <= 0) {
+      this.state.inventory.splice(idx, 1);
+    }
+
+    const maxStat = this.rules.general.maxStatValue;
+    if (item.healthGain) {
+      this.state.stats.health = Math.min(maxStat, this.state.stats.health + item.healthGain);
+    }
+    if (item.energyGain) {
+      this.state.stats.energy = Math.min(maxStat, this.state.stats.energy + item.energyGain);
+    }
+    if (item.cureSickness) {
+      this.state.isSick = false;
+    }
+
+    this.emit('notification', { message: `Used ${item.name}! ${item.icon}` });
+    this.emit('stat_change', this.state);
+    return true;
+  }
+
+  public buyShopItem(shopItemId: string): boolean {
+    const entry = this.rules.shop.items.find((i) => i.id === shopItemId);
+    if (!entry) return false;
+    if (this.state.level < entry.minLevel || this.state.coins < entry.priceCoins) return false;
+
+    this.state.coins -= entry.priceCoins;
+    const existing = this.state.inventory.find((i) => i.id === entry.id);
+    if (existing) {
+      existing.quantity += 1;
+    } else {
+      const cat = (entry.category as any) || 'material';
+      this.state.inventory.push({
+        id: entry.id,
+        name: entry.name,
+        name_de: entry.name_de,
+        type: cat === 'food' || cat === 'potion' || cat === 'accessory' || cat === 'material' ? cat : 'material',
+        rarity: entry.minLevel >= 4 ? 'rare' : entry.minLevel >= 2 ? 'uncommon' : 'common',
+        description: entry.description || entry.name,
+        description_de: entry.description_de,
+        icon: entry.icon,
+        quantity: 1,
+        slot: entry.slot as any,
+        hungerGain: entry.effects?.hunger,
+        healthGain: entry.effects?.health,
+        energyGain: entry.effects?.energy,
+        happinessGain: entry.effects?.happiness,
+        satietyTicks: entry.effects?.satiety_ticks,
+        sickChance: entry.effects?.sick_chance,
+        cureSickness: Boolean(entry.effects?.cure_sickness),
+      });
+    }
+
+    this.emit('notification', { message: `Purchased ${entry.name} for ${entry.priceCoins} Coins! ${entry.icon}` });
+    this.emit('stat_change', this.state);
     return true;
   }
 
@@ -421,6 +600,23 @@ export class TamagotchiCoreEngine {
     return true;
   }
 
+  private addItemToInventory(itemId: string, quantity: number, type: 'food' | 'material', name: string, icon: string) {
+    const existing = this.state.inventory.find((i) => i.id === itemId);
+    if (existing) {
+      existing.quantity += quantity;
+    } else {
+      this.state.inventory.push({
+        id: itemId,
+        name,
+        type,
+        rarity: 'common',
+        description: type === 'food' ? 'Earned food item.' : 'Gathered on quest.',
+        icon,
+        quantity,
+      });
+    }
+  }
+
   private completeJob(): void {
     if (!this.state.activeJob) return;
     const job = this.rules.jobs.find((j) => j.id === this.state.activeJob!.jobId);
@@ -431,20 +627,40 @@ export class TamagotchiCoreEngine {
       this.state.jobsCompletedCount += 1;
       this.addXP(job.xpReward);
 
-      // Check item drop
+      // Material drop
       if (Math.random() <= job.drop.chance) {
-        const existing = this.state.inventory.find((i) => i.id === job.drop.itemId);
+        this.addItemToInventory(
+          job.drop.itemId,
+          1,
+          'material',
+          job.drop.itemId.replace('mat_', '').replace('_', ' '),
+          '🌿'
+        );
+      }
+
+      // Bonus food drop
+      if (job.foodDrop && Math.random() <= job.foodDrop.chance) {
+        const shopFood = this.rules.shop.items.find((it) => it.id === job.foodDrop!.itemId);
+        const existing = this.state.inventory.find((i) => i.id === job.foodDrop!.itemId);
         if (existing) {
-          existing.quantity += 1;
+          existing.quantity += job.foodDrop.quantity;
         } else {
           this.state.inventory.push({
-            id: job.drop.itemId,
-            name: job.drop.itemId.replace('mat_', '').replace('_', ' '),
-            type: 'material',
+            id: job.foodDrop.itemId,
+            name: shopFood?.name || job.foodDrop.itemId.replace('food_', '').replace('_', ' '),
+            name_de: shopFood?.name_de,
+            type: 'food',
             rarity: 'common',
-            description: 'Gathered on quest.',
-            icon: '📦',
-            quantity: 1,
+            description: shopFood?.description || 'Earned nutritious food.',
+            description_de: shopFood?.description_de,
+            icon: shopFood?.icon || '🍎',
+            quantity: job.foodDrop.quantity,
+            hungerGain: shopFood?.effects?.hunger ?? 12,
+            happinessGain: shopFood?.effects?.happiness ?? 5,
+            healthGain: shopFood?.effects?.health ?? 2,
+            energyGain: shopFood?.effects?.energy ?? 0,
+            satietyTicks: shopFood?.effects?.satiety_ticks ?? 0,
+            sickChance: shopFood?.effects?.sick_chance ?? 0,
           });
         }
       }

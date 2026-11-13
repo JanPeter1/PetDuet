@@ -1,8 +1,23 @@
-# ESP32 CYD Retro Tamagotchi RPG Firmware (v2.1.0)
+# ESP32 CYD Retro Tamagotchi RPG Firmware (v2.2.0)
 
 This repository contains the complete firmware for the **ESP32 Cheap Yellow Display (CYD)**, model **ESP32-2432S028R** (2.8" 320x240 ILI9341 LCD with XPT2046 resistive touch, RGB LED, and piezo speaker).
 
 Hardware Reference: [https://github.com/JanPeter1/ESP_CoGo](https://github.com/JanPeter1/ESP_CoGo)
+
+---
+
+## 🎮 Touchscreen Controls & 5-Tab RPG Interface
+
+- **Top-Left `FEED / FUTT` + Horizontal Food Flyout**:
+  - Tapping `FEED / FUTT` toggles a horizontal bar directly beside the button displaying all owned foods from your inventory (`food_apple`, `food_snack`, cooked meals like *Herb Salad*, *Berry Tart*, *Sun Jerky*).
+  - **Food Tiers & Satiety Shield**: Apples provide safe light nutrition (`+12 FD`); Pixel Snacks give `+25 FD / +15 Happy` with a `30%` sickness risk (`KRANK!/SICK!` HUD badge); cooked dishes grant a `SATT:xT` hunger freeze shield for multiple ticks.
+  - If your bag has no food, the flyout offers a direct shortcut to the **Shop** (`Bag -> Shop`) or **Jobs**.
+- **5-Tab Sub-Screen (`STAT | TASCH/BAG | JOBS | MAGIE/MAGIC | QUEST`)**:
+  - **Button 5 Left (`STAT`)**: Full pet & vitals overview (`HP`, `FD`, `EN`, `SAUB`, `GLUECK`, `MP`), XP bar, Login Streak, Satiety Shield (`SATT`), Health Condition (`Gesund/KRANK!`), and automatic NVS + Cloud save every 2 minutes.
+  - **`TASCH / BAG` (Bag / Cook / Shop)**: Feed directly from inventory, apply *Healing Salve* (`Heilsalbe`) to cure snack sickness, cook gathered ingredients into dishes, or buy supplies in the Shop.
+  - **`JOBS`**: Work professions (*Herb & Apple Forager*, *Village Scout*, *Crystal & Mushroom Mine*) for Coins, XP, cooking materials, and direct food drops.
+  - **Button 4 Left (`ZAUB / MGC`) ➔ `MAGIE`**: Selectable spells (*1. Purify / Läuterung* 15 MP to cure sickness, *2. Vitality Aura* 20 MP, *3. Astral Feast* 30 MP with friend blessing) plus **Research Magic** (`-15 EN -> +35 XP +15 MP`).
+  - **Button 4 Right (`QUEST`) ➔ `QUEST`**: Claim Login Streak & Daily Missions or launch selectable Co-op Quests (*Scout Patrol*, *Treasure Hunt*).
 
 ---
 
@@ -15,8 +30,8 @@ The firmware features an industrial-grade update pipeline:
    - Binary updates stream directly to the inactive slot via `Update.h`.
    - On completion, the ESP32 bootloader switches the active boot slot and reboots.
    - Built-in hardware watchdog and boot rollback prevent bricking if a new image fails to boot.
-2. **Dynamic Rule File Hot-Reloading (`rules.json`)**:
-   - Game rules, balance parameters, shop catalogs, and daily missions are stored in the 896KB SPIFFS flash partition (`/rules.json`).
+2. **Dynamic Rule File Hot-Reloading (`rules.json` v1.1.0)**:
+   - Game rules, balance parameters, food items, shop catalogs, and daily missions are stored in the 896KB SPIFFS flash partition (`/rules.json`).
    - When new balance rules are published to the PHP server, the CYD downloads and applies them **at runtime without rebooting or interrupting the player**!
 3. **Dedicated On-Screen OTA Progress Feedback**:
    - The 2.8" ILI9341 LCD shows a live visual progress bar during firmware downloads with percentage, slot information, and power-off warning.
@@ -30,12 +45,12 @@ The firmware features an industrial-grade update pipeline:
    - Escalating daily bonus rewards: Day 1 (+15🪙, +10XP) up to Day 7+ (+150🪙, +100XP).
    - Streak claim status is tracked locally and synchronized with the cloud save.
 - **Daily Missions Engine**:
-   - Built into `TamagotchiCoreEngine.h`.
-   - Tracks daily care tasks: Feeding, Playing minigames, Bathing, and Sending Treats.
-   - Tap the Coins display (`$XX`) in the lower left or RPG sub-menu to claim completed daily missions for bonus coins and XP!
+   - Built into `TamagotchiCoreEngine.h` (zero dynamic heap allocation).
+   - Tracks daily care tasks: Feeding, Playing minigames, Bathing, Magic casting/research, and Sending Treats.
+   - Tap `QUEST` (Button 4 Right) or the Coins display (`$XX`) in the footer to claim completed daily missions!
 - **Shop & Bazar System**:
-   - Purchase Items (Star Cookie, Super Potion, Golden Apple), Recipes (Berry Pie, Dragon Stew), and Co-op Spells (Aura Spark, Celestial Blessing).
-   - Validates level requirements and coin balance locally and with the PHP server backend.
+   - Purchase Apples, Pixel Snacks, Herb Salads, Healing Salves, Energy Tonics, Recipes, and Co-op Spells; all purchased consumables are added directly to the 16-slot inventory.
+   - Validates level requirements and coin balance locally and with `php_server/shop.php`.
 
 ---
 

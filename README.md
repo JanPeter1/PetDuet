@@ -12,21 +12,26 @@
 
 ## 🌟 Key Features
 
-### 1. 🐣 Tamagotchi Care Mechanics & Evolution
+### 1. 🐣 Tamagotchi Care Mechanics, Inventory-Gated Feeding & Evolution
 - **Core Vitals**: Real-time management of Hunger, Happiness, Energy, Hygiene, Health, and Mana.
-- **Egg Hatching**: Keep your egg warm through interaction to hatch your newborn baby.
+- **Inventory-Gated Feeding & Horizontal Feed Flyout**: You can only feed food items currently stored in your bag. Pressing the top-left **FEED / FUTT** button opens a **horizontal food flyout bar** right beside it displaying available dishes, quantities, hunger boost, and satiety/risk badges (or a quick jump to the Shop/Jobs when empty).
+- **Food Tiers, Satiety Shield & Snack Sickness (`rules.json` v1.1.0)**:
+  - **Starting Rations**: Begin with `2x Crisp Apple`, `1x Pixel Snack`, and `2x Meadow Herb`.
+  - **🍎 Crisp Apple**: Light, safe snack (`+12 FD`, `+5 Happy`, `+2 HP`).
+  - **🥨 Pixel Snack**: Rich quick bite (`+25 FD`, `+15 Happy`, `+5 EN`), but carries a **30% tummyache risk** (`isSick`, `-15 HP` & gradual health drain until cured via *Healing Salve* or *Purify* spell).
+  - **🍲 Cooked Dishes & Satiety Shield (`satietyTicks`)**: High-tier meals (*Herb Salad +35 FD / 4 ticks*, *Berry Tart +45 FD / 5 ticks*, *Sun Jerky +55 FD / 6 ticks*, *Kelp Stew +75 FD / 8 ticks*, *Golden Ambrosia*) grant a **Satiety Shield** that freezes hunger decay for several simulation ticks.
 - **5 Evolution Stages**: *Egg* ➔ *Baby* ➔ *Youth* ➔ *Adult* ➔ *Elder* driven by XP milestones and care accuracy.
 - **Biome Specialization**: 4 distinct elemental biomes (*Desert, Grassland, Water, Forest*) with custom color palettes and procedural pixel-art sprites.
-- **Care Mistakes & Lifespan**: Penalties for starvation and negligence, dynamic sickness curing, and energy recovery.
+- **Full Stats Screen & Auto-Save**: Bottom-left **STAT** button opens the 5-tab sub-menu (`STAT | BAG | JOBS | MAGIC | QUEST`); state automatically saves every few minutes.
 
-### 2. ⚔️ RPG Subsystems, Cooking & Magic
-- **Professions & Jobs**: Foraging, Mining, Alchemy, and Scouting for coins and rare ingredients.
-- **Culinary Workshop**: Combine gathered herbs, mushrooms, and crystals to cook restorative dishes (*Fresh Salad, Berry Pie, Dragon Stew*).
-- **Elemental Magic & Spells**: Cast healing auras and blessings individually or beam co-op magic to your partner pet.
-- **Equipment & Bag**: Collect and equip decorative accessories (*Blossom Crown, Starry Cowl, Fancy Top Hat*) with passive perks.
+### 2. ⚔️ RPG Subsystems, Jobs, Cooking & Magic Research
+- **Professions & Jobs**: *Herb & Apple Forager*, *Village Scout*, *Crystal & Mushroom Miner*, and *Deep Diver* award Coins, XP, cooking ingredients, and **direct food drops** (`bonusFoodDrop`).
+- **Culinary Workshop**: Combine gathered ingredients (*Meadow Herb, Forest Mushroom, Raw Meat, Sun Salt, Lagoon Kelp*) to craft hearty meals stored directly in your inventory.
+- **Selectable Magic Spells & Magic Research**: Tap **MAGIC / ZAUB** (Button 4 Left on CYD) to open selectable spells (*Purify / Läuterung* to cure sickness, *Vitality Aura*, *Astral Feast* with partner blessing) and **Research Magic** (converts Energy into Mana & XP).
+- **Equipment & Bag**: Manage food, curative salves/potions, cooking ingredients, and decorative accessories (*Blossom Crown, Starry Cowl, Fancy Top Hat*).
 
-### 3. 🎯 Daily Missions & 7-Day Login Streak Bonus
-- **Daily Missions**: Rotating care challenges (Feeding, Minigames, Bathing, Sending Treats) with bonus coin and XP payouts.
+### 3. 🎯 Quests, Daily Missions & 7-Day Login Streak Bonus
+- **Co-op Quests & Daily Missions**: Tap **QUEST** (Button 4 Right on CYD) or open the Quests panel to launch collaborative quests (*Scout Patrol*, *Treasure Hunt*) and claim rotating care missions (Feeding, Minigames, Bathing, Magic, Sending Treats).
 - **7-Day Login Streak**: Escalating daily reward ladder:
   - **Day 1**: +15 🪙 / 10 XP
   - **Day 2**: +25 🪙 / 15 XP
@@ -38,8 +43,8 @@
 - **Claim & Fanfare**: In-app claim triggers audio jingles, confetti particle effects, and cloud save synchronization.
 
 ### 4. 🛒 In-Game Shop & Marketplace (Bazar)
-- Purchase consumables, recipes, and spells with level gates and coin costs.
-- Fully validated client-side in `TamagotchiCoreEngine` and server-side in `php_server/shop.php`.
+- Purchase apples, snacks, prepared herb salads, healing salves, energy tonics, cooking recipes, and spells with level gates and coin costs. All purchased consumables go straight into your inventory.
+- Fully validated client-side in `TamagotchiCoreEngine` (`v1.1.0`) and server-side in `php_server/shop.php`.
 
 ### 5. 🤝 Dual-Device Real-Time Sync & Trading
 - **Direct Socket & WebSocket Relay**: Under 20ms sync latency between devices.

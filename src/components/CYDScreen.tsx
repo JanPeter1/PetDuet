@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { PetState, FriendPetSummary, BiomeType } from '../types/pet';
 import { PetPixelSprite } from './PetPixelSprite';
 import { BIOMES, SEASONS } from '../utils/petLogic';
@@ -11,9 +11,12 @@ interface CYDScreenProps {
   friendPet: FriendPetSummary;
   language?: Language;
   onFeed: () => void;
+  onFeedItem?: (itemId: string) => void;
+  onOpenShop?: () => void;
   onPlay: () => void;
   onBath: () => void;
   onOpenRPG: () => void;
+  onOpenStats?: () => void;
   onCloudSave: () => void;
   onEggTap: () => void;
   onPetTouch: () => void;
@@ -33,9 +36,12 @@ export const CYDScreen: React.FC<CYDScreenProps> = ({
   friendPet,
   language = 'en',
   onFeed,
+  onFeedItem,
+  onOpenShop,
   onPlay,
   onBath,
   onOpenRPG,
+  onOpenStats,
   onCloudSave,
   onEggTap,
   onPetTouch,
@@ -49,7 +55,9 @@ export const CYDScreen: React.FC<CYDScreenProps> = ({
   friendChatBalloon = null,
   isActionAnimating = null,
 }) => {
+  const [feedMenuOpen, setFeedMenuOpen] = useState(false);
   const t = translations[language] || translations.en;
+  const availableFoods = (myPet.inventory || []).filter((item) => item.type === 'food' && item.quantity > 0);
   const myBiome = BIOMES[myPet.biome] || BIOMES.grassland;
   const friendBiome = BIOMES[friendPet.biome] || BIOMES.desert;
   const seasonInfo = SEASONS[myPet.season] || SEASONS.spring;
@@ -79,14 +87,22 @@ export const CYDScreen: React.FC<CYDScreenProps> = ({
         {/* User Pet Primary Actions                                  */}
         {/* ========================================================= */}
         <div className="w-[36px] h-full bg-slate-900 border-r border-slate-700/80 flex flex-col justify-between p-1 z-20 shrink-0">
-          {/* FEED */}
+          {/* FEED (toggles horizontal food selection bar to the right) */}
           <button
             onClick={() => {
               cydAudio.click();
-              onFeed();
+              if (onFeedItem) {
+                setFeedMenuOpen((prev) => !prev);
+              } else {
+                onFeed();
+              }
             }}
-            className="w-full h-[40px] bg-emerald-950/90 hover:bg-emerald-900 active:bg-emerald-700 border border-emerald-500/80 rounded flex flex-col items-center justify-center text-[7px] text-emerald-200 transition-transform active:scale-90"
-            title="Feed your pet"
+            className={`w-full h-[40px] border rounded flex flex-col items-center justify-center text-[7px] transition-transform active:scale-90 ${
+              feedMenuOpen
+                ? 'bg-emerald-700 border-amber-400 text-white shadow-sm shadow-emerald-500/40'
+                : 'bg-emerald-950/90 hover:bg-emerald-900 active:bg-emerald-700 border-emerald-500/80 text-emerald-200'
+            }`}
+            title={language === 'de' ? 'Essen aus Inventar wählen' : 'Select food from inventory'}
           >
             <span className="text-[12px] leading-none">🍖</span>
             <span className="mt-0.5 tracking-tighter">{t.btnFeed}</span>
@@ -131,17 +147,21 @@ export const CYDScreen: React.FC<CYDScreenProps> = ({
             <span className="mt-0.5 tracking-tighter">{t.btnRpg}</span>
           </button>
 
-          {/* SAVE */}
+          {/* STATS / SUB-SCREEN */}
           <button
             onClick={() => {
               cydAudio.click();
-              onCloudSave();
+              if (onOpenStats) {
+                onOpenStats();
+              } else {
+                onOpenRPG();
+              }
             }}
-            className="w-full h-[40px] bg-amber-950/90 hover:bg-amber-900 active:bg-amber-700 border border-amber-500/80 rounded flex flex-col items-center justify-center text-[7px] text-amber-200 transition-transform active:scale-90"
-            title="Save to Cloud & SD"
+            className="w-full h-[40px] bg-cyan-950/90 hover:bg-cyan-900 active:bg-cyan-700 border border-cyan-500/80 rounded flex flex-col items-center justify-center text-[7px] text-cyan-200 transition-transform active:scale-90"
+            title="Stats, Inventory, Jobs & Magic"
           >
-            <span className="text-[12px] leading-none">💾</span>
-            <span className="mt-0.5 tracking-tighter">{t.btnSave}</span>
+            <span className="text-[12px] leading-none">📊</span>
+            <span className="mt-0.5 tracking-tighter">{t.btnStats}</span>
           </button>
         </div>
 
@@ -226,6 +246,22 @@ export const CYDScreen: React.FC<CYDScreenProps> = ({
                 />
               </div>
             </div>
+
+            {/* Satiety Shield & Sickness Status Badges */}
+            {((myPet.satietyTicks || 0) > 0 || myPet.isSick) && (
+              <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                {(myPet.satietyTicks || 0) > 0 && (
+                  <span className="px-1 py-0.2 rounded bg-emerald-900/90 border border-emerald-500/60 text-emerald-300 text-[5px] font-bold">
+                    🛡️ {myPet.satietyTicks}T
+                  </span>
+                )}
+                {myPet.isSick && (
+                  <span className="px-1 py-0.2 rounded bg-rose-900/95 border border-rose-500 text-rose-200 text-[5px] font-bold animate-pulse">
+                    🤢 {language === 'de' ? 'KRANK' : 'SICK'}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Center Pet Sprite & Interaction Area (Your Pet) */}
@@ -440,6 +476,69 @@ export const CYDScreen: React.FC<CYDScreenProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Horizontal Feed Flyout Bar (Directly to the right of top-left FEED button) */}
+      {feedMenuOpen && (
+        <div className="absolute top-1 left-[39px] right-[39px] z-35 bg-slate-950/95 border border-emerald-500/80 rounded-lg p-1 shadow-2xl flex items-center gap-1 overflow-x-auto">
+          {availableFoods.length > 0 ? (
+            availableFoods.map((food) => {
+              const foodName = language === 'de' && food.name_de ? food.name_de : food.name;
+              const hasRisk = (food.sickChance || 0) > 0;
+              const hasSatiety = (food.satietyTicks || 0) > 0;
+              return (
+                <button
+                  key={food.id}
+                  onClick={() => {
+                    cydAudio.munch();
+                    setFeedMenuOpen(false);
+                    onFeedItem?.(food.id);
+                  }}
+                  title={`${foodName} (+${food.hungerGain || 15} FD${hasSatiety ? `, ${food.satietyTicks}T` : ''}${hasRisk ? `, ${Math.round((food.sickChance || 0) * 100)}% Risk` : ''})`}
+                  className={`shrink-0 h-[36px] min-w-[44px] px-1.5 rounded border flex flex-col items-center justify-center transition-transform active:scale-90 ${
+                    hasRisk
+                      ? 'bg-amber-950/90 hover:bg-amber-900 border-amber-500/80 text-amber-200'
+                      : hasSatiety
+                      ? 'bg-emerald-900/90 hover:bg-emerald-800 border-emerald-400/80 text-emerald-100'
+                      : 'bg-slate-900 hover:bg-slate-800 border-slate-600 text-slate-100'
+                  }`}
+                >
+                  <div className="flex items-center gap-0.5 leading-none">
+                    <span className="text-[11px]">{food.icon}</span>
+                    <span className="text-[6px] font-bold text-amber-300">x{food.quantity}</span>
+                  </div>
+                  <div className="text-[5px] leading-none mt-0.5 flex items-center gap-0.5">
+                    <span>+{food.hungerGain || 12}</span>
+                    {hasSatiety && <span className="text-emerald-300">🛡️{food.satietyTicks}</span>}
+                    {hasRisk && <span className="text-rose-400">!</span>}
+                  </div>
+                </button>
+              );
+            })
+          ) : (
+            <button
+              onClick={() => {
+                cydAudio.click();
+                setFeedMenuOpen(false);
+                onOpenShop?.();
+              }}
+              className="flex-1 h-[36px] px-2 rounded bg-rose-950/90 hover:bg-rose-900 border border-rose-500/80 text-rose-200 text-[6px] flex items-center justify-center gap-1"
+            >
+              <span>🛒</span>
+              <span>{t.feedMenuEmptyShop}</span>
+            </button>
+          )}
+          <button
+            onClick={() => {
+              cydAudio.back();
+              setFeedMenuOpen(false);
+            }}
+            className="shrink-0 w-[20px] h-[36px] rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 text-[7px] flex items-center justify-center"
+            title="Close"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Screen Overlay Notification Toast */}
       {activeNotification && (

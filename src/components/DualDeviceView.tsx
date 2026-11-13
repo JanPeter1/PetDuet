@@ -21,6 +21,9 @@ interface DualDeviceViewProps {
   ledColorDev2: 'off' | 'red' | 'green' | 'blue' | 'cyan' | 'gold';
   onDev1Action: (action: string) => void;
   onDev2Action: (action: string) => void;
+  onDev1FeedItem: (itemId: string) => void;
+  onDev2FeedItem: (itemId: string) => void;
+  onOpenShop: () => void;
   onDev1BiomeChange: (biome: BiomeType) => void;
   onDev2BiomeChange: (biome: BiomeType) => void;
   onSeasonChange: (season: SeasonType) => void;
@@ -41,6 +44,9 @@ export const DualDeviceView: React.FC<DualDeviceViewProps> = ({
   ledColorDev2,
   onDev1Action,
   onDev2Action,
+  onDev1FeedItem,
+  onDev2FeedItem,
+  onOpenShop,
   onDev1BiomeChange,
   onDev2BiomeChange,
   onSeasonChange,
@@ -172,9 +178,12 @@ export const DualDeviceView: React.FC<DualDeviceViewProps> = ({
               friendPet={device1FriendSummary}
               language={language}
               onFeed={() => onDev1Action('feed')}
+              onFeedItem={(itemId) => onDev1FeedItem(itemId)}
+              onOpenShop={onOpenShop}
               onPlay={() => onDev1Action('play')}
               onBath={() => onDev1Action('bath')}
               onOpenRPG={() => onDev1Action('open_rpg')}
+              onOpenStats={() => onDev1Action('open_stats')}
               onCloudSave={() => onDev1Action('cloud_save')}
               onEggTap={() => onDev1Action('egg_tap')}
               onPetTouch={() => onDev1Action('pet_touch')}
@@ -250,9 +259,12 @@ export const DualDeviceView: React.FC<DualDeviceViewProps> = ({
               friendPet={device2FriendSummary}
               language={language}
               onFeed={() => onDev2Action('feed')}
+              onFeedItem={(itemId) => onDev2FeedItem(itemId)}
+              onOpenShop={onOpenShop}
               onPlay={() => onDev2Action('play')}
               onBath={() => onDev2Action('bath')}
               onOpenRPG={() => onDev2Action('open_rpg')}
+              onOpenStats={() => onDev2Action('open_stats')}
               onCloudSave={() => onDev2Action('cloud_save')}
               onEggTap={() => onDev2Action('egg_tap')}
               onPetTouch={() => onDev2Action('pet_touch')}

@@ -24,84 +24,141 @@ if (!file_exists($rules_file)) {
 $shop_catalog = [
     'items' => [
         [
-            'id' => 'star_cookie',
-            'name' => 'Star Cookie',
-            'name_de' => 'Sternenkeks',
-            'cost' => 15,
+            'id' => 'food_apple',
+            'name' => 'Crisp Apple',
+            'name_de' => 'Frischer Apfel',
+            'price_coins' => 5,
+            'cost' => 5,
             'min_level' => 1,
-            'hunger_gain' => 30,
-            'happiness_gain' => 15,
-            'icon' => '🍪',
-            'description_de' => 'Ein knuspriger Keks, der den Hunger stillt und Freude schenkt.'
-        ],
-        [
-            'id' => 'super_potion',
-            'name' => 'Super Potion',
-            'name_de' => 'Heiltrank',
-            'cost' => 30,
-            'min_level' => 2,
-            'health_gain' => 50,
-            'happiness_gain' => 20,
-            'icon' => '🧪',
-            'description_de' => 'Stellt 50 Gesundheit wieder her und beruhigt das Haustier.'
-        ],
-        [
-            'id' => 'golden_apple',
-            'name' => 'Golden Apple',
-            'name_de' => 'Goldapfel',
-            'cost' => 60,
-            'min_level' => 4,
-            'hunger_gain' => 50,
-            'happiness_gain' => 40,
-            'health_gain' => 30,
+            'category' => 'food',
             'icon' => '🍎',
-            'description_de' => 'Ein mystischer Apfel, der maximale Saettigung und Vitalitaet verleiht.'
+            'description_de' => 'Knackiger roter Apfel (+12 Hunger, +5 Glueck).',
+            'effects' => ['hunger' => 12, 'happiness' => 5, 'health' => 2, 'satiety_ticks' => 0, 'sick_chance' => 0]
+        ],
+        [
+            'id' => 'food_snack',
+            'name' => 'Sweet Pixel Snack',
+            'name_de' => 'Suesser Pixel-Snack',
+            'price_coins' => 8,
+            'cost' => 8,
+            'min_level' => 1,
+            'category' => 'food',
+            'icon' => '🥨',
+            'description_de' => 'Suesser Snack (+25 Hunger, +15 Glueck) — 30% Risiko auf Bauchweh!',
+            'effects' => ['hunger' => 25, 'happiness' => 15, 'energy' => 5, 'satiety_ticks' => 0, 'sick_chance' => 0.30]
+        ],
+        [
+            'id' => 'food_herb_salad',
+            'name' => 'Meadow Herb Salad',
+            'name_de' => 'Wiesenkraeuter-Salat',
+            'price_coins' => 22,
+            'cost' => 22,
+            'min_level' => 1,
+            'category' => 'food',
+            'icon' => '🥗',
+            'description_de' => 'Fertiggericht (+35 Hunger, +10 HP). Haelt 4 Ticks ohne Abzug!',
+            'effects' => ['hunger' => 35, 'health' => 10, 'happiness' => 10, 'energy' => 10, 'satiety_ticks' => 4, 'sick_chance' => 0]
+        ],
+        [
+            'id' => 'food_berry_pie',
+            'name' => 'Forest Berry Tart',
+            'name_de' => 'Waldbeeren-Tarte',
+            'price_coins' => 40,
+            'cost' => 40,
+            'min_level' => 2,
+            'category' => 'food',
+            'icon' => '🥧',
+            'description_de' => 'Gourmet-Tarte (+45 Hunger, +25 Glueck). Haelt 5 Ticks ohne Abzug!',
+            'effects' => ['hunger' => 45, 'happiness' => 25, 'health' => 15, 'satiety_ticks' => 5, 'sick_chance' => 0]
+        ],
+        [
+            'id' => 'item_salve',
+            'name' => 'Healing Salve',
+            'name_de' => 'Wohltuende Heilsalbe',
+            'price_coins' => 25,
+            'cost' => 25,
+            'min_level' => 1,
+            'category' => 'potion',
+            'icon' => '🧴',
+            'description_de' => 'Heilsalbe fuer +40 HP — heilt Bauchweh & Krankheiten sofort!',
+            'effects' => ['health' => 40, 'cure_sickness' => true]
+        ],
+        [
+            'id' => 'item_energy_elixir',
+            'name' => 'Energy Tonic',
+            'name_de' => 'Vitalitaets-Tonikum',
+            'price_coins' => 35,
+            'cost' => 35,
+            'min_level' => 2,
+            'category' => 'potion',
+            'icon' => '🧪',
+            'description_de' => 'Staerkendes Tonikum fuer 60 Energie und 15 Mana.',
+            'effects' => ['energy' => 60, 'mana' => 15]
         ]
     ],
     'recipes' => [
         [
-            'id' => 'recipe_berry_pie',
-            'name' => 'Recipe: Berry Pie',
-            'name_de' => 'Rezept: Beerenkuchen',
-            'cost' => 45,
-            'min_level' => 2,
-            'recipe_id' => 'berry_pie',
-            'icon' => '🥧',
-            'description_de' => 'Schaltet die Faehigkeit frei, Beerenkuchen in der Kueche zu backen.'
+            'id' => 'rcp_salad',
+            'name' => 'Meadow Herb Salad',
+            'name_de' => 'Wiesenkraeuter-Salat',
+            'price_coins' => 15,
+            'cost' => 15,
+            'min_level' => 1,
+            'icon' => '🥗',
+            'description_de' => 'Rezeptrolle zum Zubereiten von frischem Wiesensalat.'
         ],
         [
-            'id' => 'recipe_dragon_stew',
-            'name' => 'Recipe: Dragon Stew',
-            'name_de' => 'Rezept: Dracheneintopf',
-            'cost' => 80,
-            'min_level' => 5,
-            'recipe_id' => 'dragon_stew',
+            'id' => 'rcp_berry_pie',
+            'name' => 'Forest Berry Tart',
+            'name_de' => 'Waldbeeren-Tarte',
+            'price_coins' => 65,
+            'cost' => 65,
+            'min_level' => 2,
+            'icon' => '🥧',
+            'description_de' => 'Schaltet die Faehigkeit frei, Waldbeeren-Tarte in der Kueche zu backen.'
+        ],
+        [
+            'id' => 'rcp_stew',
+            'name' => 'Kelp & Mushroom Stew',
+            'name_de' => 'Tang- & Pilzeintopf',
+            'price_coins' => 110,
+            'cost' => 110,
+            'min_level' => 4,
             'icon' => '🍲',
-            'description_de' => 'Geheimes Meisterrezept fuer feurige Staerkung.'
+            'description_de' => 'Meisterrezept fuer nahrhaften Eintopf mit 8 Ticks Saettigung.'
         ]
     ],
     'spells' => [
         [
-            'id' => 'spell_aura_spark',
-            'name' => 'Spell: Aura Spark',
-            'name_de' => 'Zauber: Aura-Funke',
-            'cost' => 70,
-            'min_level' => 3,
-            'spell_id' => 'aura_spark',
-            'mana_cost' => 25,
-            'heal_power' => 35,
-            'icon' => '✨',
-            'description_de' => 'Ein Zauber zur schnellen Wiederbelebung erschoepfter Energie.'
+            'id' => 'spl_cleanse',
+            'name' => 'Purify',
+            'name_de' => 'Laeuterung',
+            'price_coins' => 40,
+            'cost' => 40,
+            'min_level' => 1,
+            'mana_cost' => 15,
+            'icon' => '🫧',
+            'description_de' => 'Zauberbuch zur sofortigen Reinigung und Krankheitsheilung.'
         ],
         [
-            'id' => 'spell_celestial_blessing',
-            'name' => 'Spell: Celestial Blessing',
-            'name_de' => 'Zauber: Himmelssegen',
-            'cost' => 120,
-            'min_level' => 6,
-            'spell_id' => 'celestial_blessing',
+            'id' => 'spl_heal',
+            'name' => 'Vitality Aura',
+            'name_de' => 'Vitalitaets-Aura',
+            'price_coins' => 70,
+            'cost' => 70,
+            'min_level' => 2,
+            'mana_cost' => 20,
+            'icon' => '💖',
+            'description_de' => 'Zauberbuch fuer eine waermende Aura mit +25 HP.'
+        ],
+        [
+            'id' => 'spl_astral_harmony',
+            'name' => 'Dual Astral Harmony',
+            'name_de' => 'Astrale Harmonie',
+            'price_coins' => 260,
+            'cost' => 260,
+            'min_level' => 5,
             'mana_cost' => 45,
-            'heal_power' => 70,
             'icon' => '🌟',
             'description_de' => 'Maechtiger Koop-Zauber, der beide verbundenen Pets heilt.'
         ]

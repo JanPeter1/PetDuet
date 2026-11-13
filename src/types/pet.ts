@@ -29,6 +29,9 @@ export interface InventoryItem {
   healthGain?: number;
   energyGain?: number;
   happinessGain?: number;
+  satietyTicks?: number;
+  sickChance?: number;
+  cureSickness?: boolean;
 }
 
 export interface EquippedItems {
@@ -54,25 +57,37 @@ export interface Recipe {
 export interface Job {
   id: string;
   title: string;
+  title_de?: string;
   description: string;
+  description_de?: string;
   icon: string;
   minLevel: number;
   durationSeconds: number;
   coinReward: number;
   xpReward: number;
-  possibleDrop: { itemId: string; name: string; chance: number };
+  possibleDrop: { itemId: string; name: string; name_de?: string; chance: number };
+  bonusFoodDrop?: { itemId: string; name: string; name_de?: string; quantity: number; chance: number };
 }
 
 export interface MagicSpell {
   id: string;
   name: string;
+  name_de?: string;
   description: string;
+  description_de?: string;
   icon: string;
   minLevel: number;
   manaCost: number;
   biome: BiomeType;
   target: 'self' | 'friend' | 'both';
   effectDescription: string;
+  effectDescription_de?: string;
+  healthGain?: number;
+  hungerGain?: number;
+  happinessGain?: number;
+  energyGain?: number;
+  satietyTicks?: number;
+  curesSickness?: boolean;
 }
 
 export type MissionActionType =
@@ -151,6 +166,8 @@ export interface PetState {
   treatsSentCount: number;
   poopCount: number;
   isSleeping: boolean;
+  isSick?: boolean;
+  satietyTicks?: number;
   eggWarmth: number; // For egg hatching (0-100)
   createdAt: number;
   lastFedAt: number;
