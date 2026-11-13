@@ -47,19 +47,13 @@ if ($type === 'rules') {
 // ----------------------------------------------------------------------------
 // Firmware Binary (.bin) Streaming
 // ----------------------------------------------------------------------------
-$fw_dir = __DIR__ . '/firmware';
-if (!is_dir($fw_dir)) {
-    mkdir($fw_dir, 0755, true);
-}
+$fw_file = __DIR__ . '/cyd_tamagotchi.bin';
 
-$fw_file = $fw_dir . '/cyd_tamagotchi.bin';
-
-// If physical binary doesn't exist yet, generate a valid placeholder app image header for tests
 if (!file_exists($fw_file)) {
-    // ESP32 Image Header Magic (0xE9), 4 segments, SPI flash settings
-    $dummy_header = "\xE9\x04\x02\x20\x00\x00\x00\x40";
-    $dummy_content = $dummy_header . str_repeat("\x00\xFF\xAA\x55", 1024);
-    file_put_contents($fw_file, $dummy_content);
+    http_response_code(404);
+    header('Content-Type: application/json');
+    echo json_encode(['status' => 'error', 'message' => 'Firmware binary not found']);
+    exit;
 }
 
 $filesize = filesize($fw_file);
