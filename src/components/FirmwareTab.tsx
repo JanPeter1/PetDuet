@@ -18,7 +18,7 @@ interface LogEntry {
 }
 
 export const FirmwareTab: React.FC<FirmwareTabProps> = ({ language = 'de' }) => {
-  const [selectedFile, setSelectedFile] = useState<string>('ESP32_Tamagotchi_CYD.ino');
+  const [selectedFile, setSelectedFile] = useState<string>('main/app_main.cpp');
   const [copied, setCopied] = useState(false);
   const [flashingState, setFlashingState] = useState<
     'idle' | 'connecting' | 'connected' | 'erasing' | 'flashing' | 'success' | 'error'
@@ -68,7 +68,7 @@ export const FirmwareTab: React.FC<FirmwareTabProps> = ({ language = 'de' }) => 
   const transportRef = useRef<Transport | null>(null);
   const monitorReaderRef = useRef<any>(null);
 
-  const fileData = FIRMWARE_FILES[selectedFile] || FIRMWARE_FILES['ESP32_Tamagotchi_CYD.ino'];
+  const fileData = FIRMWARE_FILES[selectedFile] || FIRMWARE_FILES['main/app_main.cpp'];
 
   // Auto-scroll logs
   useEffect(() => {
@@ -533,8 +533,8 @@ export const FirmwareTab: React.FC<FirmwareTabProps> = ({ language = 'de' }) => 
             </h2>
             <p className="text-sm text-slate-300 mt-1 max-w-2xl leading-relaxed">
               {language === 'de'
-                ? 'Flashe die Tamagotchi-RPG-Firmware direkt aus dem Browser per Web Serial auf deinen ESP32 CYD, oder lade das fertige PlatformIO-/Arduino-Projekt herunter.'
-                : 'Flash the Tamagotchi RPG firmware directly from your browser via Web Serial to your ESP32 CYD, or download the preconfigured PlatformIO/Arduino project.'}
+                ? 'Flashe die native ESP-IDF + LVGL Tamagotchi-RPG-Firmware direkt aus dem Browser per Web Serial auf deinen ESP32 CYD, oder lade das fertige ESP-IDF-/PlatformIO-Projekt herunter.'
+                : 'Flash the native ESP-IDF + LVGL Tamagotchi RPG firmware directly from your browser via Web Serial to your ESP32 CYD, or download the preconfigured ESP-IDF/PlatformIO project.'}
             </p>
           </div>
 
@@ -864,11 +864,11 @@ export const FirmwareTab: React.FC<FirmwareTabProps> = ({ language = 'de' }) => 
 
       {/* Alternative Flashing Methods (CLI & IDE) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* PlatformIO (Recommended) */}
+        {/* ESP-IDF & PlatformIO (Recommended) */}
         <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-3">
           <div className="flex items-center justify-between">
             <span className="font-bold text-white text-sm flex items-center gap-2">
-              <span>🚀</span> PlatformIO (1-Klick Upload in VS Code)
+              <span>🚀</span> ESP-IDF CLI / PlatformIO (espidf)
             </span>
             <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/20 text-emerald-300 font-bold">
               {language === 'de' ? 'Empfohlen' : 'Recommended'}
@@ -876,15 +876,15 @@ export const FirmwareTab: React.FC<FirmwareTabProps> = ({ language = 'de' }) => 
           </div>
           <p className="text-xs text-slate-400 leading-relaxed">
             {language === 'de'
-              ? 'Die beiliegende platformio.ini konfiguriert alle TFT_eSPI Flags, Display-Pins und Bibliotheken vollautomatisch.'
-              : 'The included platformio.ini sets up all TFT_eSPI flags, display pins, and libraries automatically.'}
+              ? 'Native ESP-IDF v5 + LVGL v8 Firmware: Kompilieren und flashen per idf.py oder PlatformIO (framework = espidf).'
+              : 'Native ESP-IDF v5 + LVGL v8 firmware: Build and flash directly via idf.py or PlatformIO (framework = espidf).'}
           </p>
           <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 font-mono text-xs text-amber-300 flex items-center justify-between">
-            <code>pio run --target upload</code>
+            <code>idf.py build flash monitor</code>
             <button
               onClick={() => {
                 cydAudio.click();
-                navigator.clipboard.writeText('pio run --target upload');
+                navigator.clipboard.writeText('idf.py build flash monitor');
               }}
               className="text-[10px] text-slate-400 hover:text-white px-2 py-1 bg-slate-800 rounded border border-slate-700 active:scale-95"
             >

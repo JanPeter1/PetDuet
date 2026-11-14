@@ -74,15 +74,22 @@
 │   ├── components/              # Dual CYD Canvas, RPG Modals, Controls, HUD
 │   ├── utils/                   # i18n bilingual dictionaries (EN & DE), Web Audio
 │   └── hardware_and_server/     # Embedded firmware & PHP code viewer modules
-├── esp32_firmware/              # ESP32 CYD (ESP32-2432S028R) C++ Source Code
-│   ├── ESP32_Tamagotchi_CYD.ino # Main sketch (ILI9341 TFT, Touch, WiFi, FreeRTOS, OTA)
+├── esp32_firmware/              # ESP32 CYD (ESP32-2432S028R) Native ESP-IDF + LVGL Firmware
+│   ├── main/app_main.cpp        # FreeRTOS entry point (LVGL, P2P Sockets, NVS, SPIFFS, A/B OTA)
+│   ├── main/cyd_lvgl_ui.cpp     # LVGL v8 Dual-Pet UI, pixel sprites, food flyout & RPG modals
+│   ├── main/cyd_display.cpp     # Native SPI2_HOST ILI9341 320x240 DMA display driver
+│   ├── main/cyd_touch.c         # Native SPI3_HOST XPT2046 resistive touch driver
+│   ├── main/cyd_net.cpp         # esp_wifi STA/SoftAP portal, lwIP sockets, esp_ota_ops updater
+│   ├── main/cyd_storage.cpp     # NVS flash & SPIFFS /spiffs/rules.json persistence
+│   ├── main/cyd_hw.c            # RGB LED, BOOT button & LEDC piezo buzzer drivers
 │   ├── TamagotchiCoreEngine.h   # UI-agnostic C++ game runtime engine
 │   ├── CYD_Pins.h               # Hardware pinouts (ILI9341, XPT2046, RGB LED, Buzzer)
 │   ├── config.h                 # WiFi, Server URL, Language (LANG_DE), Biome config
 │   ├── cyd_config.h             # Display driver & hardware dimensions
 │   ├── PetGraphics.h            # 16-bit RGB565 sprites and color palettes
+│   ├── sdkconfig.defaults       # ESP-IDF defaults (4MB flash, rollback, 1kHz tick, LVGL)
 │   ├── partitions.csv           # Dual 1.5MB A/B OTA + 896KB SPIFFS partition table
-│   └── platformio.ini           # 1-click PlatformIO build configuration
+│   └── platformio.ini           # PlatformIO ESP-IDF build configuration
 ├── php_server/                  # Cloud Backend (PHP 8 + SQLite)
 │   ├── index.php                # Status dashboard & health check
 │   ├── register.php             # Device registration & pairing
@@ -133,22 +140,22 @@ npm run lint
 - **Sound**: Onboard Piezo Buzzer (GPIO 26)
 - **Status**: Tri-color RGB LED (GPIO 4, 16, 17 - active low)
 
-### Method A: PlatformIO (Recommended)
+### Method A: ESP-IDF CLI (Recommended)
+1. Install **ESP-IDF v5.x** ([Espressif Installer](https://dl.espressif.com/dl/esp-idf/)).
+2. Open an ESP-IDF terminal in `esp32_firmware/`.
+3. Build and flash via USB (`idf.py` automatically downloads **LVGL v8.3.11** from `idf_component.yml`):
+   ```bash
+   idf.py set-target esp32
+   idf.py build flash monitor
+   ```
+4. The custom `partitions.csv` (`ota_0` 1.5MB, `ota_1` 1.5MB, `spiffs` 896KB) and `sdkconfig.defaults` (including A/B OTA rollback) are applied automatically.
+
+### Method B: PlatformIO (`framework = espidf`)
 1. Install [VS Code](https://code.visualstudio.com/) and the **PlatformIO IDE** extension.
-2. Open the `esp32_firmware` directory in VS Code.
+2. Open the `esp32_firmware` directory in VS Code (`platformio.ini` targets `framework = espidf` with `lvgl/lvgl`).
 3. Connect your CYD device via a Micro-USB cable.
 4. Click **PlatformIO: Upload** in the bottom status bar.
-5. (Optional) Run `PlatformIO: Upload Filesystem Image` to flash the default `rules.json` to SPIFFS.
-
-### Method B: Arduino IDE
-1. Install the **esp32** board package (by Espressif) via Board Manager.
-2. Select **ESP32 Dev Module**.
-3. Install required libraries:
-   - `TFT_eSPI` by Bodmer (configure `User_Setup.h` for ILI9341 on CYD pins: MOSI 13, MISO 12, SCLK 14, CS 15, DC 2, BL 21)
-   - `XPT2046_Touchscreen` by Paul Stoffregen
-   - `ArduinoJson` (v6 or v7) by Benoit Blanchon
-4. Copy `partitions.csv` into your sketch folder or choose **Minimal SPIFFS (1.9MB with OTA)**.
-5. Open `ESP32_Tamagotchi_CYD.ino` and click **Upload**.
+5. (Optional) Or run `.\release_firmware.ps1` on Windows to bump version, run unit tests + coverage, build the OTA binary, and flash interactively.
 
 ---
 

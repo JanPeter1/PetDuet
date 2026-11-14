@@ -52,6 +52,9 @@ function removeDirRecursive(string $dir): void {
 }
 
 copyDirRecursive($sourceServerDir, $tmpServer);
+if (!file_exists($tmpServer . DIRECTORY_SEPARATOR . 'cyd_tamagotchi.bin')) {
+    file_put_contents($tmpServer . DIRECTORY_SEPARATOR . 'cyd_tamagotchi.bin', "\xE9\x04\x02\x20" . str_repeat("\xAA", 512));
+}
 
 $covLogFile = $tmpRoot . DIRECTORY_SEPARATOR . 'server_cov_raw.json';
 $prependFile = __DIR__ . DIRECTORY_SEPARATOR . 'coverage_prepend.php';

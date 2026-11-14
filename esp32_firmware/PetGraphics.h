@@ -9,8 +9,22 @@
 #ifndef PET_GRAPHICS_H
 #define PET_GRAPHICS_H
 
-#include <Arduino.h>
-#include <TFT_eSPI.h>
+#include <stdint.h>
+#include <string.h>
+
+#ifdef ARDUINO
+  #include <Arduino.h>
+  #include <TFT_eSPI.h>
+#else
+  #include "main/cyd_display.h"
+#endif
+
+#ifndef map
+  #define pet_map(x, in_min, in_max, out_min, out_max) \
+    (((in_max) <= (in_min)) ? (out_min) : ((((x) - (in_min)) * ((out_max) - (out_min))) / ((in_max) - (in_min)) + (out_min)))
+#else
+  #define pet_map(x, in_min, in_max, out_min, out_max) map((x), (in_min), (in_max), (out_min), (out_max))
+#endif
 
 // 16-bit 565 Color Constants for 2.8" LCD
 #define COLOR_DESERT_BG   0x2960 // Dark Amber
@@ -94,7 +108,8 @@ inline uint16_t mapSpriteColor(char c) {
   }
 }
 
-inline void drawPixelSprite16(TFT_eSPI& tft, int topLeftX, int topLeftY, const char* const rows[16]) {
+template <typename DisplayT>
+inline void drawPixelSprite16(DisplayT& tft, int topLeftX, int topLeftY, const char* const rows[16]) {
   for (int py = 0; py < 16; py++) {
     const char* row = rows[py];
     for (int px = 0; row[px] != '\0' && px < 16; px++) {
@@ -422,7 +437,8 @@ static const char* const SPR_FOOD_STEW[16] = {
 /**
  * Draws an Egg on the display with biome markings & warm highlights
  */
-inline void drawPixelEgg(TFT_eSPI& tft, int cx, int cy, uint16_t shellColor, uint8_t warmth, const char* biome = "grassland") {
+template <typename DisplayT>
+inline void drawPixelEgg(DisplayT& tft, int cx, int cy, uint16_t shellColor, uint8_t warmth, const char* biome = "grassland") {
   // Ground shadow
   tft.fillEllipse(cx, cy + 27, 17, 4, 0x0842);
 
@@ -463,7 +479,8 @@ inline void drawPixelEgg(TFT_eSPI& tft, int cx, int cy, uint16_t shellColor, uin
 /**
  * Draws Pet Critter based on Biome, Phase & Mood
  */
-inline void drawPixelPet(TFT_eSPI& tft, int cx, int cy, const char* biome, const char* phase, bool isFriend = false) {
+template <typename DisplayT>
+inline void drawPixelPet(DisplayT& tft, int cx, int cy, const char* biome, const char* phase, bool isFriend = false) {
   BiomeTheme theme = getBiomeTheme(biome);
   bool isElder = strcmp(phase, "Elder") == 0;
   bool isAdult = strcmp(phase, "Adult") == 0 || isElder;
@@ -547,8 +564,9 @@ inline void drawPixelPet(TFT_eSPI& tft, int cx, int cy, const char* biome, const
 /**
  * Draws a modern dark-tinted CYD touch button with 16x16 pixel-art icon + crisp label
  */
+template <typename DisplayT>
 inline void drawTouchButton(
-  TFT_eSPI& tft,
+  DisplayT& tft,
   int x, int y, int w, int h,
   const char* label,
   uint16_t fillCol,
@@ -591,7 +609,8 @@ inline void drawTouchButton(
 /**
  * Draws a crisp 16x16 pixel-art food icon inside feed flyout buttons
  */
-inline void drawFoodIcon(TFT_eSPI& tft, int cx, int cy, const char* foodId) {
+template <typename DisplayT>
+inline void drawFoodIcon(DisplayT& tft, int cx, int cy, const char* foodId) {
   int sx = cx - 8;
   int sy = cy - 8;
   if (strcmp(foodId, "food_apple") == 0) {
@@ -612,10 +631,11 @@ inline void drawFoodIcon(TFT_eSPI& tft, int cx, int cy, const char* foodId) {
 /**
  * Draws a status bar with border
  */
-inline void drawMiniBar(TFT_eSPI& tft, int x, int y, int w, int h, uint8_t value, uint16_t barCol) {
+template <typename DisplayT>
+inline void drawMiniBar(DisplayT& tft, int x, int y, int w, int h, uint8_t value, uint16_t barCol) {
   tft.drawRect(x, y, w, h, TFT_WHITE);
   tft.fillRect(x + 1, y + 1, w - 2, h - 2, TFT_BLACK);
-  int fillW = map(value, 0, 100, 0, w - 2);
+  int fillW = pet_map(value, 0, 100, 0, w - 2);
   if (fillW > 0) {
     tft.fillRect(x + 1, y + 1, fillW, h - 2, barCol);
   }

@@ -1,29 +1,11 @@
 cmake_minimum_required(VERSION 3.16)
 
-# Include ESP-IDF build system
+set(PROJECT_VER "2.1.4")
+
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
-# Project configuration
-set(PROJECT_NAME "petduet")
-set(PROJECT_VER "1.0.0")
+# Ensure LVGL v8 picks up main/lv_conf.h cleanly across all components
+idf_build_set_property(COMPILE_DEFINITIONS "-DLV_CONF_INCLUDE_SIMPLE=1" APPEND)
+idf_build_set_property(INCLUDE_DIRECTORIES "${CMAKE_CURRENT_LIST_DIR}/main" APPEND)
 
-# Component requirements
-set(COMPONENT_REQUIRES
-    "esp_https_ota"
-    "esp_tls"
-    "cjson"
-    "driver"
-    "spi_flash"
-    "nvs_flash"
-    "esp_wifi"
-    "esp_netif"
-    "esp_event"
-    "protocol_examples_common"
-    "json"
-    "lvgl"
-    "esp_timer"
-    "freertos"
-    "log"
-)
-
-project(${PROJECT_NAME} VERSION ${PROJECT_VER})
+project(petduet)

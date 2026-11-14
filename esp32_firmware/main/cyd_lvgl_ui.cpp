@@ -1,0 +1,1456 @@
+#include "cyd_lvgl_ui.h"
+#include "cyd_hw.h"
+#include "cyd_touch.h"
+#include "../config.h"
+#include "../cyd_config.h"
+#include "../PetGraphics.h"
+
+#include "esp_timer.h"
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+// ============================================================================
+// BILINGUAL UI TEXT MACROS (EN / DE)
+// ============================================================================
+#if LANG_DE
+  #define TXT_FEED       "FUTT"
+  #define TXT_PLAY       "SPIEL"
+  #define TXT_BATH       "BAD"
+  #define TXT_MAGIC      "ZAUB"
+  #define TXT_SAVE       "STATUS"
+  #define TXT_TREAT      "SNACK"
+  #define TXT_CHAT       "CHAT"
+  #define TXT_MAGIC_PLUS "MGC+"
+  #define TXT_QUEST      "QUEST"
+  #define TXT_TRADE      "TAUSCH"
+  #define TXT_ONLINE     "ONLINE"
+  #define TXT_ASLEEP     "SCHLAFT"
+  #define TXT_TAP_EGG    "TIPPEN!"
+  #define TXT_SICK_BADGE "KRANK!"
+  #define TXT_BANNER_PLAY            "Gespielt! +20 Freude"
+  #define TXT_BANNER_BATH            "Sauber gebadet!"
+  #define TXT_BANNER_AURA            "Heilaura gewirkt!"
+  #define TXT_BANNER_NO_MANA         "Zu wenig Mana!"
+  #define TXT_BANNER_SAVED           "Gespeichert & Cloud!"
+  #define TXT_BANNER_TREAT_SENT      "Snack gesendet!"
+  #define TXT_BANNER_CHAT_SENT       "Chat gesendet!"
+  #define TXT_BANNER_BLESSING        "Segen gesendet!"
+  #define TXT_BANNER_TRADE           "Tausch gesendet!"
+  #define TXT_BANNER_EGG_HATCHED     "EI GESCHLUEPFT! Baby da!"
+  #define TXT_BANNER_EGG_WARMED      "Ei gewaermt! Tippen!"
+  #define TXT_BANNER_CUDDLED         "Gestreichelt! +5"
+  #define L_TAB_STAT   "Stat"
+  #define L_TAB_BAG    "Tasche"
+  #define L_TAB_JOBS   "Berufe"
+  #define L_TAB_MAGIC  "Magie"
+  #define L_TAB_QUEST  "Quest"
+  #define L_CLOSE      "X"
+  #define L_BAG_EMPTY  "Leer! Shop/Job nutzen"
+#else
+  #define TXT_FEED       "FEED"
+  #define TXT_PLAY       "PLAY"
+  #define TXT_BATH       "BATH"
+  #define TXT_MAGIC      "MAGIC"
+  #define TXT_SAVE       "STATUS"
+  #define TXT_TREAT      "TREAT"
+  #define TXT_CHAT       "CHAT"
+  #define TXT_MAGIC_PLUS "MGC+"
+  #define TXT_QUEST      "QUEST"
+  #define TXT_TRADE      "TRADE"
+  #define TXT_ONLINE     "ONLINE"
+  #define TXT_ASLEEP     "ASLEEP"
+  #define TXT_TAP_EGG    "TAP EGG!"
+  #define TXT_SICK_BADGE "SICK!"
+  #define TXT_BANNER_PLAY            "Played! +20 Happy"
+  #define TXT_BANNER_BATH            "Clean Bath! +10 Happy"
+  #define TXT_BANNER_AURA            "Vitality Aura Cast!"
+  #define TXT_BANNER_NO_MANA         "Not enough Mana!"
+  #define TXT_BANNER_SAVED           "Saved locally & Cloud!"
+  #define TXT_BANNER_TREAT_SENT      "Treat Sent to Friend!"
+  #define TXT_BANNER_CHAT_SENT       "Chat Beamed!"
+  #define TXT_BANNER_BLESSING        "Blessing Sent!"
+  #define TXT_BANNER_TRADE           "Trade Proposal Sent!"
+  #define TXT_BANNER_EGG_HATCHED     "EGG HATCHED! Baby Born!"
+  #define TXT_BANNER_EGG_WARMED      "Egg Warmed! Keep Tapping"
+  #define TXT_BANNER_CUDDLED         "Pet Cuddled! +5"
+  #define L_TAB_STAT   "Status"
+  #define L_TAB_BAG    "Bag"
+  #define L_TAB_JOBS   "Jobs"
+  #define L_TAB_MAGIC  "Magic"
+  #define L_TAB_QUEST  "Quest"
+  #define L_CLOSE      "X"
+  #define L_BAG_EMPTY  "Empty! Try Shop/Jobs"
+#endif
+
+// ============================================================================
+// LVGL DISPLAY & TOUCH HAL STATE
+// ============================================================================
+static CydDisplay* s_disp = nullptr;
+static AppRuntimeState* s_app = nullptr;
+
+static lv_disp_draw_buf_t s_draw_buf;
+static lv_color_t s_buf1[BOARD_DISPLAY_WIDTH * BOARD_DISPLAY_BUFFER_ROWS];
+static lv_disp_drv_t s_disp_drv;
+static lv_indev_drv_t s_indev_drv;
+static esp_timer_handle_t s_lvgl_tick_timer = nullptr;
+
+static inline lv_color_t rgb565_to_lv(uint16_t c) {
+  lv_color_t out;
+  out.full = (uint16_t)((c >> 8) | (c << 8));
+  return out;
+}
+
+static void lvgl_tick_cb(void* /*arg*/) {
+  lv_tick_inc(5);
+}
+
+static void lvgl_flush_cb(lv_disp_drv_t* drv, const lv_area_t* area, lv_color_t* color_p) {
+  if (s_disp) {
+    s_disp->flushRgb565Rect(area->x1, area->y1, area->x2, area->y2, (const uint16_t*)color_p, true);
+  }
+  lv_disp_flush_ready(drv);
+}
+
+static void lvgl_touch_read_cb(lv_indev_drv_t* /*drv*/, lv_indev_data_t* data) {
+  uint16_t x = 0, y = 0;
+  if (cyd_touch_read(&x, &y)) {
+    data->state = LV_INDEV_STATE_PR;
+    data->point.x = (lv_coord_t)x;
+    data->point.y = (lv_coord_t)y;
+  } else {
+    data->state = LV_INDEV_STATE_REL;
+  }
+}
+
+// ============================================================================
+// 16x16 PIXEL SPRITE -> LVGL IMAGE DESCRIPTOR TABLE
+// ============================================================================
+enum SpriteIconId {
+  SPR_FEED = 0, SPR_PLAY, SPR_BATH, SPR_MAGIC, SPR_STATS,
+  SPR_TREAT, SPR_CHAT, SPR_MGC_PLUS, SPR_QUEST, SPR_TRADE,
+  SPR_APPLE, SPR_SNACK, SPR_SALAD, SPR_PIE, SPR_JERKY, SPR_STEW,
+  SPR_COUNT
+};
+
+static uint16_t s_sprite_pixels[SPR_COUNT][16 * 16];
+static lv_img_dsc_t s_sprite_dsc[SPR_COUNT];
+static bool s_sprites_built = false;
+
+static void build_sprite_dsc(SpriteIconId id, const char* const rows[16]) {
+  for (int y = 0; y < 16; y++) {
+    const char* row = rows[y];
+    for (int x = 0; x < 16; x++) {
+      char ch = row[x];
+      if (ch == '\0') ch = '.';
+      uint16_t col = (ch == '.') ? 0x0000 : mapSpriteColor(ch);
+      s_sprite_pixels[id][y * 16 + x] = (uint16_t)((col >> 8) | (col << 8));
+    }
+  }
+  s_sprite_dsc[id].header.always_zero = 0;
+  s_sprite_dsc[id].header.w = 16;
+  s_sprite_dsc[id].header.h = 16;
+  s_sprite_dsc[id].header.cf = LV_IMG_CF_TRUE_COLOR_CHROMA_KEYED;
+  s_sprite_dsc[id].data_size = 16 * 16 * 2;
+  s_sprite_dsc[id].data = (const uint8_t*)s_sprite_pixels[id];
+}
+
+static void init_all_sprites(void) {
+  if (s_sprites_built) return;
+  s_sprites_built = true;
+  build_sprite_dsc(SPR_FEED,     SPR_BTN_FEED);
+  build_sprite_dsc(SPR_PLAY,     SPR_BTN_PLAY);
+  build_sprite_dsc(SPR_BATH,     SPR_BTN_BATH);
+  build_sprite_dsc(SPR_MAGIC,    SPR_BTN_MAGIC);
+  build_sprite_dsc(SPR_STATS,    SPR_BTN_STATS);
+  build_sprite_dsc(SPR_TREAT,    SPR_BTN_TREAT);
+  build_sprite_dsc(SPR_CHAT,     SPR_BTN_CHAT);
+  build_sprite_dsc(SPR_MGC_PLUS, SPR_BTN_MGC_PLUS);
+  build_sprite_dsc(SPR_QUEST,    SPR_BTN_QUEST);
+  build_sprite_dsc(SPR_TRADE,    SPR_BTN_TRADE);
+  build_sprite_dsc(SPR_APPLE,    SPR_FOOD_APPLE);
+  build_sprite_dsc(SPR_SNACK,    SPR_FOOD_SNACK);
+  build_sprite_dsc(SPR_SALAD,    SPR_FOOD_SALAD);
+  build_sprite_dsc(SPR_PIE,      SPR_FOOD_PIE);
+  build_sprite_dsc(SPR_JERKY,    SPR_FOOD_JERKY);
+  build_sprite_dsc(SPR_STEW,     SPR_FOOD_STEW);
+}
+
+static const lv_img_dsc_t* get_food_sprite_dsc(const char* foodId) {
+  if (strcmp(foodId, "food_apple") == 0) return &s_sprite_dsc[SPR_APPLE];
+  if (strcmp(foodId, "food_snack") == 0) return &s_sprite_dsc[SPR_SNACK];
+  if (strcmp(foodId, "food_herb_salad") == 0) return &s_sprite_dsc[SPR_SALAD];
+  if (strcmp(foodId, "food_berry_pie") == 0) return &s_sprite_dsc[SPR_PIE];
+  if (strcmp(foodId, "food_sun_jerky") == 0) return &s_sprite_dsc[SPR_JERKY];
+  return &s_sprite_dsc[SPR_STEW];
+}
+
+// ============================================================================
+// FAST DIRECT CANVAS ADAPTER FOR PetGraphics.h (Egg & Critter Art)
+// ============================================================================
+#define PET_CANVAS_W 76
+#define PET_CANVAS_H 84
+
+static uint16_t s_my_pet_buf[PET_CANVAS_W * PET_CANVAS_H];
+static uint16_t s_fr_pet_buf[PET_CANVAS_W * PET_CANVAS_H];
+
+class LvCanvasDrawAdapter {
+public:
+  LvCanvasDrawAdapter(uint16_t* buf, int w, int h) : _buf(buf), _w(w), _h(h) {}
+
+  void clear(uint16_t bg565) {
+    uint16_t be = (uint16_t)((bg565 >> 8) | (bg565 << 8));
+    for (int i = 0; i < _w * _h; i++) _buf[i] = be;
+  }
+
+  void drawPixel(int x, int y, uint16_t color) {
+    if (x < 0 || y < 0 || x >= _w || y >= _h) return;
+    _buf[y * _w + x] = (uint16_t)((color >> 8) | (color << 8));
+  }
+
+  void drawFastHLine(int x, int y, int w, uint16_t color) {
+    if (y < 0 || y >= _h || w <= 0) return;
+    int x0 = (x < 0) ? 0 : x;
+    int x1 = (x + w > _w) ? _w : (x + w);
+    uint16_t be = (uint16_t)((color >> 8) | (color << 8));
+    for (int xx = x0; xx < x1; xx++) _buf[y * _w + xx] = be;
+  }
+
+  void drawFastVLine(int x, int y, int h, uint16_t color) {
+    if (x < 0 || x >= _w || h <= 0) return;
+    int y0 = (y < 0) ? 0 : y;
+    int y1 = (y + h > _h) ? _h : (y + h);
+    uint16_t be = (uint16_t)((color >> 8) | (color << 8));
+    for (int yy = y0; yy < y1; yy++) _buf[yy * _w + x] = be;
+  }
+
+  void fillRect(int x, int y, int w, int h, uint16_t color) {
+    for (int yy = 0; yy < h; yy++) drawFastHLine(x, y + yy, w, color);
+  }
+
+  void drawRect(int x, int y, int w, int h, uint16_t color) {
+    drawFastHLine(x, y, w, color);
+    drawFastHLine(x, y + h - 1, w, color);
+    drawFastVLine(x, y, h, color);
+    drawFastVLine(x + w - 1, y, h, color);
+  }
+
+  void drawLine(int x0, int y0, int x1, int y1, uint16_t color) {
+    int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+    int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+    int err = dx + dy;
+    while (true) {
+      drawPixel(x0, y0, color);
+      if (x0 == x1 && y0 == y1) break;
+      int e2 = 2 * err;
+      if (e2 >= dy) { err += dy; x0 += sx; }
+      if (e2 <= dx) { err += dx; y0 += sy; }
+    }
+  }
+
+  void fillCircle(int x0, int y0, int r, uint16_t color) {
+    for (int dy = -r; dy <= r; dy++) {
+      for (int dx = -r; dx <= r; dx++) {
+        if (dx * dx + dy * dy <= r * r) drawPixel(x0 + dx, y0 + dy, color);
+      }
+    }
+  }
+
+  void drawCircle(int x0, int y0, int r, uint16_t color) {
+    int f = 1 - r, ddF_x = 1, ddF_y = -2 * r, x = 0, y = r;
+    drawPixel(x0, y0 + r, color); drawPixel(x0, y0 - r, color);
+    drawPixel(x0 + r, y0, color); drawPixel(x0 - r, y0, color);
+    while (x < y) {
+      if (f >= 0) { y--; ddF_y += 2; f += ddF_y; }
+      x++; ddF_x += 2; f += ddF_x;
+      drawPixel(x0 + x, y0 + y, color); drawPixel(x0 - x, y0 + y, color);
+      drawPixel(x0 + x, y0 - y, color); drawPixel(x0 - x, y0 - y, color);
+      drawPixel(x0 + y, y0 + x, color); drawPixel(x0 - y, y0 + x, color);
+      drawPixel(x0 + y, y0 - x, color); drawPixel(x0 - y, y0 - x, color);
+    }
+  }
+
+  void fillEllipse(int x0, int y0, int rx, int ry, uint16_t color) {
+    if (rx < 1 || ry < 1) return;
+    int32_t rx2 = rx * rx, ry2 = ry * ry;
+    for (int dy = -ry; dy <= ry; dy++) {
+      int32_t num = rx2 * (ry2 - dy * dy);
+      int dx = 0;
+      while ((dx + 1) * (dx + 1) * ry2 <= num) dx++;
+      drawFastHLine(x0 - dx, y0 + dy, 2 * dx + 1, color);
+    }
+  }
+
+  void drawEllipse(int x0, int y0, int rx, int ry, uint16_t color) {
+    if (rx < 1 || ry < 1) return;
+    for (int a = 0; a < 90; a++) {
+      float rad = a * (3.14159f / 180.0f);
+      int dx = (int)(cosf(rad) * rx + 0.5f);
+      int dy = (int)(sinf(rad) * ry + 0.5f);
+      drawPixel(x0 + dx, y0 + dy, color); drawPixel(x0 - dx, y0 + dy, color);
+      drawPixel(x0 + dx, y0 - dy, color); drawPixel(x0 - dx, y0 - dy, color);
+    }
+  }
+
+  void fillRoundRect(int x, int y, int w, int h, int r, uint16_t color) {
+    fillRect(x, y, w, h, color);
+    fillCircle(x + r, y + r, r, color);
+    fillCircle(x + w - r - 1, y + r, r, color);
+  }
+
+  void drawRoundRect(int x, int y, int w, int h, int r, uint16_t color) {
+    drawRect(x, y, w, h, color);
+  }
+
+  void fillTriangle(int x0, int y0, int x1, int y1, int x2, int y2, uint16_t color) {
+    int minX = (x0 < x1 ? (x0 < x2 ? x0 : x2) : (x1 < x2 ? x1 : x2));
+    int maxX = (x0 > x1 ? (x0 > x2 ? x0 : x2) : (x1 > x2 ? x1 : x2));
+    int minY = (y0 < y1 ? (y0 < y2 ? y0 : y2) : (y1 < y2 ? y1 : y2));
+    int maxY = (y0 > y1 ? (y0 > y2 ? y0 : y2) : (y1 > y2 ? y1 : y2));
+    for (int py = minY; py <= maxY; py++) {
+      for (int px = minX; px <= maxX; px++) {
+        int d1 = (px - x1) * (y0 - y1) - (x0 - x1) * (py - y1);
+        int d2 = (px - x2) * (y1 - y2) - (x1 - x2) * (py - y2);
+        int d3 = (px - x0) * (y2 - y0) - (x2 - x0) * (py - y0);
+        if (!(((d1 < 0) || (d2 < 0) || (d3 < 0)) && ((d1 > 0) || (d2 > 0) || (d3 > 0)))) {
+          drawPixel(px, py, color);
+        }
+      }
+    }
+  }
+
+  void drawTriangle(int x0, int y0, int x1, int y1, int x2, int y2, uint16_t color) {
+    drawLine(x0, y0, x1, y1, color);
+    drawLine(x1, y1, x2, y2, color);
+    drawLine(x2, y2, x0, y0, color);
+  }
+
+  void setTextDatum(uint8_t) {}
+  void setTextColor(uint16_t, uint16_t) {}
+  void drawString(const char*, int, int, uint8_t = 1) {}
+
+private:
+  uint16_t* _buf;
+  int _w, _h;
+};
+
+// ============================================================================
+// MAIN SCREEN WIDGET REFERENCES
+// ============================================================================
+static lv_obj_t* s_main_scr = nullptr;
+static lv_obj_t* s_left_stage = nullptr;
+static lv_obj_t* s_right_stage = nullptr;
+static lv_obj_t* s_dot_btn = nullptr;
+
+static lv_obj_t* s_my_name_lbl = nullptr;
+static lv_obj_t* s_my_lv_lbl = nullptr;
+static lv_obj_t* s_my_phase_lbl = nullptr;
+static lv_obj_t* s_my_badge_lbl = nullptr;
+static lv_obj_t* s_my_hp_bar = nullptr;
+static lv_obj_t* s_my_fd_bar = nullptr;
+static lv_obj_t* s_my_xp_bar = nullptr;
+static lv_obj_t* s_my_canvas = nullptr;
+static lv_obj_t* s_my_egg_lbl = nullptr;
+static lv_obj_t* s_my_footer_lbl = nullptr;
+
+static lv_obj_t* s_fr_name_lbl = nullptr;
+static lv_obj_t* s_fr_lv_lbl = nullptr;
+static lv_obj_t* s_fr_status_lbl = nullptr;
+static lv_obj_t* s_fr_hp_bar = nullptr;
+static lv_obj_t* s_fr_canvas = nullptr;
+static lv_obj_t* s_fr_balloon_box = nullptr;
+static lv_obj_t* s_fr_balloon_lbl = nullptr;
+static lv_obj_t* s_fr_footer_lbl = nullptr;
+
+static lv_obj_t* s_banner_box = nullptr;
+static lv_obj_t* s_banner_lbl = nullptr;
+static lv_obj_t* s_flyout_bar = nullptr;
+static lv_obj_t* s_modal_overlay = nullptr;
+static lv_obj_t* s_ota_bar = nullptr;
+static lv_obj_t* s_ota_stage_lbl = nullptr;
+static lv_obj_t* s_ota_pct_lbl = nullptr;
+
+// ============================================================================
+// GAME ACTIONS & CALLBACKS
+// ============================================================================
+static void check_level_up_notify(uint8_t prevLv) {
+  if (!s_app) return;
+  if (s_app->engine.level > prevLv) {
+    cyd_sound_level_up();
+    cyd_lvgl_show_banner("LEVEL UP! Pet entwickelt!", 3000);
+  }
+}
+
+static void rebuild_feed_flyout(void);
+
+static void on_flyout_food_clicked(lv_event_t* e) {
+  if (!s_app) return;
+  int slotIdx = (int)(intptr_t)lv_event_get_user_data(e);
+  if (slotIdx == -1) {
+    s_app->feedFlyoutOpen = false;
+    rebuild_feed_flyout();
+    cyd_lvgl_open_modal(TAB_BAG);
+    return;
+  }
+  if (slotIdx < 0 || slotIdx >= s_app->engine.inventoryCount) return;
+
+  cyd_sound_click();
+  uint8_t prevLv = s_app->engine.level;
+  char itemId[20];
+  strncpy(itemId, s_app->engine.inventory[slotIdx].id, sizeof(itemId) - 1);
+  itemId[sizeof(itemId) - 1] = '\0';
+
+  FeedResult res = s_app->engine.feedWithItem(itemId);
+  if (res.success) {
+    cyd_sound_munch();
+    char msg[64];
+    if (res.becameSick) {
+      cyd_sound_warning();
+      snprintf(msg, sizeof(msg), "KRANK! Snack -15HP (+%u FD)", res.hungerGain);
+    } else if (res.satietyGained > 0) {
+      snprintf(msg, sizeof(msg), "+%u FD | Satt %uT!", res.hungerGain, res.satietyGained);
+    } else {
+      snprintf(msg, sizeof(msg), "Gefuettert! +%u FD", res.hungerGain);
+    }
+    cyd_lvgl_show_banner(msg, 2500);
+    check_level_up_notify(prevLv);
+  }
+  s_app->feedFlyoutOpen = false;
+  rebuild_feed_flyout();
+  cyd_lvgl_refresh_main_screen();
+}
+
+static void rebuild_feed_flyout(void) {
+  if (!s_flyout_bar || !s_app) return;
+  lv_obj_clean(s_flyout_bar);
+  if (!s_app->feedFlyoutOpen) {
+    lv_obj_add_flag(s_flyout_bar, LV_OBJ_FLAG_HIDDEN);
+    return;
+  }
+  lv_obj_clear_flag(s_flyout_bar, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_move_foreground(s_flyout_bar);
+
+  uint8_t foodIdx[8];
+  uint8_t cnt = s_app->engine.getAvailableFoods(foodIdx, 5);
+  if (cnt == 0) {
+    lv_obj_t* btn = lv_btn_create(s_flyout_bar);
+    lv_obj_set_size(btn, 148, 34);
+    lv_obj_set_style_bg_color(btn, lv_color_hex(0x7C2D12), 0);
+    lv_obj_add_event_cb(btn, on_flyout_food_clicked, LV_EVENT_CLICKED, (void*)(intptr_t)-1);
+    lv_obj_t* lbl = lv_label_create(btn);
+    lv_label_set_text(lbl, L_BAG_EMPTY);
+    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_10, 0);
+    lv_obj_center(lbl);
+    return;
+  }
+
+  for (uint8_t i = 0; i < cnt; i++) {
+    uint8_t idx = foodIdx[i];
+    const EngineInventorySlot& slot = s_app->engine.inventory[idx];
+    lv_obj_t* btn = lv_btn_create(s_flyout_bar);
+    lv_obj_set_size(btn, 42, 36);
+    lv_obj_set_style_bg_color(btn, slot.sickChancePct > 0 ? lv_color_hex(0x451A03) : lv_color_hex(0x064E3B), 0);
+    lv_obj_set_style_border_color(btn, lv_color_hex(0xF59E0B), 0);
+    lv_obj_set_style_border_width(btn, 1, 0);
+    lv_obj_set_style_pad_all(btn, 1, 0);
+    lv_obj_add_event_cb(btn, on_flyout_food_clicked, LV_EVENT_CLICKED, (void*)(intptr_t)idx);
+
+    lv_obj_t* img = lv_img_create(btn);
+    lv_img_set_src(img, get_food_sprite_dsc(slot.id));
+    lv_obj_align(img, LV_ALIGN_TOP_MID, 0, 1);
+
+    lv_obj_t* qLbl = lv_label_create(btn);
+    lv_label_set_text_fmt(qLbl, "x%u", slot.quantity);
+    lv_obj_set_style_text_font(qLbl, &lv_font_montserrat_8, 0);
+    lv_obj_align(qLbl, LV_ALIGN_BOTTOM_MID, 0, -1);
+  }
+}
+
+static void on_left_btn_clicked(lv_event_t* e) {
+  if (!s_app) return;
+  int btnId = (int)(intptr_t)lv_event_get_user_data(e);
+  cyd_sound_click();
+  uint8_t prevLv = s_app->engine.level;
+
+  switch (btnId) {
+    case 1: // FEED flyout toggle
+      s_app->feedFlyoutOpen = !s_app->feedFlyoutOpen;
+      rebuild_feed_flyout();
+      return;
+    case 2: // PLAY
+      s_app->feedFlyoutOpen = false;
+      rebuild_feed_flyout();
+      s_app->engine.play(20, 10);
+      cyd_lvgl_show_banner(TXT_BANNER_PLAY, 2200);
+      break;
+    case 3: // BATH
+      s_app->feedFlyoutOpen = false;
+      rebuild_feed_flyout();
+      s_app->engine.clean();
+      cyd_lvgl_show_banner(TXT_BANNER_BATH, 2200);
+      break;
+    case 4: // MAGIC Modal
+      s_app->feedFlyoutOpen = false;
+      rebuild_feed_flyout();
+      cyd_lvgl_open_modal(TAB_MAGIC);
+      return;
+    case 5: // STATUS Modal (5-Tab)
+      s_app->feedFlyoutOpen = false;
+      rebuild_feed_flyout();
+      cyd_lvgl_open_modal(TAB_STATUS);
+      return;
+  }
+  check_level_up_notify(prevLv);
+  cyd_lvgl_refresh_main_screen();
+}
+
+static void on_right_btn_clicked(lv_event_t* e) {
+  if (!s_app) return;
+  int btnId = (int)(intptr_t)lv_event_get_user_data(e);
+  cyd_sound_click();
+  s_app->feedFlyoutOpen = false;
+  rebuild_feed_flyout();
+  uint8_t prevLv = s_app->engine.level;
+
+  switch (btnId) {
+    case 6: // TREAT
+      cyd_sound_treat_sent();
+      cyd_net_send_packet(s_app->config, s_app->friendPet, "TREAT", "Heart Donut");
+      s_app->treatsSent++;
+      s_app->engine.addXP(25);
+      s_app->engine.recordAction("send_treat", 1);
+      cyd_lvgl_show_banner(TXT_BANNER_TREAT_SENT, 2500);
+      break;
+    case 7: // CHAT Modal
+      cyd_lvgl_open_modal(TAB_CHAT);
+      return;
+    case 8: // MGC+
+      if (s_app->engine.stats.mana >= 30) {
+        s_app->engine.stats.mana -= 30;
+        cyd_net_send_packet(s_app->config, s_app->friendPet, "MAGIC", "Friend Blessing");
+        s_app->spellsCast++;
+        s_app->engine.addXP(40);
+        s_app->engine.recordAction("magic", 1);
+        cyd_sound_treat_sent();
+        cyd_lvgl_show_banner(TXT_BANNER_BLESSING, 2500);
+      } else {
+        cyd_lvgl_show_banner(TXT_BANNER_NO_MANA, 2000);
+      }
+      break;
+    case 9: // QUEST Modal
+      cyd_lvgl_open_modal(TAB_QUEST);
+      return;
+    case 10: // TRADE
+      cyd_net_send_packet(s_app->config, s_app->friendPet, "TRADE", "Star Charm");
+      cyd_lvgl_show_banner(TXT_BANNER_TRADE, 2500);
+      break;
+  }
+  check_level_up_notify(prevLv);
+  cyd_lvgl_refresh_main_screen();
+}
+
+static void on_pet_stage_tapped(lv_event_t* /*e*/) {
+  if (!s_app) return;
+  cyd_sound_click();
+  if (strcmp(s_app->engine.phase, "Egg") == 0) {
+    if (s_app->engine.warmEgg(25)) {
+      cyd_sound_hatch();
+      cyd_lvgl_show_banner(TXT_BANNER_EGG_HATCHED, 3200);
+    } else {
+      cyd_lvgl_show_banner(TXT_BANNER_EGG_WARMED, 1800);
+    }
+  } else {
+    s_app->engine.stats.happiness = (uint8_t)engineMin(100, s_app->engine.stats.happiness + 5);
+    cyd_lvgl_show_banner(TXT_BANNER_CUDDLED, 1800);
+  }
+  cyd_lvgl_refresh_main_screen();
+}
+
+static void on_dot_ota_clicked(lv_event_t* /*e*/) {
+  if (!s_app) return;
+  cyd_sound_click();
+  s_app->triggerOtaRequested = true;
+}
+
+static void on_footer_clicked(lv_event_t* /*e*/) {
+  cyd_sound_click();
+  cyd_lvgl_open_modal(TAB_QUEST);
+}
+
+// ============================================================================
+// MODAL SUBSCREEN ACTIONS (Status, Bag/Cook/Shop, Jobs, Magic, Quest, Chat)
+// ============================================================================
+static void on_modal_tab_switch(lv_event_t* e) {
+  cyd_sound_click();
+  SubModalTab tab = (SubModalTab)(intptr_t)lv_event_get_user_data(e);
+  if (tab == TAB_NONE) {
+    cyd_lvgl_close_modal();
+  } else {
+    cyd_lvgl_open_modal(tab);
+  }
+}
+
+static void on_bag_action_cb(lv_event_t* e) {
+  if (!s_app) return;
+  int code = (int)(intptr_t)lv_event_get_user_data(e);
+  cyd_sound_click();
+  uint8_t prevLv = s_app->engine.level;
+
+  if (code == 100) { // Craft Herb Salad
+    if (s_app->engine.craftRecipe(0)) {
+      s_app->recipesCrafted++;
+      cyd_sound_munch();
+      cyd_lvgl_show_banner("Gekocht: Kraeuter-Salat!", 2200);
+    } else {
+      cyd_lvgl_show_banner("Braucht 2x Kraeuter!", 2000);
+    }
+  } else if (code == 101) { // Craft Berry Pie
+    if (s_app->engine.craftRecipe(1)) {
+      s_app->recipesCrafted++;
+      cyd_sound_munch();
+      cyd_lvgl_show_banner("Gekocht: Beeren-Tarte!", 2200);
+    } else {
+      cyd_lvgl_show_banner("Braucht Lv2, Kraut+Pilz!", 2000);
+    }
+  } else if (code == 200) { // Buy Apple
+    cyd_lvgl_show_banner(s_app->engine.purchaseItem("food_apple") ? "Apfel gekauft (-5$)" : "Zu wenig Coins!", 1800);
+  } else if (code == 201) { // Buy Snack
+    cyd_lvgl_show_banner(s_app->engine.purchaseItem("food_snack") ? "Snack gekauft (-8$)" : "Zu wenig Coins!", 1800);
+  } else if (code == 202) { // Buy Salve
+    cyd_lvgl_show_banner(s_app->engine.purchaseItem("item_salve") ? "Heilsalbe gekauft (-25$)" : "Zu wenig Coins!", 1800);
+  } else if (code == 203) { // Buy Herb
+    cyd_lvgl_show_banner(s_app->engine.purchaseItem("mat_herb") ? "Kraeuter gekauft (-8$)" : "Zu wenig Coins!", 1800);
+  } else if (code >= 0 && code < s_app->engine.inventoryCount) {
+    char id[20];
+    strncpy(id, s_app->engine.inventory[code].id, sizeof(id) - 1);
+    id[sizeof(id) - 1] = '\0';
+    if (s_app->engine.inventory[code].category == 0) {
+      FeedResult res = s_app->engine.feedWithItem(id);
+      if (res.success) {
+        cyd_sound_munch();
+        cyd_lvgl_show_banner(res.becameSick ? "KRANK vom Snack!" : "Gefuettert!", 2000);
+      }
+    } else if (s_app->engine.inventory[code].category == 2) {
+      if (s_app->engine.usePotionItem(id)) {
+        cyd_sound_level_up();
+        cyd_lvgl_show_banner("Trank/Salbe angewendet!", 2200);
+      }
+    }
+  }
+  check_level_up_notify(prevLv);
+  cyd_lvgl_open_modal(TAB_BAG);
+  cyd_lvgl_refresh_main_screen();
+}
+
+static void on_job_start_cb(lv_event_t* e) {
+  if (!s_app) return;
+  int jIdx = (int)(intptr_t)lv_event_get_user_data(e);
+  cyd_sound_click();
+  if (s_app->activeJob.running) {
+    cyd_lvgl_show_banner("Beruf laeuft bereits!", 1800);
+    return;
+  }
+  uint8_t enCost = (jIdx == 0) ? 15 : (jIdx == 1 ? 25 : 35);
+  if (s_app->engine.stats.energy < enCost) {
+    cyd_lvgl_show_banner("Zu wenig Energie!", 1800);
+    return;
+  }
+  s_app->engine.stats.energy -= enCost;
+  s_app->activeJob.running = true;
+  s_app->activeJob.jobIndex = (uint8_t)jIdx;
+  s_app->activeJob.startedMs = cyd_millis();
+  s_app->activeJob.durationMs = (jIdx == 0) ? 60000U : (jIdx == 1 ? 120000U : 180000U);
+  cyd_lvgl_show_banner("Beruf gestartet!", 2000);
+  cyd_lvgl_open_modal(TAB_JOBS);
+  cyd_lvgl_refresh_main_screen();
+}
+
+static void on_magic_action_cb(lv_event_t* e) {
+  if (!s_app) return;
+  int mIdx = (int)(intptr_t)lv_event_get_user_data(e);
+  cyd_sound_click();
+  uint8_t prevLv = s_app->engine.level;
+
+  if (mIdx == 0) { // Purify (15 MP)
+    if (s_app->engine.stats.mana >= 15) {
+      s_app->engine.stats.mana -= 15;
+      s_app->engine.isSick = false;
+      s_app->engine.stats.health = (uint8_t)engineMin(100, s_app->engine.stats.health + 20);
+      s_app->engine.stats.hygiene = 100;
+      s_app->engine.addXP(25);
+      s_app->engine.recordAction("magic", 1);
+      s_app->spellsCast++;
+      cyd_sound_treat_sent();
+      cyd_lvgl_show_banner("Laeuterung! Geheilt & +20HP", 2500);
+    } else cyd_lvgl_show_banner(TXT_BANNER_NO_MANA, 1800);
+  } else if (mIdx == 1) { // Vitality Aura (20 MP)
+    if (s_app->engine.stats.mana >= 20) {
+      s_app->engine.stats.mana -= 20;
+      s_app->engine.stats.health = (uint8_t)engineMin(100, s_app->engine.stats.health + 30);
+      s_app->engine.addXP(30);
+      s_app->engine.recordAction("magic", 1);
+      s_app->spellsCast++;
+      cyd_sound_treat_sent();
+      cyd_lvgl_show_banner(TXT_BANNER_AURA, 2500);
+    } else cyd_lvgl_show_banner(TXT_BANNER_NO_MANA, 1800);
+  } else if (mIdx == 2) { // Astral Feast (30 MP)
+    if (s_app->engine.stats.mana >= 30) {
+      s_app->engine.stats.mana -= 30;
+      s_app->engine.stats.hunger = (uint8_t)engineMin(100, s_app->engine.stats.hunger + 30);
+      s_app->engine.satietyTicks = (uint8_t)engineMax(s_app->engine.satietyTicks, 4);
+      s_app->engine.addXP(40);
+      s_app->engine.recordAction("magic", 1);
+      s_app->spellsCast++;
+      cyd_net_send_packet(s_app->config, s_app->friendPet, "MAGIC", "Astral Feast");
+      cyd_sound_treat_sent();
+      cyd_lvgl_show_banner("Astral-Festmahl! Satt 4T", 2500);
+    } else cyd_lvgl_show_banner(TXT_BANNER_NO_MANA, 1800);
+  } else if (mIdx == 3) { // Research Magic (-15 EN -> +15 MP, +35 XP)
+    if (s_app->engine.stats.energy >= 15) {
+      s_app->engine.stats.energy -= 15;
+      s_app->engine.stats.mana = (uint8_t)engineMin(100, s_app->engine.stats.mana + 15);
+      s_app->engine.addXP(35);
+      s_app->engine.recordAction("magic", 1);
+      cyd_sound_level_up();
+      cyd_lvgl_show_banner("Erforscht! +15MP +35XP", 2500);
+    } else {
+      cyd_lvgl_show_banner("Braucht 15 Energie!", 1800);
+    }
+  }
+  check_level_up_notify(prevLv);
+  cyd_lvgl_open_modal(TAB_MAGIC);
+  cyd_lvgl_refresh_main_screen();
+}
+
+static void on_quest_action_cb(lv_event_t* e) {
+  if (!s_app) return;
+  int qCode = (int)(intptr_t)lv_event_get_user_data(e);
+  cyd_sound_click();
+  uint8_t prevLv = s_app->engine.level;
+
+  if (qCode == 0) { // Claim streak
+    if (s_app->engine.claimDailyLoginStreakBonus()) {
+      cyd_sound_level_up();
+      cyd_lvgl_show_banner("Login-Streak eingelost!", 2500);
+    }
+  } else if (qCode == 1) { // Claim first completed mission
+    for (uint8_t i = 0; i < s_app->engine.missionCount; i++) {
+      if (s_app->engine.missions[i].completed && !s_app->engine.missions[i].claimed) {
+        s_app->engine.claimMission(s_app->engine.missions[i].id);
+        cyd_sound_level_up();
+        cyd_lvgl_show_banner("Mission eingeloest!", 2500);
+        break;
+      }
+    }
+  } else if (qCode == 2) { // Co-op Scout Patrol
+    cyd_net_send_packet(s_app->config, s_app->friendPet, "QUEST", "Scout Patrol");
+    s_app->engine.coins += 35;
+    s_app->engine.addXP(45);
+    s_app->jobsCompleted++;
+    cyd_sound_treat_sent();
+    cyd_lvgl_show_banner("Spaeher-Quest! +35$ +45XP", 2500);
+  } else if (qCode == 3) { // Treasure Hunt
+    cyd_net_send_packet(s_app->config, s_app->friendPet, "QUEST", "Treasure Hunt");
+    s_app->engine.coins += 50;
+    s_app->engine.addKnownItemById("food_apple", 1);
+    s_app->engine.addXP(60);
+    s_app->jobsCompleted++;
+    cyd_sound_level_up();
+    cyd_lvgl_show_banner("Schatzsuche! +50$ +Apfel", 2500);
+  }
+  check_level_up_notify(prevLv);
+  cyd_lvgl_open_modal(TAB_QUEST);
+  cyd_lvgl_refresh_main_screen();
+}
+
+static const char* const CHAT_PHRASES[6] = {
+#if LANG_DE
+  "Hallo Buddy!",
+  "Snack unterwegs!",
+  "Lass questen!",
+  "Magie-Segen!",
+  "GG mein Freund!",
+  "Bis spaeter!"
+#else
+  "Hello Buddy!",
+  "Treat incoming!",
+  "Co-op Quest?",
+  "Magic Blessing!",
+  "GG my Friend!",
+  "See you soon!"
+#endif
+};
+
+static void on_chat_phrase_cb(lv_event_t* e) {
+  if (!s_app) return;
+  int idx = (int)(intptr_t)lv_event_get_user_data(e);
+  if (idx < 0 || idx >= 6) return;
+  cyd_sound_treat_sent();
+  cyd_net_send_packet(s_app->config, s_app->friendPet, "CHAT", CHAT_PHRASES[idx]);
+  char msg[64];
+  snprintf(msg, sizeof(msg), "Chat: %s", CHAT_PHRASES[idx]);
+  cyd_lvgl_show_banner(msg, 2500);
+  cyd_lvgl_close_modal();
+}
+
+static void on_save_cloud_cb(lv_event_t* /*e*/) {
+  if (!s_app) return;
+  cyd_sound_click();
+  s_app->triggerSaveRequested = true;
+  cyd_lvgl_close_modal();
+}
+
+static void on_cancel_ap_cb(lv_event_t* /*e*/) {
+  if (!s_app) return;
+  cyd_sound_click();
+  s_app->apCancelRequested = true;
+}
+
+static void on_open_ap_cb(lv_event_t* /*e*/) {
+  if (!s_app) return;
+  cyd_sound_click();
+  s_app->retryPortalRequested = true;
+}
+
+// ============================================================================
+// LVGL CORE INIT
+// ============================================================================
+bool cyd_lvgl_init(CydDisplay* display) {
+  s_disp = display;
+  lv_init();
+  init_all_sprites();
+
+  lv_disp_draw_buf_init(&s_draw_buf, s_buf1, NULL, BOARD_DISPLAY_WIDTH * BOARD_DISPLAY_BUFFER_ROWS);
+  lv_disp_drv_init(&s_disp_drv);
+  s_disp_drv.hor_res = BOARD_DISPLAY_WIDTH;
+  s_disp_drv.ver_res = BOARD_DISPLAY_HEIGHT;
+  s_disp_drv.flush_cb = lvgl_flush_cb;
+  s_disp_drv.draw_buf = &s_draw_buf;
+  lv_disp_drv_register(&s_disp_drv);
+
+  lv_indev_drv_init(&s_indev_drv);
+  s_indev_drv.type = LV_INDEV_TYPE_POINTER;
+  s_indev_drv.read_cb = lvgl_touch_read_cb;
+  lv_indev_drv_register(&s_indev_drv);
+
+  esp_timer_create_args_t targs = {};
+  targs.callback = lvgl_tick_cb;
+  targs.name = "lvgl_tick";
+  if (esp_timer_create(&targs, &s_lvgl_tick_timer) == ESP_OK) {
+    esp_timer_start_periodic(s_lvgl_tick_timer, 5000); // 5ms
+  }
+  return true;
+}
+
+void cyd_lvgl_set_app_state(AppRuntimeState* state) {
+  s_app = state;
+}
+
+// ============================================================================
+// SYSTEM SCREENS (BOOT, AP PORTAL, SERVER ERROR, OTA)
+// ============================================================================
+void cyd_lvgl_show_boot_screen(const char* ssid) {
+  lv_obj_t* scr = lv_obj_create(NULL);
+  lv_obj_set_style_bg_color(scr, lv_color_hex(0x090D16), 0);
+
+  lv_obj_t* title = lv_label_create(scr);
+  lv_label_set_text(title, "PetDuet CYD (ESP-IDF + LVGL)");
+  lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
+  lv_obj_set_style_text_color(title, lv_color_hex(0xF59E0B), 0);
+  lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 52);
+
+  lv_obj_t* sub = lv_label_create(scr);
+  lv_label_set_text_fmt(sub, "Verbinde mit WLAN: %s...", ssid ? ssid : "");
+  lv_obj_set_style_text_color(sub, lv_color_hex(0xE2E8F0), 0);
+  lv_obj_align(sub, LV_ALIGN_CENTER, 0, -4);
+
+  lv_obj_t* ver = lv_label_create(scr);
+  lv_label_set_text_fmt(ver, "FW v%s  |  Rules v%s", FIRMWARE_VERSION, RULES_VERSION);
+  lv_obj_set_style_text_color(ver, lv_color_hex(0x22D3EE), 0);
+  lv_obj_align(ver, LV_ALIGN_CENTER, 0, 28);
+
+  lv_scr_load(scr);
+  lv_timer_handler();
+}
+
+void cyd_lvgl_show_ap_screen(void) {
+  lv_obj_t* scr = lv_obj_create(NULL);
+  lv_obj_set_style_bg_color(scr, lv_color_hex(0x0F172A), 0);
+
+  lv_obj_t* card = lv_obj_create(scr);
+  lv_obj_set_size(card, 300, 220);
+  lv_obj_center(card);
+  lv_obj_set_style_bg_color(card, lv_color_hex(0x1E293B), 0);
+  lv_obj_set_style_border_color(card, lv_color_hex(0xF59E0B), 0);
+
+  lv_obj_t* lbl = lv_label_create(card);
+  lv_label_set_text(lbl, "WIFI SETUP MODE\n\n1. Connect to AP:\n   CYD-Tamagotchi-AP\n\n2. Open Browser:\n   http://192.168.4.1");
+  lv_obj_set_style_text_color(lbl, lv_color_hex(0xF8FAFC), 0);
+  lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, 6, 4);
+
+  lv_obj_t* btn = lv_btn_create(card);
+  lv_obj_set_size(btn, 220, 34);
+  lv_obj_align(btn, LV_ALIGN_BOTTOM_MID, 0, -4);
+  lv_obj_set_style_bg_color(btn, lv_color_hex(0x334155), 0);
+  lv_obj_add_event_cb(btn, on_cancel_ap_cb, LV_EVENT_CLICKED, NULL);
+  lv_obj_t* bLbl = lv_label_create(btn);
+  lv_label_set_text(bLbl, "Offline Modus starten");
+  lv_obj_center(bLbl);
+
+  lv_scr_load(scr);
+  lv_timer_handler();
+}
+
+void cyd_lvgl_show_server_error_screen(const char* ipStr, const char* serverUrl) {
+  lv_obj_t* scr = lv_obj_create(NULL);
+  lv_obj_set_style_bg_color(scr, lv_color_hex(0x111827), 0);
+
+  lv_obj_t* card = lv_obj_create(scr);
+  lv_obj_set_size(card, 300, 220);
+  lv_obj_center(card);
+  lv_obj_set_style_bg_color(card, lv_color_hex(0x1F2937), 0);
+  lv_obj_set_style_border_color(card, lv_color_hex(0xEF4444), 0);
+
+  lv_obj_t* lbl = lv_label_create(card);
+  lv_label_set_text_fmt(lbl, "SERVER NICHT ERREICHBAR\nWiFi IP: %s\nURL:\n%s",
+                        ipStr ? ipStr : "?", serverUrl ? serverUrl : "");
+  lv_obj_set_style_text_color(lbl, lv_color_hex(0xFCA5A5), 0);
+  lv_obj_set_width(lbl, 270);
+  lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, 4, 4);
+
+  lv_obj_t* b1 = lv_btn_create(card);
+  lv_obj_set_size(b1, 130, 34);
+  lv_obj_align(b1, LV_ALIGN_BOTTOM_LEFT, 0, -2);
+  lv_obj_set_style_bg_color(b1, lv_color_hex(0xD97706), 0);
+  lv_obj_add_event_cb(b1, on_open_ap_cb, LV_EVENT_CLICKED, NULL);
+  lv_obj_t* l1 = lv_label_create(b1);
+  lv_label_set_text(l1, "AP Setup");
+  lv_obj_center(l1);
+
+  lv_obj_t* b2 = lv_btn_create(card);
+  lv_obj_set_size(b2, 130, 34);
+  lv_obj_align(b2, LV_ALIGN_BOTTOM_RIGHT, 0, -2);
+  lv_obj_set_style_bg_color(b2, lv_color_hex(0x334155), 0);
+  lv_obj_add_event_cb(b2, on_cancel_ap_cb, LV_EVENT_CLICKED, NULL);
+  lv_obj_t* l2 = lv_label_create(b2);
+  lv_label_set_text(l2, "Offline");
+  lv_obj_center(l2);
+
+  lv_scr_load(scr);
+  lv_timer_handler();
+}
+
+void cyd_lvgl_show_ota_progress(const char* stage, int percent) {
+  if (!s_ota_bar) {
+    lv_obj_t* scr = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(scr, lv_color_hex(0x0B1120), 0);
+
+    lv_obj_t* t = lv_label_create(scr);
+    lv_label_set_text(t, "FIRMWARE UPDATE (A/B OTA)");
+    lv_obj_set_style_text_font(t, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(t, lv_color_hex(0xFACC15), 0);
+    lv_obj_align(t, LV_ALIGN_TOP_MID, 0, 26);
+
+    s_ota_stage_lbl = lv_label_create(scr);
+    lv_obj_set_style_text_color(s_ota_stage_lbl, lv_color_hex(0x38BDF8), 0);
+    lv_obj_align(s_ota_stage_lbl, LV_ALIGN_CENTER, 0, -24);
+
+    s_ota_bar = lv_bar_create(scr);
+    lv_obj_set_size(s_ota_bar, 260, 22);
+    lv_obj_align(s_ota_bar, LV_ALIGN_CENTER, 0, 8);
+    lv_bar_set_range(s_ota_bar, 0, 100);
+    lv_obj_set_style_bg_color(s_ota_bar, lv_color_hex(0x10B981), LV_PART_INDICATOR);
+
+    s_ota_pct_lbl = lv_label_create(scr);
+    lv_obj_set_style_text_color(s_ota_pct_lbl, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_align(s_ota_pct_lbl, LV_ALIGN_CENTER, 0, 42);
+
+    lv_obj_t* warn = lv_label_create(scr);
+    lv_label_set_text(warn, "NICHT AUSSCHALTEN! / DO NOT POWER OFF!");
+    lv_obj_set_style_text_color(warn, lv_color_hex(0xF87171), 0);
+    lv_obj_align(warn, LV_ALIGN_BOTTOM_MID, 0, -24);
+
+    lv_scr_load(scr);
+  }
+  lv_label_set_text(s_ota_stage_lbl, stage ? stage : "");
+  lv_bar_set_value(s_ota_bar, percent, LV_ANIM_OFF);
+  lv_label_set_text_fmt(s_ota_pct_lbl, "%d%%", percent);
+  lv_timer_handler();
+}
+
+// ============================================================================
+// MAIN DUAL-PET LVGL SCREEN
+// ============================================================================
+static lv_obj_t* create_rail_button(lv_obj_t* parent, int x, int y, const char* label, uint32_t bgHex, SpriteIconId spr, lv_event_cb_t cb, int tagId) {
+  lv_obj_t* btn = lv_btn_create(parent);
+  lv_obj_set_pos(btn, x, y);
+  lv_obj_set_size(btn, 36, 44);
+  lv_obj_set_style_bg_color(btn, lv_color_hex(bgHex), 0);
+  lv_obj_set_style_radius(btn, 5, 0);
+  lv_obj_set_style_border_color(btn, lv_color_hex(0x64748B), 0);
+  lv_obj_set_style_border_width(btn, 1, 0);
+  lv_obj_set_style_pad_all(btn, 1, 0);
+  lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, (void*)(intptr_t)tagId);
+
+  lv_obj_t* img = lv_img_create(btn);
+  lv_img_set_src(img, &s_sprite_dsc[spr]);
+  lv_obj_align(img, LV_ALIGN_TOP_MID, 0, 4);
+
+  lv_obj_t* lbl = lv_label_create(btn);
+  lv_label_set_text(lbl, label);
+  lv_obj_set_style_text_font(lbl, &lv_font_montserrat_8, 0);
+  lv_obj_set_style_text_color(lbl, lv_color_hex(0xFFFFFF), 0);
+  lv_obj_align(lbl, LV_ALIGN_BOTTOM_MID, 0, -2);
+  return btn;
+}
+
+static lv_obj_t* create_mini_stat_bar(lv_obj_t* parent, int x, int y, const char* tag, uint32_t colHex) {
+  lv_obj_t* l = lv_label_create(parent);
+  lv_label_set_text(l, tag);
+  lv_obj_set_style_text_font(l, &lv_font_montserrat_8, 0);
+  lv_obj_set_style_text_color(l, lv_color_hex(colHex), 0);
+  lv_obj_set_pos(l, x, y);
+
+  lv_obj_t* bar = lv_bar_create(parent);
+  lv_obj_set_pos(bar, x + 18, y + 1);
+  lv_obj_set_size(bar, 92, 6);
+  lv_bar_set_range(bar, 0, 100);
+  lv_obj_set_style_bg_color(bar, lv_color_hex(0x0F172A), 0);
+  lv_obj_set_style_bg_color(bar, lv_color_hex(colHex), LV_PART_INDICATOR);
+  return bar;
+}
+
+void cyd_lvgl_show_main_screen(void) {
+  s_ota_bar = nullptr;
+  s_main_scr = lv_obj_create(NULL);
+  lv_obj_set_style_bg_color(s_main_scr, lv_color_hex(0x0B0F1A), 0);
+  lv_obj_clear_flag(s_main_scr, LV_OBJ_FLAG_SCROLLABLE);
+
+  // Left Stage (x=40..159) & Right Stage (x=161..279)
+  s_left_stage = lv_obj_create(s_main_scr);
+  lv_obj_set_pos(s_left_stage, 40, 0);
+  lv_obj_set_size(s_left_stage, 119, 240);
+  lv_obj_set_style_border_width(s_left_stage, 0, 0);
+  lv_obj_set_style_radius(s_left_stage, 0, 0);
+  lv_obj_set_style_pad_all(s_left_stage, 0, 0);
+  lv_obj_clear_flag(s_left_stage, LV_OBJ_FLAG_SCROLLABLE);
+
+  s_right_stage = lv_obj_create(s_main_scr);
+  lv_obj_set_pos(s_right_stage, 161, 0);
+  lv_obj_set_size(s_right_stage, 119, 240);
+  lv_obj_set_style_border_width(s_right_stage, 0, 0);
+  lv_obj_set_style_radius(s_right_stage, 0, 0);
+  lv_obj_set_style_pad_all(s_right_stage, 0, 0);
+  lv_obj_clear_flag(s_right_stage, LV_OBJ_FLAG_SCROLLABLE);
+
+  // Side Toolbars (dark panels)
+  lv_obj_t* leftRail = lv_obj_create(s_main_scr);
+  lv_obj_set_pos(leftRail, 0, 0);
+  lv_obj_set_size(leftRail, 40, 240);
+  lv_obj_set_style_bg_color(leftRail, lv_color_hex(0x111827), 0);
+  lv_obj_set_style_border_width(leftRail, 0, 0);
+  lv_obj_set_style_radius(leftRail, 0, 0);
+  lv_obj_set_style_pad_all(leftRail, 0, 0);
+  lv_obj_clear_flag(leftRail, LV_OBJ_FLAG_SCROLLABLE);
+
+  lv_obj_t* rightRail = lv_obj_create(s_main_scr);
+  lv_obj_set_pos(rightRail, 280, 0);
+  lv_obj_set_size(rightRail, 40, 240);
+  lv_obj_set_style_bg_color(rightRail, lv_color_hex(0x111827), 0);
+  lv_obj_set_style_border_width(rightRail, 0, 0);
+  lv_obj_set_style_radius(rightRail, 0, 0);
+  lv_obj_set_style_pad_all(rightRail, 0, 0);
+  lv_obj_clear_flag(rightRail, LV_OBJ_FLAG_SCROLLABLE);
+
+  // Left Control Buttons (16x16 pixel sprites)
+  create_rail_button(leftRail, 2, 2,   TXT_FEED,  0x15803D, SPR_FEED,  on_left_btn_clicked, 1);
+  create_rail_button(leftRail, 2, 50,  TXT_PLAY,  0x1D4ED8, SPR_PLAY,  on_left_btn_clicked, 2);
+  create_rail_button(leftRail, 2, 98,  TXT_BATH,  0x0369A1, SPR_BATH,  on_left_btn_clicked, 3);
+  create_rail_button(leftRail, 2, 146, TXT_MAGIC, 0x6D28D9, SPR_MAGIC, on_left_btn_clicked, 4);
+  create_rail_button(leftRail, 2, 194, TXT_SAVE,  0xB45309, SPR_STATS, on_left_btn_clicked, 5);
+
+  // Right Control Buttons
+  create_rail_button(rightRail, 2, 2,   TXT_TREAT,      0xBE185D, SPR_TREAT,    on_right_btn_clicked, 6);
+  create_rail_button(rightRail, 2, 50,  TXT_CHAT,       0x0E7490, SPR_CHAT,     on_right_btn_clicked, 7);
+  create_rail_button(rightRail, 2, 98,  TXT_MAGIC_PLUS, 0x6D28D9, SPR_MGC_PLUS, on_right_btn_clicked, 8);
+  create_rail_button(rightRail, 2, 146, TXT_QUEST,      0x15803D, SPR_QUEST,    on_right_btn_clicked, 9);
+  create_rail_button(rightRail, 2, 194, TXT_TRADE,      0xCA8A04, SPR_TRADE,    on_right_btn_clicked, 10);
+
+  // Center Connection / OTA Trigger Dot
+  s_dot_btn = lv_btn_create(s_main_scr);
+  lv_obj_set_pos(s_dot_btn, 154, 114);
+  lv_obj_set_size(s_dot_btn, 12, 12);
+  lv_obj_set_style_radius(s_dot_btn, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_border_color(s_dot_btn, lv_color_hex(0xFFFFFF), 0);
+  lv_obj_set_style_border_width(s_dot_btn, 1, 0);
+  lv_obj_add_event_cb(s_dot_btn, on_dot_ota_clicked, LV_EVENT_CLICKED, NULL);
+
+  // Left Pet HUD Widgets
+  s_my_name_lbl = lv_label_create(s_left_stage);
+  lv_obj_set_pos(s_my_name_lbl, 4, 4);
+  lv_obj_set_style_text_color(s_my_name_lbl, lv_color_hex(0xFFFFFF), 0);
+
+  s_my_lv_lbl = lv_label_create(s_left_stage);
+  lv_obj_set_pos(s_my_lv_lbl, 82, 4);
+  lv_obj_set_style_text_color(s_my_lv_lbl, lv_color_hex(0xFACC15), 0);
+
+  s_my_phase_lbl = lv_label_create(s_left_stage);
+  lv_obj_set_pos(s_my_phase_lbl, 4, 20);
+  lv_obj_set_style_text_font(s_my_phase_lbl, &lv_font_montserrat_10, 0);
+
+  s_my_badge_lbl = lv_label_create(s_left_stage);
+  lv_obj_set_pos(s_my_badge_lbl, 56, 20);
+  lv_obj_set_style_text_font(s_my_badge_lbl, &lv_font_montserrat_10, 0);
+
+  s_my_hp_bar = create_mini_stat_bar(s_left_stage, 4, 34, "HP", 0xEF4444);
+  s_my_fd_bar = create_mini_stat_bar(s_left_stage, 4, 44, "FD", 0xF97316);
+  s_my_xp_bar = create_mini_stat_bar(s_left_stage, 4, 54, "XP", 0xA855F7);
+
+  s_my_canvas = lv_canvas_create(s_left_stage);
+  lv_canvas_set_buffer(s_my_canvas, s_my_pet_buf, PET_CANVAS_W, PET_CANVAS_H, LV_IMG_CF_TRUE_COLOR);
+  lv_obj_set_pos(s_my_canvas, 21, 84);
+  lv_obj_add_flag(s_my_canvas, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_add_event_cb(s_my_canvas, on_pet_stage_tapped, LV_EVENT_CLICKED, NULL);
+
+  s_my_egg_lbl = lv_label_create(s_left_stage);
+  lv_label_set_text(s_my_egg_lbl, TXT_TAP_EGG);
+  lv_obj_set_style_text_font(s_my_egg_lbl, &lv_font_montserrat_10, 0);
+  lv_obj_set_style_text_color(s_my_egg_lbl, lv_color_hex(0xFACC15), 0);
+  lv_obj_set_pos(s_my_egg_lbl, 34, 174);
+
+  lv_obj_t* ftrBtn = lv_btn_create(s_left_stage);
+  lv_obj_set_pos(ftrBtn, 2, 212);
+  lv_obj_set_size(ftrBtn, 115, 24);
+  lv_obj_set_style_bg_opa(ftrBtn, LV_OPA_40, 0);
+  lv_obj_set_style_bg_color(ftrBtn, lv_color_hex(0x000000), 0);
+  lv_obj_add_event_cb(ftrBtn, on_footer_clicked, LV_EVENT_CLICKED, NULL);
+  s_my_footer_lbl = lv_label_create(ftrBtn);
+  lv_obj_set_style_text_font(s_my_footer_lbl, &lv_font_montserrat_10, 0);
+  lv_obj_set_style_text_color(s_my_footer_lbl, lv_color_hex(0xFDE047), 0);
+  lv_obj_center(s_my_footer_lbl);
+
+  // Right Friend HUD Widgets
+  s_fr_name_lbl = lv_label_create(s_right_stage);
+  lv_obj_set_pos(s_fr_name_lbl, 6, 4);
+  lv_obj_set_style_text_color(s_fr_name_lbl, lv_color_hex(0xFFFFFF), 0);
+
+  s_fr_lv_lbl = lv_label_create(s_right_stage);
+  lv_obj_set_pos(s_fr_lv_lbl, 84, 4);
+  lv_obj_set_style_text_color(s_fr_lv_lbl, lv_color_hex(0x38BDF8), 0);
+
+  s_fr_status_lbl = lv_label_create(s_right_stage);
+  lv_obj_set_pos(s_fr_status_lbl, 6, 20);
+  lv_obj_set_style_text_font(s_fr_status_lbl, &lv_font_montserrat_10, 0);
+
+  s_fr_hp_bar = create_mini_stat_bar(s_right_stage, 6, 34, "HP", 0xEF4444);
+
+  s_fr_canvas = lv_canvas_create(s_right_stage);
+  lv_canvas_set_buffer(s_fr_canvas, s_fr_pet_buf, PET_CANVAS_W, PET_CANVAS_H, LV_IMG_CF_TRUE_COLOR);
+  lv_obj_set_pos(s_fr_canvas, 21, 80);
+
+  s_fr_balloon_box = lv_obj_create(s_right_stage);
+  lv_obj_set_pos(s_fr_balloon_box, 4, 168);
+  lv_obj_set_size(s_fr_balloon_box, 110, 26);
+  lv_obj_set_style_bg_color(s_fr_balloon_box, lv_color_hex(0xFFFFFF), 0);
+  lv_obj_set_style_border_color(s_fr_balloon_box, lv_color_hex(0x0F172A), 0);
+  lv_obj_set_style_radius(s_fr_balloon_box, 4, 0);
+  lv_obj_set_style_pad_all(s_fr_balloon_box, 2, 0);
+  lv_obj_clear_flag(s_fr_balloon_box, LV_OBJ_FLAG_SCROLLABLE);
+
+  s_fr_balloon_lbl = lv_label_create(s_fr_balloon_box);
+  lv_obj_set_style_text_font(s_fr_balloon_lbl, &lv_font_montserrat_10, 0);
+  lv_obj_set_style_text_color(s_fr_balloon_lbl, lv_color_hex(0x000000), 0);
+  lv_obj_center(s_fr_balloon_lbl);
+
+  s_fr_footer_lbl = lv_label_create(s_right_stage);
+  lv_obj_set_pos(s_fr_footer_lbl, 6, 218);
+  lv_obj_set_style_text_font(s_fr_footer_lbl, &lv_font_montserrat_10, 0);
+  lv_obj_set_style_text_color(s_fr_footer_lbl, lv_color_hex(0x67E8F9), 0);
+
+  // Horizontal Feed Flyout Bar (Right next to Feed Button!)
+  s_flyout_bar = lv_obj_create(s_main_scr);
+  lv_obj_set_pos(s_flyout_bar, 42, 2);
+  lv_obj_set_size(s_flyout_bar, 232, 44);
+  lv_obj_set_style_bg_color(s_flyout_bar, lv_color_hex(0x0F172A), 0);
+  lv_obj_set_style_border_color(s_flyout_bar, lv_color_hex(0xF59E0B), 0);
+  lv_obj_set_style_pad_all(s_flyout_bar, 3, 0);
+  lv_obj_set_flex_flow(s_flyout_bar, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(s_flyout_bar, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_add_flag(s_flyout_bar, LV_OBJ_FLAG_HIDDEN);
+
+  // Notification Toast Banner
+  s_banner_box = lv_obj_create(s_main_scr);
+  lv_obj_set_pos(s_banner_box, 48, 4);
+  lv_obj_set_size(s_banner_box, 224, 24);
+  lv_obj_set_style_bg_color(s_banner_box, lv_color_hex(0x1E293B), 0);
+  lv_obj_set_style_border_color(s_banner_box, lv_color_hex(0xFACC15), 0);
+  lv_obj_set_style_radius(s_banner_box, 6, 0);
+  lv_obj_set_style_pad_all(s_banner_box, 2, 0);
+  lv_obj_add_flag(s_banner_box, LV_OBJ_FLAG_HIDDEN);
+  s_banner_lbl = lv_label_create(s_banner_box);
+  lv_obj_set_style_text_font(s_banner_lbl, &lv_font_montserrat_10, 0);
+  lv_obj_set_style_text_color(s_banner_lbl, lv_color_hex(0xFDE047), 0);
+  lv_obj_center(s_banner_lbl);
+
+  lv_scr_load(s_main_scr);
+  cyd_lvgl_refresh_main_screen();
+}
+
+void cyd_lvgl_refresh_main_screen(void) {
+  if (!s_app || !s_main_scr) return;
+  const TamagotchiCoreEngine& eng = s_app->engine;
+  const FriendState& fr = s_app->friendPet;
+
+  BiomeTheme myBiome = getBiomeTheme(eng.biome);
+  BiomeTheme frBiome = getBiomeTheme(fr.biome);
+
+  lv_obj_set_style_bg_color(s_left_stage, rgb565_to_lv(myBiome.bgColor), 0);
+  lv_obj_set_style_bg_color(s_right_stage, rgb565_to_lv(frBiome.bgColor), 0);
+  lv_obj_set_style_bg_color(s_dot_btn, lv_color_hex(fr.isOnline ? 0x22C55E : 0xEF4444), 0);
+
+  lv_label_set_text(s_my_name_lbl, eng.name);
+  lv_label_set_text_fmt(s_my_lv_lbl, "Lv%u", eng.level);
+  lv_label_set_text(s_my_phase_lbl, eng.phase);
+  lv_obj_set_style_text_color(s_my_phase_lbl, rgb565_to_lv(myBiome.textColor), 0);
+
+  if (eng.isSick) {
+    lv_label_set_text(s_my_badge_lbl, TXT_SICK_BADGE);
+    lv_obj_set_style_text_color(s_my_badge_lbl, lv_color_hex(0xEF4444), 0);
+  } else if (eng.satietyTicks > 0) {
+    lv_label_set_text_fmt(s_my_badge_lbl, "SATT:%uT", eng.satietyTicks);
+    lv_obj_set_style_text_color(s_my_badge_lbl, lv_color_hex(0x4ADE80), 0);
+  } else if (s_app->activeJob.running) {
+    uint32_t elapsed = cyd_millis() - s_app->activeJob.startedMs;
+    uint32_t remS = (elapsed < s_app->activeJob.durationMs) ? ((s_app->activeJob.durationMs - elapsed) / 1000U) : 0;
+    lv_label_set_text_fmt(s_my_badge_lbl, "JOB:%lus", (unsigned long)remS);
+    lv_obj_set_style_text_color(s_my_badge_lbl, lv_color_hex(0xFACC15), 0);
+  } else {
+    lv_label_set_text(s_my_badge_lbl, "");
+  }
+
+  lv_bar_set_value(s_my_hp_bar, eng.stats.health, LV_ANIM_OFF);
+  lv_bar_set_value(s_my_fd_bar, eng.stats.hunger, LV_ANIM_OFF);
+  uint16_t xpNext = (eng.xpNext > 0) ? eng.xpNext : 100;
+  int xpPct = (int)((eng.xp * 100U) / xpNext);
+  if (xpPct > 100) xpPct = 100;
+  lv_bar_set_value(s_my_xp_bar, xpPct, LV_ANIM_OFF);
+
+  LvCanvasDrawAdapter myCanv(s_my_pet_buf, PET_CANVAS_W, PET_CANVAS_H);
+  myCanv.clear(myBiome.bgColor);
+  if (strcmp(eng.phase, "Egg") == 0) {
+    drawPixelEgg(myCanv, PET_CANVAS_W / 2, PET_CANVAS_H / 2 - 2, myBiome.petColor, eng.eggWarmth, eng.biome);
+    lv_obj_clear_flag(s_my_egg_lbl, LV_OBJ_FLAG_HIDDEN);
+  } else {
+    drawPixelPet(myCanv, PET_CANVAS_W / 2, PET_CANVAS_H / 2, eng.biome, eng.phase, false);
+    lv_obj_add_flag(s_my_egg_lbl, LV_OBJ_FLAG_HIDDEN);
+  }
+  lv_obj_invalidate(s_my_canvas);
+
+  lv_label_set_text_fmt(s_my_footer_lbl, "$%u S%u%s EN:%u",
+                        eng.coins, eng.consecutiveLoginDays,
+                        eng.canClaimStreakBonus() ? "!" : "", eng.stats.energy);
+
+  // Right Friend Viewport
+  lv_label_set_text(s_fr_name_lbl, fr.name);
+  lv_label_set_text_fmt(s_fr_lv_lbl, "Lv%u", fr.level);
+  lv_label_set_text(s_fr_status_lbl, fr.isOnline ? TXT_ONLINE : TXT_ASLEEP);
+  lv_obj_set_style_text_color(s_fr_status_lbl, lv_color_hex(fr.isOnline ? 0x4ADE80 : 0xCBD5E1), 0);
+  lv_bar_set_value(s_fr_hp_bar, fr.health, LV_ANIM_OFF);
+
+  LvCanvasDrawAdapter frCanv(s_fr_pet_buf, PET_CANVAS_W, PET_CANVAS_H);
+  frCanv.clear(frBiome.bgColor);
+  drawPixelPet(frCanv, PET_CANVAS_W / 2, PET_CANVAS_H / 2, fr.biome, fr.phase, true);
+  lv_obj_invalidate(s_fr_canvas);
+
+  if (strlen(fr.speechBalloon) > 0) {
+    lv_label_set_text(s_fr_balloon_lbl, fr.speechBalloon);
+    lv_obj_clear_flag(s_fr_balloon_box, LV_OBJ_FLAG_HIDDEN);
+  } else {
+    lv_obj_add_flag(s_fr_balloon_box, LV_OBJ_FLAG_HIDDEN);
+  }
+  lv_label_set_text(s_fr_footer_lbl, fr.deviceId);
+
+  // Notification banner visibility
+  if (strlen(s_app->bannerMsg) > 0 && !s_app->feedFlyoutOpen) {
+    lv_label_set_text(s_banner_lbl, s_app->bannerMsg);
+    lv_obj_clear_flag(s_banner_box, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(s_banner_box);
+  } else {
+    lv_obj_add_flag(s_banner_box, LV_OBJ_FLAG_HIDDEN);
+  }
+}
+
+void cyd_lvgl_show_banner(const char* msg, uint32_t durationMs) {
+  if (!s_app) return;
+  strncpy(s_app->bannerMsg, msg ? msg : "", sizeof(s_app->bannerMsg) - 1);
+  s_app->bannerMsg[sizeof(s_app->bannerMsg) - 1] = '\0';
+  s_app->bannerUntilMs = (durationMs > 0) ? (cyd_millis() + durationMs) : 0;
+  s_app->dirtyUi = true;
+}
+
+// ============================================================================
+// 5-TAB RPG SUB-MODAL + CHAT PICKER
+// ============================================================================
+static lv_obj_t* add_modal_btn(lv_obj_t* parent, const char* txt, uint32_t colHex, lv_event_cb_t cb, int userInt) {
+  lv_obj_t* btn = lv_btn_create(parent);
+  lv_obj_set_size(btn, 276, 30);
+  lv_obj_set_style_bg_color(btn, lv_color_hex(colHex), 0);
+  lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, (void*)(intptr_t)userInt);
+  lv_obj_t* l = lv_label_create(btn);
+  lv_label_set_text(l, txt);
+  lv_obj_set_style_text_font(l, &lv_font_montserrat_12, 0);
+  lv_obj_align(l, LV_ALIGN_LEFT_MID, 4, 0);
+  return btn;
+}
+
+void cyd_lvgl_close_modal(void) {
+  if (s_modal_overlay) {
+    lv_obj_del(s_modal_overlay);
+    s_modal_overlay = nullptr;
+  }
+  if (s_app) s_app->activeModal = TAB_NONE;
+}
+
+void cyd_lvgl_open_modal(SubModalTab tab) {
+  if (!s_app || !s_main_scr) return;
+  if (s_modal_overlay) {
+    lv_obj_del(s_modal_overlay);
+    s_modal_overlay = nullptr;
+  }
+  s_app->activeModal = tab;
+
+  s_modal_overlay = lv_obj_create(s_main_scr);
+  lv_obj_set_pos(s_modal_overlay, 6, 6);
+  lv_obj_set_size(s_modal_overlay, 308, 228);
+  lv_obj_set_style_bg_color(s_modal_overlay, lv_color_hex(0x0F172A), 0);
+  lv_obj_set_style_border_color(s_modal_overlay, lv_color_hex(0xF59E0B), 0);
+  lv_obj_set_style_border_width(s_modal_overlay, 2, 0);
+  lv_obj_set_style_pad_all(s_modal_overlay, 4, 0);
+  lv_obj_clear_flag(s_modal_overlay, LV_OBJ_FLAG_SCROLLABLE);
+
+  // Top Navigation Bar
+  lv_obj_t* nav = lv_obj_create(s_modal_overlay);
+  lv_obj_set_pos(nav, 2, 2);
+  lv_obj_set_size(nav, 294, 28);
+  lv_obj_set_style_bg_color(nav, lv_color_hex(0x1E293B), 0);
+  lv_obj_set_style_border_width(nav, 0, 0);
+  lv_obj_set_style_pad_all(nav, 2, 0);
+  lv_obj_set_flex_flow(nav, LV_FLEX_FLOW_ROW);
+  lv_obj_clear_flag(nav, LV_OBJ_FLAG_SCROLLABLE);
+
+  struct NavItem { const char* lbl; SubModalTab t; };
+  const NavItem items[6] = {
+    {L_TAB_STAT, TAB_STATUS}, {L_TAB_BAG, TAB_BAG}, {L_TAB_JOBS, TAB_JOBS},
+    {L_TAB_MAGIC, TAB_MAGIC}, {L_TAB_QUEST, TAB_QUEST}, {L_CLOSE, TAB_NONE}
+  };
+  for (int i = 0; i < 6; i++) {
+    lv_obj_t* b = lv_btn_create(nav);
+    lv_obj_set_size(b, (i == 5) ? 28 : 49, 22);
+    uint32_t bg = (i == 5) ? 0x991B1B : ((tab == items[i].t) ? 0xD97706 : 0x334155);
+    lv_obj_set_style_bg_color(b, lv_color_hex(bg), 0);
+    lv_obj_set_style_pad_all(b, 0, 0);
+    lv_obj_add_event_cb(b, on_modal_tab_switch, LV_EVENT_CLICKED, (void*)(intptr_t)items[i].t);
+    lv_obj_t* l = lv_label_create(b);
+    lv_label_set_text(l, items[i].lbl);
+    lv_obj_set_style_text_font(l, &lv_font_montserrat_10, 0);
+    lv_obj_center(l);
+  }
+
+  // Scrollable Body Area
+  lv_obj_t* body = lv_obj_create(s_modal_overlay);
+  lv_obj_set_pos(body, 2, 34);
+  lv_obj_set_size(body, 294, 182);
+  lv_obj_set_style_bg_color(body, lv_color_hex(0x0B1120), 0);
+  lv_obj_set_style_border_width(body, 0, 0);
+  lv_obj_set_style_pad_all(body, 6, 0);
+  lv_obj_set_flex_flow(body, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_style_pad_row(body, 5, 0);
+
+  const TamagotchiCoreEngine& eng = s_app->engine;
+
+  if (tab == TAB_STATUS) {
+    char jobTxt[48] = "Beruf: keiner";
+    if (s_app->activeJob.running) {
+      uint32_t elapsed = cyd_millis() - s_app->activeJob.startedMs;
+      uint32_t remS = (elapsed < s_app->activeJob.durationMs) ? ((s_app->activeJob.durationMs - elapsed) / 1000U) : 0;
+      snprintf(jobTxt, sizeof(jobTxt), "Aktiver Beruf: noch %lus", (unsigned long)remS);
+    }
+    lv_obj_t* lbl = lv_label_create(body);
+    lv_label_set_text_fmt(lbl,
+      "%s (Lv.%u %s) | $%u Coins\n"
+      "HP:%u%% Hunger:%u%% Energie:%u%%\n"
+      "Saub:%u%% Freude:%u%% Mana:%u%%\n"
+      "Satt-Schutz: %uT | Zustand: %s\n%s\nFW: v%s (ESP-IDF LVGL)",
+      eng.name, eng.level, eng.phase, eng.coins,
+      eng.stats.health, eng.stats.hunger, eng.stats.energy,
+      eng.stats.hygiene, eng.stats.happiness, eng.stats.mana,
+      eng.satietyTicks, eng.isSick ? "KRANK!" : "Gesund", jobTxt, FIRMWARE_VERSION);
+    lv_obj_set_style_text_color(lbl, lv_color_hex(0xE2E8F0), 0);
+
+    add_modal_btn(body, "In Flash & Cloud speichern", 0x0369A1, on_save_cloud_cb, 0);
+  } else if (tab == TAB_BAG) {
+    for (uint8_t i = 0; i < eng.inventoryCount; i++) {
+      const EngineInventorySlot& sl = eng.inventory[i];
+      char rowTxt[64];
+      snprintf(rowTxt, sizeof(rowTxt), "%s x%u %s",
+               sl.name_de, sl.quantity,
+               sl.category == 0 ? "[Essen]" : (sl.category == 2 ? "[Nutzen]" : "[Zutat]"));
+      uint32_t col = (sl.category == 0) ? 0x065F46 : ((sl.category == 2) ? 0x9F1239 : 0x334155);
+      add_modal_btn(body, rowTxt, col, on_bag_action_cb, (int)i);
+    }
+    add_modal_btn(body, "Kochen: Kraeuter-Salat (2x Kraut)", 0x7C2D12, on_bag_action_cb, 100);
+    add_modal_btn(body, "Kochen: Beeren-Tarte (Lv2)", 0x7C2D12, on_bag_action_cb, 101);
+    add_modal_btn(body, "Shop: Apfel ($5)", 0x854D0E, on_bag_action_cb, 200);
+    add_modal_btn(body, "Shop: Pixel-Snack ($8)", 0x854D0E, on_bag_action_cb, 201);
+    add_modal_btn(body, "Shop: Heilsalbe ($25)", 0x854D0E, on_bag_action_cb, 202);
+    add_modal_btn(body, "Shop: Wiesenkraeuter ($8)", 0x854D0E, on_bag_action_cb, 203);
+  } else if (tab == TAB_JOBS) {
+    if (s_app->activeJob.running) {
+      uint32_t elapsed = cyd_millis() - s_app->activeJob.startedMs;
+      uint32_t remS = (elapsed < s_app->activeJob.durationMs) ? ((s_app->activeJob.durationMs - elapsed) / 1000U) : 0;
+      lv_obj_t* l = lv_label_create(body);
+      lv_label_set_text_fmt(l, "Beruf aktiv - Restzeit: %lus", (unsigned long)remS);
+      lv_obj_set_style_text_color(l, lv_color_hex(0xFACC15), 0);
+
+      lv_obj_t* jb = lv_bar_create(body);
+      lv_obj_set_size(jb, 268, 12);
+      lv_bar_set_range(jb, 0, 100);
+      int pct = (s_app->activeJob.durationMs > 0) ? (int)((elapsed * 100U) / s_app->activeJob.durationMs) : 100;
+      if (pct > 100) pct = 100;
+      lv_bar_set_value(jb, pct, LV_ANIM_OFF);
+    }
+    add_modal_btn(body, "Kraeuter-Sammler (60s, -15EN -> +20$ Apfel)", 0x166534, on_job_start_cb, 0);
+    add_modal_btn(body, "Dorf-Spaeher (120s, -25EN -> +35$ Snack)", 0x1E40AF, on_job_start_cb, 1);
+    add_modal_btn(body, "Kristall-Mine (180s, -35EN -> +60$ Pilz)", 0x6B21A8, on_job_start_cb, 2);
+  } else if (tab == TAB_MAGIC) {
+    lv_obj_t* mpL = lv_label_create(body);
+    lv_label_set_text_fmt(mpL, "Mana: %u / 100 | Energie: %u / 100", eng.stats.mana, eng.stats.energy);
+    lv_obj_set_style_text_color(mpL, lv_color_hex(0xC084FC), 0);
+    add_modal_btn(body, "1. Laeuterung (15MP -> Heilt +20HP)", 0x047857, on_magic_action_cb, 0);
+    add_modal_btn(body, "2. Heilaura (20MP -> +30HP +30XP)", 0x6D28D9, on_magic_action_cb, 1);
+    add_modal_btn(body, "3. Astral-Festmahl (30MP -> Satt 4T)", 0x9333EA, on_magic_action_cb, 2);
+    add_modal_btn(body, "Magie erforschen (-15EN -> +15MP +35XP)", 0x1D4ED8, on_magic_action_cb, 3);
+  } else if (tab == TAB_QUEST) {
+    if (eng.canClaimStreakBonus()) {
+      char sTxt[48];
+      snprintf(sTxt, sizeof(sTxt), "Streak Tag %u abholen! (+Coins/+XP)", eng.consecutiveLoginDays);
+      add_modal_btn(body, sTxt, 0xD97706, on_quest_action_cb, 0);
+    }
+    for (uint8_t m = 0; m < eng.missionCount; m++) {
+      if (eng.missions[m].completed && !eng.missions[m].claimed) {
+        add_modal_btn(body, "Tages-Mission einloesen!", 0x15803D, on_quest_action_cb, 1);
+        break;
+      }
+    }
+    add_modal_btn(body, "Koop-Quest: Spaeher-Patrouille (+35$)", 0x1E40AF, on_quest_action_cb, 2);
+    add_modal_btn(body, "Koop-Quest: Schatzsuche (+50$ Apfel)", 0x065F46, on_quest_action_cb, 3);
+  } else if (tab == TAB_CHAT) {
+    lv_obj_t* hdr = lv_label_create(body);
+    lv_label_set_text(hdr, "Nachricht an Freund senden:");
+    lv_obj_set_style_text_color(hdr, lv_color_hex(0x38BDF8), 0);
+    for (int c = 0; c < 6; c++) {
+      add_modal_btn(body, CHAT_PHRASES[c], 0x0E7490, on_chat_phrase_cb, c);
+    }
+  }
+}

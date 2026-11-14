@@ -1,0 +1,13 @@
+idf_component_register(
+    SRCS
+        "app_main.cpp"
+        "cyd_display.cpp"
+        "cyd_hw.c"
+        "cyd_lvgl_ui.cpp"
+        "cyd_net.cpp"
+        "cyd_storage.cpp"
+        "cyd_touch.c"
+    INCLUDE_DIRS
+        "."
+        ".."
+)

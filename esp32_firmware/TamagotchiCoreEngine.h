@@ -15,7 +15,34 @@
 #ifndef TAMAGOTCHI_CORE_ENGINE_H
 #define TAMAGOTCHI_CORE_ENGINE_H
 
-#include <Arduino.h>
+#if defined(ARDUINO)
+  #include <Arduino.h>
+#elif defined(MOCK_ARDUINO_H)
+  #include <Arduino.h>
+#else
+  #include <algorithm>
+  #include <cmath>
+  #include <cstdint>
+  #include <cstdlib>
+  #include <cstring>
+  #ifdef ESP_PLATFORM
+    #include "esp_random.h"
+  #endif
+#endif
+
+static inline int engineMin(int a, int b) { return (a < b) ? a : b; }
+static inline int engineMax(int a, int b) { return (a > b) ? a : b; }
+static inline int engineClamp(int v, int lo, int hi) { return (v < lo) ? lo : ((v > hi) ? hi : v); }
+static inline long engineRandom(long lo, long hi) {
+  if (lo >= hi) return lo;
+#if defined(ARDUINO) || defined(MOCK_ARDUINO_H)
+  return random(lo, hi);
+#elif defined(ESP_PLATFORM)
+  return lo + (long)(esp_random() % (uint32_t)(hi - lo));
+#else
+  return lo + (std::rand() % (hi - lo));
+#endif
+}
 
 struct EngineStats {
   uint8_t health    = 100;
@@ -328,47 +355,89 @@ public:
   }
 
   // --------------------------------------------------------------------------
-  // Runtime Config Loader (Reads human-readable .cfg or simple key=val lines)
+  // Runtime Config Loader (Zero heap allocation: .cfg key=val or JSON lines)
   // --------------------------------------------------------------------------
-  void loadConfigFromText(const String& cfgText) {
+  static void trimAndStrip(char* s) {
+    if (!s) return;
+    int len = (int)strlen(s);
     int start = 0;
-    while (start < (int)cfgText.length()) {
-      int end = cfgText.indexOf('\n', start);
-      if (end == -1) end = cfgText.length();
-      String line = cfgText.substring(start, end);
-      line.trim();
-      start = end + 1;
+    while (start < len && (s[start] == ' ' || s[start] == '\t' || s[start] == '\r' || s[start] == '\n' || s[start] == '"' || s[start] == ',')) {
+      start++;
+    }
+    int end = len;
+    while (end > start && (s[end - 1] == ' ' || s[end - 1] == '\t' || s[end - 1] == '\r' || s[end - 1] == '\n' || s[end - 1] == '"' || s[end - 1] == ',')) {
+      end--;
+    }
+    if (start > 0) {
+      memmove(s, s + start, (size_t)(end - start));
+    }
+    s[end - start] = '\0';
+  }
 
-      if (line.length() == 0 || line.startsWith("#") || line.startsWith("[")) {
+  void loadConfigFromText(const char* cfgText) {
+    if (!cfgText) return;
+    const char* p = cfgText;
+    char line[160];
+
+    while (*p != '\0') {
+      const char* nl = strchr(p, '\n');
+      size_t lineLen = nl ? (size_t)(nl - p) : strlen(p);
+      size_t copyLen = (lineLen < sizeof(line) - 1) ? lineLen : (sizeof(line) - 1);
+      memcpy(line, p, copyLen);
+      line[copyLen] = '\0';
+      p = nl ? (nl + 1) : (p + lineLen);
+
+      char* s = line;
+      while (*s == ' ' || *s == '\t' || *s == '\r') s++;
+      if (*s == '\0' || *s == '#' || *s == '[' || *s == '{' || *s == '}') {
         continue;
       }
 
-      int eq = line.indexOf('=');
-      if (eq != -1) {
-        String key = line.substring(0, eq);
-        String val = line.substring(eq + 1);
-        key.trim();
-        val.trim();
-        val.replace("\"", "");
+      // Support both key = val (.cfg) and "key": val (rules.json)
+      char* sep = strchr(s, '=');
+      if (!sep) sep = strchr(s, ':');
+      if (sep) {
+        char key[64];
+        char val[64];
+        size_t kLen = (size_t)(sep - s);
+        if (kLen >= sizeof(key)) kLen = sizeof(key) - 1;
+        memcpy(key, s, kLen);
+        key[kLen] = '\0';
+        strncpy(val, sep + 1, sizeof(val) - 1);
+        val[sizeof(val) - 1] = '\0';
 
-        if (key == "hunger_decay") rules.hungerDecay = val.toInt();
-        else if (key == "energy_decay") rules.energyDecay = val.toInt();
-        else if (key == "happiness_decay") rules.happinessDecay = val.toInt();
-        else if (key == "starve_threshold") rules.starveThreshold = val.toInt();
-        else if (key == "health_starve_decay") rules.healthStarveDecay = val.toInt();
-        else if (key == "natural_mana_regen") rules.naturalManaRegen = val.toInt();
-        else if (key == "egg_warmth_required") rules.eggWarmthRequired = val.toInt();
-        else if (key == "youth_min_level") rules.youthMinLevel = val.toInt();
-        else if (key == "adult_min_level") rules.adultMinLevel = val.toInt();
-        else if (key == "elder_min_level") rules.elderMinLevel = val.toInt();
-        else if (key == "base_xp_requirement") rules.baseXpRequirement = val.toInt();
-        else if (key == "treat_send_hunger_gain") rules.treatHungerGain = val.toInt();
-        else if (key == "treat_send_happiness_gain") rules.treatHappinessGain = val.toInt();
+        trimAndStrip(key);
+        trimAndStrip(val);
+
+        if (val[0] == '{' || val[0] == '[' || val[0] == '\0') {
+          continue;
+        }
+        int ival = (int)strtol(val, nullptr, 10);
+
+        if (strcmp(key, "hunger_decay") == 0) rules.hungerDecay = (uint8_t)ival;
+        else if (strcmp(key, "energy_decay") == 0) rules.energyDecay = (uint8_t)ival;
+        else if (strcmp(key, "happiness_decay") == 0) rules.happinessDecay = (uint8_t)ival;
+        else if (strcmp(key, "starve_threshold") == 0 || strcmp(key, "starveThreshold") == 0) rules.starveThreshold = (uint8_t)ival;
+        else if (strcmp(key, "health_starve_decay") == 0 || strcmp(key, "starveDecay") == 0) rules.healthStarveDecay = (uint8_t)ival;
+        else if (strcmp(key, "natural_mana_regen") == 0 || strcmp(key, "naturalManaRegen") == 0) rules.naturalManaRegen = (uint8_t)ival;
+        else if (strcmp(key, "egg_warmth_required") == 0 || strcmp(key, "warmthRequired") == 0) rules.eggWarmthRequired = (uint8_t)ival;
+        else if (strcmp(key, "youth_min_level") == 0 || strcmp(key, "youthMinLevel") == 0) rules.youthMinLevel = (uint8_t)ival;
+        else if (strcmp(key, "adult_min_level") == 0 || strcmp(key, "adultMinLevel") == 0) rules.adultMinLevel = (uint8_t)ival;
+        else if (strcmp(key, "elder_min_level") == 0 || strcmp(key, "elderMinLevel") == 0) rules.elderMinLevel = (uint8_t)ival;
+        else if (strcmp(key, "base_xp_requirement") == 0 || strcmp(key, "baseXpRequirement") == 0) rules.baseXpRequirement = (uint16_t)ival;
+        else if (strcmp(key, "treat_send_hunger_gain") == 0) rules.treatHungerGain = (uint8_t)ival;
+        else if (strcmp(key, "treat_send_happiness_gain") == 0) rules.treatHappinessGain = (uint8_t)ival;
       }
     }
 
     if (onEvent) onEvent("CONFIG_LOADED", nullptr);
   }
+
+#if defined(ARDUINO) || defined(MOCK_ARDUINO_H)
+  void loadConfigFromText(const String& cfgText) {
+    loadConfigFromText(cfgText.c_str());
+  }
+#endif
 
   // --------------------------------------------------------------------------
   // Fixed-Array Inventory Management (0 Heap Allocation)
@@ -516,26 +585,26 @@ public:
     if (satietyTicks > 0) {
       satietyTicks--;
     } else if (stats.hunger > 0) {
-      stats.hunger = (uint8_t)max(0, (int)stats.hunger - (int)rules.hungerDecay);
+      stats.hunger = (uint8_t)engineMax(0, (int)stats.hunger - (int)rules.hungerDecay);
     }
 
     if (stats.energy > 0) {
-      stats.energy = (uint8_t)max(0, (int)stats.energy - (int)rules.energyDecay);
+      stats.energy = (uint8_t)engineMax(0, (int)stats.energy - (int)rules.energyDecay);
     }
     if (stats.happiness > 0) {
-      stats.happiness = (uint8_t)max(0, (int)stats.happiness - (int)rules.happinessDecay);
+      stats.happiness = (uint8_t)engineMax(0, (int)stats.happiness - (int)rules.happinessDecay);
     }
 
     if (stats.hunger < rules.starveThreshold && stats.health > 0) {
-      stats.health = (uint8_t)max(0, (int)stats.health - (int)rules.healthStarveDecay);
+      stats.health = (uint8_t)engineMax(0, (int)stats.health - (int)rules.healthStarveDecay);
     }
 
     if (isSick && stats.health > 0) {
-      stats.health = (uint8_t)max(0, (int)stats.health - 1);
+      stats.health = (uint8_t)engineMax(0, (int)stats.health - 1);
     }
 
     if (stats.mana < rules.maxStatValue) {
-      stats.mana = (uint8_t)min((int)rules.maxStatValue, (int)stats.mana + (int)rules.naturalManaRegen);
+      stats.mana = (uint8_t)engineMin((int)rules.maxStatValue, (int)stats.mana + (int)rules.naturalManaRegen);
     }
   }
 
@@ -556,17 +625,17 @@ public:
 
     bool rolledSick = false;
     if (copySlot.sickChancePct > 0) {
-      if (random(0, 100) < (long)copySlot.sickChancePct) {
+      if (engineRandom(0, 100) < (long)copySlot.sickChancePct) {
         rolledSick = true;
       }
     }
 
-    stats.hunger    = (uint8_t)min((int)rules.maxStatValue, (int)stats.hunger + (int)copySlot.hungerGain);
-    stats.happiness = (uint8_t)min((int)rules.maxStatValue, (int)stats.happiness + (int)copySlot.happyGain);
-    stats.energy    = (uint8_t)min((int)rules.maxStatValue, (int)stats.energy + (int)copySlot.energyGain);
+    stats.hunger    = (uint8_t)engineMin((int)rules.maxStatValue, (int)stats.hunger + (int)copySlot.hungerGain);
+    stats.happiness = (uint8_t)engineMin((int)rules.maxStatValue, (int)stats.happiness + (int)copySlot.happyGain);
+    stats.energy    = (uint8_t)engineMin((int)rules.maxStatValue, (int)stats.energy + (int)copySlot.energyGain);
 
     int hp = (int)stats.health + (int)copySlot.healthGain - (rolledSick ? 15 : 0);
-    stats.health = (uint8_t)constrain(hp, 0, (int)rules.maxStatValue);
+    stats.health = (uint8_t)engineClamp(hp, 0, (int)rules.maxStatValue);
 
     if (copySlot.satietyTicks > satietyTicks) {
       satietyTicks = copySlot.satietyTicks;
@@ -593,10 +662,10 @@ public:
     EngineInventorySlot copySlot = inventory[idx];
     if (!consumeInventoryItem(itemId, 1)) return false;
 
-    stats.health = (uint8_t)min((int)rules.maxStatValue, (int)stats.health + (int)copySlot.healthGain);
-    stats.energy = (uint8_t)min((int)rules.maxStatValue, (int)stats.energy + (int)copySlot.energyGain);
+    stats.health = (uint8_t)engineMin((int)rules.maxStatValue, (int)stats.health + (int)copySlot.healthGain);
+    stats.energy = (uint8_t)engineMin((int)rules.maxStatValue, (int)stats.energy + (int)copySlot.energyGain);
     if (strcmp(itemId, "item_energy_elixir") == 0) {
-      stats.mana = (uint8_t)min((int)rules.maxStatValue, (int)stats.mana + 15);
+      stats.mana = (uint8_t)engineMin((int)rules.maxStatValue, (int)stats.mana + 15);
     }
     if (copySlot.cureSickness) {
       isSick = false;
@@ -679,7 +748,7 @@ public:
       case 5: return 85;
       case 6: return 115;
       default: {
-        uint16_t extra = (uint16_t)min((int)100, (int)((consecutiveLoginDays - 1) / 7) * 15);
+        uint16_t extra = (uint16_t)engineMin((int)100, (int)((consecutiveLoginDays - 1) / 7) * 15);
         return 150 + extra;
       }
     }
@@ -772,28 +841,28 @@ public:
   // Core Interactions
   // --------------------------------------------------------------------------
   void feed(uint8_t amount = 25) {
-    stats.hunger = (uint8_t)min((int)rules.maxStatValue, (int)stats.hunger + (int)amount);
+    stats.hunger = (uint8_t)engineMin((int)rules.maxStatValue, (int)stats.hunger + (int)amount);
     addXP(15);
     recordAction("feed", 1);
   }
 
   void play(uint8_t happy = 20, uint8_t cost = 10) {
-    stats.happiness = (uint8_t)min((int)rules.maxStatValue, (int)stats.happiness + (int)happy);
-    stats.energy = (uint8_t)max(0, (int)stats.energy - (int)cost);
+    stats.happiness = (uint8_t)engineMin((int)rules.maxStatValue, (int)stats.happiness + (int)happy);
+    stats.energy = (uint8_t)engineMax(0, (int)stats.energy - (int)cost);
     addXP(20);
     recordAction("play", 1);
   }
 
   void clean() {
     stats.hygiene = rules.maxStatValue;
-    stats.happiness = (uint8_t)min((int)rules.maxStatValue, (int)stats.happiness + 10);
+    stats.happiness = (uint8_t)engineMin((int)rules.maxStatValue, (int)stats.happiness + 10);
     addXP(10);
     recordAction("bath", 1);
   }
 
   bool warmEgg(uint8_t amount = 25) {
     if (strcmp(phase, "Egg") != 0) return false;
-    eggWarmth = (uint8_t)min((int)rules.eggWarmthRequired, (int)eggWarmth + (int)amount);
+    eggWarmth = (uint8_t)engineMin((int)rules.eggWarmthRequired, (int)eggWarmth + (int)amount);
     if (eggWarmth >= rules.eggWarmthRequired) {
       strcpy(phase, "Baby");
       stats.health = rules.maxStatValue;
@@ -832,8 +901,8 @@ public:
   }
 
   void receiveRemoteTreat() {
-    stats.hunger = (uint8_t)min((int)rules.maxStatValue, (int)stats.hunger + (int)rules.treatHungerGain);
-    stats.happiness = (uint8_t)min((int)rules.maxStatValue, (int)stats.happiness + (int)rules.treatHappinessGain);
+    stats.hunger = (uint8_t)engineMin((int)rules.maxStatValue, (int)stats.hunger + (int)rules.treatHungerGain);
+    stats.happiness = (uint8_t)engineMin((int)rules.maxStatValue, (int)stats.happiness + (int)rules.treatHappinessGain);
     if (onEvent) onEvent("TREAT_RECEIVED", nullptr);
   }
 };
