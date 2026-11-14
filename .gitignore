@@ -7,3 +7,32 @@ coverage/
 .env*
 !.env.example
 *.bundle
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# PlatformIO / ESP-IDF build artifacts
+esp32_firmware/.pio/
+esp32_firmware/build/
+esp32_firmware/components/
+esp32_firmware/data/
+esp32_firmware/dependencies.lock
+esp32_firmware/sdkconfig*
+esp32_firmware/src/
+
+# PHP Server runtime state
+php_server/cyd_*.json
+php_server/cyd_tamagotchi.bin
+php_server/firmware/
+php_server/router.php
+php_server/saves/
+php_server/coverage/
+
+# Test debug scripts
+tests/server/debug_*.php
+
+# Misc
+"@{firmware=; rules=}"
