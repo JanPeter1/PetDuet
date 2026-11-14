@@ -122,6 +122,8 @@ void cyd_storage_load_pet(TamagotchiCoreEngine& engine, uint16_t& recipesCrafted
   nvs_get_u16(h, "cnt_job", &jobsCompleted);
   nvs_get_u16(h, "cnt_spl", &spellsCast);
   nvs_get_u16(h, "cnt_trt", &treatsSent);
+  if (nvs_get_u16(h, "stk_days", &u16) == ESP_OK && u16 >= 1) engine.consecutiveLoginDays = u16;
+  if (nvs_get_u8(h, "stk_clm", &u8) == ESP_OK) engine.streakClaimedToday = (u8 != 0);
 
   // Restore core food & material counts
   uint8_t qty = 0;
@@ -133,12 +135,14 @@ void cyd_storage_load_pet(TamagotchiCoreEngine& engine, uint16_t& recipesCrafted
     if (nvs_get_u8(h, "inv_pie", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("food_berry_pie", qty);
     if (nvs_get_u8(h, "inv_jerky", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("food_sun_jerky", qty);
     if (nvs_get_u8(h, "inv_stew", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("food_kelp_stew", qty);
+    if (nvs_get_u8(h, "inv_ambrosia", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("food_ambrosia", qty);
     if (nvs_get_u8(h, "inv_salve", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("item_salve", qty);
     if (nvs_get_u8(h, "inv_elixir", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("item_energy_elixir", qty);
     if (nvs_get_u8(h, "inv_herb", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("mat_herb", qty);
     if (nvs_get_u8(h, "inv_mush", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("mat_mushroom", qty);
     if (nvs_get_u8(h, "inv_meat", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("mat_meat", qty);
     if (nvs_get_u8(h, "inv_salt", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("mat_sunstone", qty);
+    if (nvs_get_u8(h, "inv_kelp", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("mat_kelp", qty);
   }
   nvs_close(h);
 }
@@ -166,6 +170,8 @@ void cyd_storage_save_pet(const TamagotchiCoreEngine& engine, uint16_t recipesCr
   nvs_set_u16(h, "cnt_job", jobsCompleted);
   nvs_set_u16(h, "cnt_spl", spellsCast);
   nvs_set_u16(h, "cnt_trt", treatsSent);
+  nvs_set_u16(h, "stk_days", engine.consecutiveLoginDays);
+  nvs_set_u8(h, "stk_clm", engine.streakClaimedToday ? 1 : 0);
 
   nvs_set_u8(h, "inv_apple", engine.getItemQuantity("food_apple"));
   nvs_set_u8(h, "inv_snack", engine.getItemQuantity("food_snack"));
@@ -173,12 +179,14 @@ void cyd_storage_save_pet(const TamagotchiCoreEngine& engine, uint16_t recipesCr
   nvs_set_u8(h, "inv_pie", engine.getItemQuantity("food_berry_pie"));
   nvs_set_u8(h, "inv_jerky", engine.getItemQuantity("food_sun_jerky"));
   nvs_set_u8(h, "inv_stew", engine.getItemQuantity("food_kelp_stew"));
+  nvs_set_u8(h, "inv_ambrosia", engine.getItemQuantity("food_ambrosia"));
   nvs_set_u8(h, "inv_salve", engine.getItemQuantity("item_salve"));
   nvs_set_u8(h, "inv_elixir", engine.getItemQuantity("item_energy_elixir"));
   nvs_set_u8(h, "inv_herb", engine.getItemQuantity("mat_herb"));
   nvs_set_u8(h, "inv_mush", engine.getItemQuantity("mat_mushroom"));
   nvs_set_u8(h, "inv_meat", engine.getItemQuantity("mat_meat"));
   nvs_set_u8(h, "inv_salt", engine.getItemQuantity("mat_sunstone"));
+  nvs_set_u8(h, "inv_kelp", engine.getItemQuantity("mat_kelp"));
 
   nvs_commit(h);
   nvs_close(h);
@@ -203,7 +211,7 @@ bool cyd_storage_load_rules(TamagotchiCoreEngine& engine) {
   FILE* f = fopen(RULES_PATH, "r");
   if (!f) return false;
   size_t len = (size_t)st.st_size;
-  if (len > 32768) len = 32768;
+  if (len > 40960) len = 40960;
   char* buf = (char*)malloc(len + 1);
   if (!buf) {
     fclose(f);
@@ -221,10 +229,20 @@ bool cyd_storage_load_rules(TamagotchiCoreEngine& engine) {
 
 bool cyd_storage_save_rules(const char* data, size_t len, TamagotchiCoreEngine& engine) {
   if (!s_spiffs_mounted || !data || len == 0) return false;
-  FILE* f = fopen(RULES_PATH, "w");
+  const char* tmpPath = "/spiffs/rules_new.json";
+  FILE* f = fopen(tmpPath, "w");
   if (!f) return false;
-  fwrite(data, 1, len, f);
+  size_t written = fwrite(data, 1, len, f);
   fclose(f);
+  if (written != len) {
+    remove(tmpPath);
+    return false;
+  }
+  remove(RULES_PATH);
+  if (rename(tmpPath, RULES_PATH) != 0) {
+    remove(tmpPath);
+    return false;
+  }
 
   char* copy = (char*)malloc(len + 1);
   if (copy) {

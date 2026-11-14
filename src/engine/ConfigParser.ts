@@ -693,15 +693,22 @@ export function parseJsonGameRules(json: any): GameRulesConfig {
     spells: shopSpells.length > 0 ? shopSpells : DEFAULT_SHOP_CONFIG.spells,
   };
 
+  const phaseList: any[] = Array.isArray(json.lifecycle?.phases) ? json.lifecycle.phases : [];
+  const findPhase = (id: string) => phaseList.find((p) => p?.id === id);
+  const eggPhase = findPhase('egg');
+  const youthPhase = findPhase('youth');
+  const adultPhase = findPhase('adult');
+  const elderPhase = findPhase('elder');
+
   return {
     general: {
       gameTitle: json.meta?.title || 'PetDuet',
       version: json.version || '1.0.4',
-      maxStatValue: 100,
+      maxStatValue: json.stats?.food?.max || 100,
       tickRateSeconds: json.meta?.tick_interval_seconds || 60,
       socketPort: 8888,
-      baseXpRequirement: 100,
-      xpLevelMultiplier: 1.8,
+      baseXpRequirement: json.meta?.base_xp_requirement || 100,
+      xpLevelMultiplier: json.meta?.xp_level_multiplier || 1.3,
     },
     decayRates: {
       hungerDecay: json.stats?.food?.decay_per_tick || 0.25,
@@ -713,11 +720,11 @@ export function parseJsonGameRules(json: any): GameRulesConfig {
       naturalManaRegen: json.stats?.mana?.regen_per_tick || 0.5,
     },
     evolutionPhases: {
-      eggWarmthRequired: 50,
+      eggWarmthRequired: eggPhase?.warmth_required || 50,
       babyMinLevel: 1,
-      youthMinLevel: 3,
-      adultMinLevel: 8,
-      elderMinLevel: 20,
+      youthMinLevel: youthPhase?.min_level || 3,
+      adultMinLevel: adultPhase?.min_level || 8,
+      elderMinLevel: elderPhase?.min_level || 20,
     },
     biomes,
     seasons: {

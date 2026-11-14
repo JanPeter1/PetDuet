@@ -11,6 +11,7 @@ import leaderboardPhp from '../../php_server/leaderboard.php?raw';
 import indexPhp from '../../php_server/index.php?raw';
 import otaCheckPhp from '../../php_server/ota_check.php?raw';
 import otaDownloadPhp from '../../php_server/ota_download.php?raw';
+import otaReportPhp from '../../php_server/ota_report.php?raw';
 import shopPhp from '../../php_server/shop.php?raw';
 import otaManifestJson from '../../php_server/ota_manifest.json?raw';
 
@@ -24,6 +25,11 @@ export const PHP_SERVER_FILES: Record<string, { filename: string; description: s
     filename: 'ota_download.php',
     description: 'High-speed binary streaming pipeline for ESP32 firmware binaries and live rules.json.',
     code: otaDownloadPhp,
+  },
+  'ota_report.php': {
+    filename: 'ota_report.php',
+    description: 'Receives ESP32 OTA lifecycle reports (ota_valid, ota_flashed, sha256_mismatch, rules_hot_reload).',
+    code: otaReportPhp,
   },
   'shop.php': {
     filename: 'shop.php',

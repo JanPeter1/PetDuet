@@ -22,7 +22,8 @@ enum SubModalTab {
   TAB_JOBS,
   TAB_MAGIC,
   TAB_QUEST,
-  TAB_CHAT
+  TAB_CHAT,
+  TAB_TRADE
 };
 
 struct ActiveJobState {
@@ -32,11 +33,37 @@ struct ActiveJobState {
   uint32_t durationMs;
 };
 
+struct OutgoingTradeState {
+  bool active;
+  char tradeId[24];
+  char offeredId[20];
+  char offeredName[28];
+  char requestedId[20];
+  char requestedName[28];
+};
+
+struct IncomingTradeState {
+  bool active;
+  char fromDevice[24];
+  char tradeId[24];
+  char offeredId[20];
+  char offeredName[28];
+  char requestedId[20];
+  char requestedName[28];
+};
+
 struct AppRuntimeState {
   CydConfig config;
   TamagotchiCoreEngine engine;
   FriendState friendPet;
   ActiveJobState activeJob;
+
+  OutgoingTradeState outgoingTrade;
+  IncomingTradeState incomingTrade;
+  uint8_t tradeSelectedWantIdx;
+
+  uint32_t dualCastUntilMs;       // Local device pressed MGC+ waiting up to 10s
+  uint32_t friendDualCastUntilMs; // Partner device pressed MGC+ within last 10s
 
   uint16_t recipesCrafted;
   uint16_t jobsCompleted;
@@ -48,6 +75,7 @@ struct AppRuntimeState {
   bool retryPortalRequested;
   bool triggerOtaRequested;
   bool triggerSaveRequested;
+  bool triggerCloudLoadRequested;
   bool dirtyUi;
 
   SubModalTab activeModal;

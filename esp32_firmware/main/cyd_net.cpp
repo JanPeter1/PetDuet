@@ -13,6 +13,7 @@
 #include "esp_ota_ops.h"
 #include "esp_system.h"
 #include "esp_wifi.h"
+#include "mbedtls/sha256.h"
 #ifdef CONFIG_MBEDTLS_CERTIFICATE_BUNDLE
 #include "esp_crt_bundle.h"
 #endif
@@ -46,7 +47,38 @@ static int s_listen_sock = -1;
 static CydConfig* s_portal_cfg = NULL;
 static char s_scanned_options[2048] = "";
 
-static void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
+static void safe_copy(char* dst, size_t maxLen, const char* src) {
+  if (!dst || maxLen == 0) return;
+  if (!src) {
+    dst[0] = '\0';
+    return;
+  }
+  strncpy(dst, src, maxLen - 1);
+  dst[maxLen - 1] = '\0';
+}
+
+static void sha256_bytes_to_hex(const uint8_t hash[32], char outHex[65]) {
+  static const char HEX[] = "0123456789abcdef";
+  for (int i = 0; i < 32; i++) {
+    outHex[i * 2]     = HEX[(hash[i] >> 4) & 0x0F];
+    outHex[i * 2 + 1] = HEX[hash[i] & 0x0F];
+  }
+  outHex[64] = '\0';
+}
+
+static bool sha256_hex_matches(const char* actualHex, const char* expectedHex) {
+  if (!expectedHex || strlen(expectedHex) != 64 || !actualHex || strlen(actualHex) != 64) {
+    return true; // Skip check if server omitted a valid 64-char SHA256
+  }
+  for (int i = 0; i < 64; i++) {
+    if (tolower((unsigned char)actualHex[i]) != tolower((unsigned char)expectedHex[i])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+static void wifi_event_handler(void* /*arg*/, esp_event_base_t event_base, int32_t event_id, void* /*event_data*/) {
   if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
     esp_wifi_connect();
   } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
@@ -83,14 +115,21 @@ void cyd_net_init_stack(void) {
   ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL, NULL));
 }
 
-void cyd_net_mark_ota_valid(void) {
+static bool s_ota_valid_report_pending = false;
+
+void cyd_net_mark_ota_valid(const CydConfig* cfg) {
   const esp_partition_t* running = esp_ota_get_running_partition();
   esp_ota_img_states_t ota_state;
   if (running && esp_ota_get_state_partition(running, &ota_state) == ESP_OK) {
     if (ota_state == ESP_OTA_IMG_PENDING_VERIFY) {
       ESP_LOGI(TAG, "Marking new A/B OTA partition '%s' as VALID", running->label);
       esp_ota_mark_app_valid_cancel_rollback();
+      s_ota_valid_report_pending = true;
     }
+  }
+  if (s_ota_valid_report_pending && cfg && s_wifi_connected) {
+    s_ota_valid_report_pending = false;
+    cyd_net_report_ota(*cfg, "ota_valid", running ? running->label : "unknown");
   }
 }
 
@@ -247,7 +286,7 @@ static esp_err_t ap_root_get_handler(httpd_req_t* req) {
   return ESP_OK;
 }
 
-static void delayed_restart_task(void* arg) {
+static void delayed_restart_task(void* /*arg*/) {
   vTaskDelay(pdMS_TO_TICKS(1000));
   esp_restart();
 }
@@ -276,27 +315,27 @@ static esp_err_t ap_save_post_handler(httpd_req_t* req) {
   if (s_portal_cfg) {
     char tmp[160];
     if (extract_form_field(buf, "ssid_custom", tmp, sizeof(tmp)) && strlen(tmp) > 0) {
-      strncpy(s_portal_cfg->wifiSsid, tmp, sizeof(s_portal_cfg->wifiSsid) - 1);
+      safe_copy(s_portal_cfg->wifiSsid, sizeof(s_portal_cfg->wifiSsid), tmp);
     } else if (extract_form_field(buf, "ssid", tmp, sizeof(tmp)) && strlen(tmp) > 0) {
-      strncpy(s_portal_cfg->wifiSsid, tmp, sizeof(s_portal_cfg->wifiSsid) - 1);
+      safe_copy(s_portal_cfg->wifiSsid, sizeof(s_portal_cfg->wifiSsid), tmp);
     }
     if (extract_form_field(buf, "password", tmp, sizeof(tmp)) && strlen(tmp) > 0) {
-      strncpy(s_portal_cfg->wifiPass, tmp, sizeof(s_portal_cfg->wifiPass) - 1);
+      safe_copy(s_portal_cfg->wifiPass, sizeof(s_portal_cfg->wifiPass), tmp);
     }
     if (extract_form_field(buf, "device_id", tmp, sizeof(tmp)) && strlen(tmp) > 0) {
-      strncpy(s_portal_cfg->deviceId, tmp, sizeof(s_portal_cfg->deviceId) - 1);
+      safe_copy(s_portal_cfg->deviceId, sizeof(s_portal_cfg->deviceId), tmp);
     }
     if (extract_form_field(buf, "trainer_name", tmp, sizeof(tmp)) && strlen(tmp) > 0) {
-      strncpy(s_portal_cfg->trainerName, tmp, sizeof(s_portal_cfg->trainerName) - 1);
+      safe_copy(s_portal_cfg->trainerName, sizeof(s_portal_cfg->trainerName), tmp);
     }
     if (extract_form_field(buf, "friend_id", tmp, sizeof(tmp)) && strlen(tmp) > 0) {
-      strncpy(s_portal_cfg->friendId, tmp, sizeof(s_portal_cfg->friendId) - 1);
+      safe_copy(s_portal_cfg->friendId, sizeof(s_portal_cfg->friendId), tmp);
     }
     if (extract_form_field(buf, "biome", tmp, sizeof(tmp)) && strlen(tmp) > 0) {
-      strncpy(s_portal_cfg->biome, tmp, sizeof(s_portal_cfg->biome) - 1);
+      safe_copy(s_portal_cfg->biome, sizeof(s_portal_cfg->biome), tmp);
     }
     if (extract_form_field(buf, "server_url", tmp, sizeof(tmp)) && strlen(tmp) > 0) {
-      strncpy(s_portal_cfg->serverUrl, tmp, sizeof(s_portal_cfg->serverUrl) - 1);
+      safe_copy(s_portal_cfg->serverUrl, sizeof(s_portal_cfg->serverUrl), tmp);
     }
     cyd_storage_save_config(*s_portal_cfg);
   }
@@ -317,7 +356,6 @@ void cyd_net_start_ap_portal(CydConfig& cfg) {
   s_portal_cfg = &cfg;
   s_scanned_options[0] = '\0';
 
-  // Quick 2.4GHz AP scan in STA mode before launching SoftAP
   esp_wifi_stop();
   esp_wifi_set_mode(WIFI_MODE_STA);
   esp_wifi_start();
@@ -374,7 +412,7 @@ void cyd_net_stop_ap_portal(void) {
 }
 
 // ============================================================================
-// HTTP CLIENT HELPERS (PHP SERVER & OTA)
+// HTTP CLIENT HELPERS
 // ============================================================================
 struct HttpAccum {
   char* buf;
@@ -403,7 +441,7 @@ static int http_do_request(const char* url, esp_http_client_method_t method, con
   esp_http_client_config_t config = {};
   config.url = url;
   config.method = method;
-  config.timeout_ms = 6000;
+  config.timeout_ms = 5000;
   config.event_handler = outResp ? http_accum_handler : NULL;
   config.user_data = outResp ? &acc : NULL;
 #ifdef CONFIG_MBEDTLS_CERTIFICATE_BUNDLE
@@ -476,7 +514,10 @@ bool cyd_net_sync_php_server(const CydConfig& cfg, const TamagotchiCoreEngine& e
   snprintf(url, sizeof(url), "%s/register.php", cfg.serverUrl);
   int code = http_do_request(url, HTTP_METHOD_POST, body, NULL, 0);
   cJSON_free(body);
-  if (code != 200) return false;
+  if (code != 200) {
+    safe_copy(friendPet.linkMode, sizeof(friendPet.linkMode), "OFF");
+    return false;
+  }
 
   snprintf(url, sizeof(url), "%s/find_friend.php?friendId=%s", cfg.serverUrl, cfg.friendId);
   char resp[768];
@@ -485,31 +526,30 @@ bool cyd_net_sync_php_server(const CydConfig& cfg, const TamagotchiCoreEngine& e
     if (root) {
       cJSON* f = cJSON_GetObjectItemCaseSensitive(root, "friend");
       if (cJSON_IsObject(f)) {
-        cJSON* jOn = cJSON_GetObjectItemCaseSensitive(f, "isOnline");
+        cJSON* jOn   = cJSON_GetObjectItemCaseSensitive(f, "isOnline");
         cJSON* jName = cJSON_GetObjectItemCaseSensitive(f, "petName");
-        cJSON* jBio = cJSON_GetObjectItemCaseSensitive(f, "biome");
-        cJSON* jLv = cJSON_GetObjectItemCaseSensitive(f, "level");
-        cJSON* jIp = cJSON_GetObjectItemCaseSensitive(f, "ipAddress");
-        cJSON* jPh = cJSON_GetObjectItemCaseSensitive(f, "phase");
-        cJSON* jSt = cJSON_GetObjectItemCaseSensitive(f, "stats");
+        cJSON* jBio  = cJSON_GetObjectItemCaseSensitive(f, "biome");
+        cJSON* jLv   = cJSON_GetObjectItemCaseSensitive(f, "level");
+        cJSON* jIp   = cJSON_GetObjectItemCaseSensitive(f, "ipAddress");
+        cJSON* jPort = cJSON_GetObjectItemCaseSensitive(f, "port");
+        cJSON* jPh   = cJSON_GetObjectItemCaseSensitive(f, "phase");
+        cJSON* jSt   = cJSON_GetObjectItemCaseSensitive(f, "stats");
 
         if (cJSON_IsBool(jOn)) friendPet.isOnline = cJSON_IsTrue(jOn);
-        if (cJSON_IsString(jName)) {
-          strncpy(friendPet.name, jName->valuestring, sizeof(friendPet.name) - 1);
-        }
-        if (cJSON_IsString(jBio)) {
-          strncpy(friendPet.biome, jBio->valuestring, sizeof(friendPet.biome) - 1);
-        }
-        if (cJSON_IsString(jPh)) {
-          strncpy(friendPet.phase, jPh->valuestring, sizeof(friendPet.phase) - 1);
-        }
+        if (cJSON_IsString(jName)) safe_copy(friendPet.name, sizeof(friendPet.name), jName->valuestring);
+        if (cJSON_IsString(jBio)) safe_copy(friendPet.biome, sizeof(friendPet.biome), jBio->valuestring);
+        if (cJSON_IsString(jPh)) safe_copy(friendPet.phase, sizeof(friendPet.phase), jPh->valuestring);
         if (cJSON_IsNumber(jLv)) friendPet.level = (uint8_t)jLv->valueint;
-        if (cJSON_IsString(jIp)) {
-          strncpy(friendPet.ipAddress, jIp->valuestring, sizeof(friendPet.ipAddress) - 1);
-        }
+        if (cJSON_IsString(jIp)) safe_copy(friendPet.ipAddress, sizeof(friendPet.ipAddress), jIp->valuestring);
+        if (cJSON_IsNumber(jPort) && jPort->valueint > 0) friendPet.port = (uint16_t)jPort->valueint;
         if (cJSON_IsObject(jSt)) {
           cJSON* hp = cJSON_GetObjectItemCaseSensitive(jSt, "health");
+          cJSON* fd = cJSON_GetObjectItemCaseSensitive(jSt, "hunger");
           if (cJSON_IsNumber(hp)) friendPet.health = (uint8_t)hp->valueint;
+          if (cJSON_IsNumber(fd)) friendPet.hunger = (uint8_t)fd->valueint;
+        }
+        if (strcmp(friendPet.linkMode, "LAN") != 0) {
+          safe_copy(friendPet.linkMode, sizeof(friendPet.linkMode), friendPet.isOnline ? "NET" : "OFF");
         }
       }
       cJSON_Delete(root);
@@ -518,7 +558,17 @@ bool cyd_net_sync_php_server(const CydConfig& cfg, const TamagotchiCoreEngine& e
   return true;
 }
 
-bool cyd_net_cloud_save(const CydConfig& cfg, const TamagotchiCoreEngine& engine) {
+// ============================================================================
+// FULL CLOUD SAVE & RESTORE (cloud_save.php)
+// ============================================================================
+bool cyd_net_cloud_save(
+  const CydConfig& cfg,
+  const TamagotchiCoreEngine& engine,
+  uint16_t recipesCrafted,
+  uint16_t jobsCompleted,
+  uint16_t spellsCast,
+  uint16_t treatsSent
+) {
   if (!s_wifi_connected) return false;
   cJSON* doc = cJSON_CreateObject();
   cJSON_AddStringToObject(doc, "deviceId", cfg.deviceId);
@@ -529,11 +579,43 @@ bool cyd_net_cloud_save(const CydConfig& cfg, const TamagotchiCoreEngine& engine
   cJSON_AddStringToObject(pet, "phase", engine.phase);
   cJSON_AddNumberToObject(pet, "level", engine.level);
   cJSON_AddNumberToObject(pet, "xp", engine.xp);
+  cJSON_AddNumberToObject(pet, "xpNext", engine.xpNext);
   cJSON_AddNumberToObject(pet, "coins", engine.coins);
+  cJSON_AddNumberToObject(pet, "eggWarmth", engine.eggWarmth);
+  cJSON_AddNumberToObject(pet, "satietyTicks", engine.satietyTicks);
+  cJSON_AddBoolToObject(pet, "isSick", engine.isSick);
+  cJSON_AddNumberToObject(pet, "streakDays", engine.consecutiveLoginDays);
+  cJSON_AddBoolToObject(pet, "streakClaimed", engine.streakClaimedToday);
+
+  cJSON* st = cJSON_CreateObject();
+  cJSON_AddNumberToObject(st, "health", engine.stats.health);
+  cJSON_AddNumberToObject(st, "hunger", engine.stats.hunger);
+  cJSON_AddNumberToObject(st, "energy", engine.stats.energy);
+  cJSON_AddNumberToObject(st, "hygiene", engine.stats.hygiene);
+  cJSON_AddNumberToObject(st, "happiness", engine.stats.happiness);
+  cJSON_AddNumberToObject(st, "mana", engine.stats.mana);
+  cJSON_AddItemToObject(pet, "stats", st);
+
+  cJSON* cnt = cJSON_CreateObject();
+  cJSON_AddNumberToObject(cnt, "recipesCrafted", recipesCrafted);
+  cJSON_AddNumberToObject(cnt, "jobsCompleted", jobsCompleted);
+  cJSON_AddNumberToObject(cnt, "spellsCast", spellsCast);
+  cJSON_AddNumberToObject(cnt, "treatsSent", treatsSent);
+  cJSON_AddItemToObject(pet, "counters", cnt);
+
+  cJSON* inv = cJSON_CreateArray();
+  for (uint8_t i = 0; i < engine.inventoryCount; i++) {
+    cJSON* slot = cJSON_CreateObject();
+    cJSON_AddStringToObject(slot, "id", engine.inventory[i].id);
+    cJSON_AddNumberToObject(slot, "qty", engine.inventory[i].quantity);
+    cJSON_AddItemToArray(inv, slot);
+  }
+  cJSON_AddItemToObject(pet, "inventory", inv);
   cJSON_AddItemToObject(doc, "petData", pet);
 
   char* body = cJSON_PrintUnformatted(doc);
   cJSON_Delete(doc);
+  if (!body) return false;
 
   char url[220];
   snprintf(url, sizeof(url), "%s" CLOUD_SAVE_ENDPOINT, cfg.serverUrl);
@@ -542,9 +624,147 @@ bool cyd_net_cloud_save(const CydConfig& cfg, const TamagotchiCoreEngine& engine
   return code == 200;
 }
 
+bool cyd_net_cloud_load(
+  const CydConfig& cfg,
+  TamagotchiCoreEngine& engine,
+  uint16_t& recipesCrafted,
+  uint16_t& jobsCompleted,
+  uint16_t& spellsCast,
+  uint16_t& treatsSent
+) {
+  if (!s_wifi_connected) return false;
+  char url[220];
+  snprintf(url, sizeof(url), "%s" CLOUD_SAVE_ENDPOINT "?deviceId=%s", cfg.serverUrl, cfg.deviceId);
+  char* resp = (char*)malloc(2048);
+  if (!resp) return false;
+
+  int code = http_do_request(url, HTTP_METHOD_GET, NULL, resp, 2048);
+  if (code != 200) {
+    free(resp);
+    return false;
+  }
+
+  cJSON* doc = cJSON_Parse(resp);
+  free(resp);
+  if (!doc) return false;
+
+  cJSON* pet = cJSON_GetObjectItemCaseSensitive(doc, "petData");
+  if (!cJSON_IsObject(pet)) {
+    cJSON_Delete(doc);
+    return false;
+  }
+
+  cJSON* v = NULL;
+  if ((v = cJSON_GetObjectItemCaseSensitive(pet, "name")) && cJSON_IsString(v)) safe_copy(engine.name, sizeof(engine.name), v->valuestring);
+  if ((v = cJSON_GetObjectItemCaseSensitive(pet, "biome")) && cJSON_IsString(v)) safe_copy(engine.biome, sizeof(engine.biome), v->valuestring);
+  if ((v = cJSON_GetObjectItemCaseSensitive(pet, "phase")) && cJSON_IsString(v)) safe_copy(engine.phase, sizeof(engine.phase), v->valuestring);
+  if ((v = cJSON_GetObjectItemCaseSensitive(pet, "level")) && cJSON_IsNumber(v)) engine.level = (uint8_t)v->valueint;
+  if ((v = cJSON_GetObjectItemCaseSensitive(pet, "xp")) && cJSON_IsNumber(v)) engine.xp = (uint16_t)v->valueint;
+  if ((v = cJSON_GetObjectItemCaseSensitive(pet, "xpNext")) && cJSON_IsNumber(v) && v->valueint >= 50) engine.xpNext = (uint16_t)v->valueint;
+  if ((v = cJSON_GetObjectItemCaseSensitive(pet, "coins")) && cJSON_IsNumber(v)) engine.coins = (uint16_t)v->valueint;
+  if ((v = cJSON_GetObjectItemCaseSensitive(pet, "eggWarmth")) && cJSON_IsNumber(v)) engine.eggWarmth = (uint8_t)v->valueint;
+  if ((v = cJSON_GetObjectItemCaseSensitive(pet, "satietyTicks")) && cJSON_IsNumber(v)) engine.satietyTicks = (uint8_t)v->valueint;
+  if ((v = cJSON_GetObjectItemCaseSensitive(pet, "isSick")) && cJSON_IsBool(v)) engine.isSick = cJSON_IsTrue(v);
+  if ((v = cJSON_GetObjectItemCaseSensitive(pet, "streakDays")) && cJSON_IsNumber(v) && v->valueint >= 1) engine.consecutiveLoginDays = (uint16_t)v->valueint;
+  if ((v = cJSON_GetObjectItemCaseSensitive(pet, "streakClaimed")) && cJSON_IsBool(v)) engine.streakClaimedToday = cJSON_IsTrue(v);
+
+  cJSON* st = cJSON_GetObjectItemCaseSensitive(pet, "stats");
+  if (cJSON_IsObject(st)) {
+    if ((v = cJSON_GetObjectItemCaseSensitive(st, "health")) && cJSON_IsNumber(v)) engine.stats.health = (uint8_t)v->valueint;
+    if ((v = cJSON_GetObjectItemCaseSensitive(st, "hunger")) && cJSON_IsNumber(v)) engine.stats.hunger = (uint8_t)v->valueint;
+    if ((v = cJSON_GetObjectItemCaseSensitive(st, "energy")) && cJSON_IsNumber(v)) engine.stats.energy = (uint8_t)v->valueint;
+    if ((v = cJSON_GetObjectItemCaseSensitive(st, "hygiene")) && cJSON_IsNumber(v)) engine.stats.hygiene = (uint8_t)v->valueint;
+    if ((v = cJSON_GetObjectItemCaseSensitive(st, "happiness")) && cJSON_IsNumber(v)) engine.stats.happiness = (uint8_t)v->valueint;
+    if ((v = cJSON_GetObjectItemCaseSensitive(st, "mana")) && cJSON_IsNumber(v)) engine.stats.mana = (uint8_t)v->valueint;
+  }
+
+  cJSON* cnt = cJSON_GetObjectItemCaseSensitive(pet, "counters");
+  if (cJSON_IsObject(cnt)) {
+    if ((v = cJSON_GetObjectItemCaseSensitive(cnt, "recipesCrafted")) && cJSON_IsNumber(v)) recipesCrafted = (uint16_t)v->valueint;
+    if ((v = cJSON_GetObjectItemCaseSensitive(cnt, "jobsCompleted")) && cJSON_IsNumber(v)) jobsCompleted = (uint16_t)v->valueint;
+    if ((v = cJSON_GetObjectItemCaseSensitive(cnt, "spellsCast")) && cJSON_IsNumber(v)) spellsCast = (uint16_t)v->valueint;
+    if ((v = cJSON_GetObjectItemCaseSensitive(cnt, "treatsSent")) && cJSON_IsNumber(v)) treatsSent = (uint16_t)v->valueint;
+  }
+
+  cJSON* inv = cJSON_GetObjectItemCaseSensitive(pet, "inventory");
+  if (cJSON_IsArray(inv)) {
+    engine.inventoryCount = 0;
+    cJSON* item = NULL;
+    cJSON_ArrayForEach(item, inv) {
+      cJSON* jId = cJSON_GetObjectItemCaseSensitive(item, "id");
+      cJSON* jQty = cJSON_GetObjectItemCaseSensitive(item, "qty");
+      if (cJSON_IsString(jId) && cJSON_IsNumber(jQty) && jQty->valueint > 0) {
+        engine.addKnownItemById(jId->valuestring, (uint8_t)jQty->valueint);
+      }
+    }
+  }
+
+  cJSON_Delete(doc);
+  return true;
+}
+
 // ============================================================================
-// NON-BLOCKING DIRECT P2P SOCKETS (Port 8888) + PHP RELAY FALLBACK
+// SERVER SHOP VALIDATION (shop.php)
 // ============================================================================
+int cyd_net_shop_purchase(
+  const CydConfig& cfg,
+  const char* itemType,
+  const char* itemId,
+  uint16_t currentCoins,
+  uint8_t currentLevel,
+  char* outErrMsg,
+  size_t errLen
+) {
+  if (outErrMsg && errLen > 0) outErrMsg[0] = '\0';
+  if (!s_wifi_connected) return -1;
+
+  cJSON* doc = cJSON_CreateObject();
+  cJSON_AddStringToObject(doc, "deviceId", cfg.deviceId);
+  cJSON_AddStringToObject(doc, "itemType", itemType ? itemType : "item");
+  cJSON_AddStringToObject(doc, "itemId", itemId ? itemId : "");
+  cJSON_AddNumberToObject(doc, "currentCoins", currentCoins);
+  cJSON_AddNumberToObject(doc, "currentLevel", currentLevel);
+  char* body = cJSON_PrintUnformatted(doc);
+  cJSON_Delete(doc);
+  if (!body) return -1;
+
+  char url[220];
+  snprintf(url, sizeof(url), "%s" SHOP_ENDPOINT, cfg.serverUrl);
+  char resp[512];
+  int code = http_do_request(url, HTTP_METHOD_POST, body, resp, sizeof(resp));
+  cJSON_free(body);
+
+  if (code == 200) return 1;
+  if (code < 0 || code >= 500) return -1; // Offline / unreachable -> allow local engine purchase
+
+  cJSON* errJson = cJSON_Parse(resp);
+  if (errJson) {
+    cJSON* msg = cJSON_GetObjectItemCaseSensitive(errJson, "message");
+    if (cJSON_IsString(msg) && outErrMsg) {
+      safe_copy(outErrMsg, errLen, msg->valuestring);
+    }
+    cJSON_Delete(errJson);
+  }
+  return 0;
+}
+
+// ============================================================================
+// NON-BLOCKING P2P SOCKETS (Port 8888) + PHP RELAY (GET / POST sync.php)
+// ============================================================================
+static void extract_packet_fields(cJSON* obj, NetPacket& pkt) {
+  if (!cJSON_IsObject(obj)) return;
+  cJSON* v = NULL;
+  if ((v = cJSON_GetObjectItemCaseSensitive(obj, "type")) && cJSON_IsString(v)) safe_copy(pkt.type, sizeof(pkt.type), v->valuestring);
+  if ((v = cJSON_GetObjectItemCaseSensitive(obj, "from")) && cJSON_IsString(v)) safe_copy(pkt.from, sizeof(pkt.from), v->valuestring);
+  if ((v = cJSON_GetObjectItemCaseSensitive(obj, "fromDeviceId")) && cJSON_IsString(v)) safe_copy(pkt.from, sizeof(pkt.from), v->valuestring);
+  if ((v = cJSON_GetObjectItemCaseSensitive(obj, "text")) && cJSON_IsString(v)) safe_copy(pkt.text, sizeof(pkt.text), v->valuestring);
+  if ((v = cJSON_GetObjectItemCaseSensitive(obj, "tradeId")) && cJSON_IsString(v)) safe_copy(pkt.tradeId, sizeof(pkt.tradeId), v->valuestring);
+  if ((v = cJSON_GetObjectItemCaseSensitive(obj, "offeredId")) && cJSON_IsString(v)) safe_copy(pkt.offeredId, sizeof(pkt.offeredId), v->valuestring);
+  if ((v = cJSON_GetObjectItemCaseSensitive(obj, "offeredName")) && cJSON_IsString(v)) safe_copy(pkt.offeredName, sizeof(pkt.offeredName), v->valuestring);
+  if ((v = cJSON_GetObjectItemCaseSensitive(obj, "requestedId")) && cJSON_IsString(v)) safe_copy(pkt.requestedId, sizeof(pkt.requestedId), v->valuestring);
+  if ((v = cJSON_GetObjectItemCaseSensitive(obj, "requestedName")) && cJSON_IsString(v)) safe_copy(pkt.requestedName, sizeof(pkt.requestedName), v->valuestring);
+}
+
 void cyd_net_start_p2p_server(uint16_t port) {
   if (s_listen_sock >= 0) close(s_listen_sock);
   s_listen_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
@@ -578,7 +798,7 @@ void cyd_net_poll_p2p_socket(NetPacketCb onPacket) {
   struct timeval tv = { .tv_sec = 0, .tv_usec = 150000 };
   setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
-  char rxBuf[384];
+  char rxBuf[512];
   int len = recv(sock, rxBuf, sizeof(rxBuf) - 1, 0);
   close(sock);
   if (len <= 0) return;
@@ -586,35 +806,72 @@ void cyd_net_poll_p2p_socket(NetPacketCb onPacket) {
 
   cJSON* doc = cJSON_Parse(rxBuf);
   if (doc) {
-    cJSON* jType = cJSON_GetObjectItemCaseSensitive(doc, "type");
-    cJSON* jText = cJSON_GetObjectItemCaseSensitive(doc, "text");
-    if (cJSON_IsString(jType) && onPacket) {
-      onPacket(jType->valuestring, cJSON_IsString(jText) ? jText->valuestring : "");
+    NetPacket pkt = {};
+    extract_packet_fields(doc, pkt);
+    if (strlen(pkt.type) > 0 && onPacket) {
+      onPacket(pkt);
     }
     cJSON_Delete(doc);
   }
 }
 
-void cyd_net_send_packet(const CydConfig& cfg, const FriendState& friendPet, const char* type, const char* textPayload) {
-  if (!s_wifi_connected) return;
+void cyd_net_poll_relay(const CydConfig& cfg, NetPacketCb onPacket) {
+  if (!s_wifi_connected || !onPacket) return;
+  char url[220];
+  snprintf(url, sizeof(url), "%s/sync.php?deviceId=%s", cfg.serverUrl, cfg.deviceId);
+  char* resp = (char*)malloc(2048);
+  if (!resp) return;
 
-  // Attempt direct TCP P2P connection first
-  if (strlen(friendPet.ipAddress) > 0) {
+  if (http_do_request(url, HTTP_METHOD_GET, NULL, resp, 2048) == 200) {
+    cJSON* root = cJSON_Parse(resp);
+    if (root) {
+      cJSON* msgs = cJSON_GetObjectItemCaseSensitive(root, "messages");
+      if (cJSON_IsArray(msgs)) {
+        cJSON* m = NULL;
+        cJSON_ArrayForEach(m, msgs) {
+          NetPacket pkt = {};
+          extract_packet_fields(m, pkt);
+          cJSON* payload = cJSON_GetObjectItemCaseSensitive(m, "payload");
+          if (cJSON_IsObject(payload)) {
+            extract_packet_fields(payload, pkt);
+          }
+          if (strlen(pkt.type) > 0) {
+            onPacket(pkt);
+          }
+        }
+      }
+      cJSON_Delete(root);
+    }
+  }
+  free(resp);
+}
+
+bool cyd_net_send_packet_ex(const CydConfig& cfg, FriendState& friendPet, const NetPacket& pkt) {
+  if (!s_wifi_connected) return false;
+
+  // 1. Attempt direct TCP P2P connection first
+  if (strlen(friendPet.ipAddress) > 0 && strcmp(friendPet.ipAddress, "0.0.0.0") != 0) {
     int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
     if (sock >= 0) {
-      struct timeval tv = { .tv_sec = 1, .tv_usec = 200000 };
+      struct timeval tv = { .tv_sec = 0, .tv_usec = 800000 };
       setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 
       struct sockaddr_in dest = {};
       dest.sin_family = AF_INET;
-      dest.sin_port = htons(friendPet.port);
+      dest.sin_port = htons(friendPet.port > 0 ? friendPet.port : SOCKET_PORT);
       dest.sin_addr.s_addr = inet_addr(friendPet.ipAddress);
 
       if (connect(sock, (struct sockaddr*)&dest, sizeof(dest)) == 0) {
         cJSON* doc = cJSON_CreateObject();
         cJSON_AddStringToObject(doc, "from", cfg.deviceId);
-        cJSON_AddStringToObject(doc, "type", type);
-        cJSON_AddStringToObject(doc, "text", textPayload ? textPayload : "");
+        cJSON_AddStringToObject(doc, "type", pkt.type);
+        cJSON_AddStringToObject(doc, "text", pkt.text);
+        if (strlen(pkt.tradeId) > 0)       cJSON_AddStringToObject(doc, "tradeId", pkt.tradeId);
+        if (strlen(pkt.offeredId) > 0)     cJSON_AddStringToObject(doc, "offeredId", pkt.offeredId);
+        if (strlen(pkt.offeredName) > 0)   cJSON_AddStringToObject(doc, "offeredName", pkt.offeredName);
+        if (strlen(pkt.requestedId) > 0)   cJSON_AddStringToObject(doc, "requestedId", pkt.requestedId);
+        if (strlen(pkt.requestedName) > 0) cJSON_AddStringToObject(doc, "requestedName", pkt.requestedName);
+
         char* out = cJSON_PrintUnformatted(doc);
         cJSON_Delete(doc);
         if (out) {
@@ -623,37 +880,57 @@ void cyd_net_send_packet(const CydConfig& cfg, const FriendState& friendPet, con
           cJSON_free(out);
         }
         close(sock);
-        return;
+        safe_copy(friendPet.linkMode, sizeof(friendPet.linkMode), "LAN");
+        return true;
       }
       close(sock);
     }
   }
 
-  // Fallback: PHP server relay sync.php
+  // 2. Fallback: PHP Server Mailbox Relay (POST /sync.php)
   cJSON* doc = cJSON_CreateObject();
   cJSON_AddStringToObject(doc, "fromDeviceId", cfg.deviceId);
-  cJSON_AddStringToObject(doc, "toDeviceId", friendPet.deviceId);
-  cJSON_AddStringToObject(doc, "type", type);
+  cJSON_AddStringToObject(doc, "toDeviceId", strlen(friendPet.deviceId) > 0 ? friendPet.deviceId : cfg.friendId);
+  cJSON_AddStringToObject(doc, "type", pkt.type);
+
   cJSON* payload = cJSON_CreateObject();
-  cJSON_AddStringToObject(payload, "text", textPayload ? textPayload : "");
+  cJSON_AddStringToObject(payload, "text", pkt.text);
+  if (strlen(pkt.tradeId) > 0)       cJSON_AddStringToObject(payload, "tradeId", pkt.tradeId);
+  if (strlen(pkt.offeredId) > 0)     cJSON_AddStringToObject(payload, "offeredId", pkt.offeredId);
+  if (strlen(pkt.offeredName) > 0)   cJSON_AddStringToObject(payload, "offeredName", pkt.offeredName);
+  if (strlen(pkt.requestedId) > 0)   cJSON_AddStringToObject(payload, "requestedId", pkt.requestedId);
+  if (strlen(pkt.requestedName) > 0) cJSON_AddStringToObject(payload, "requestedName", pkt.requestedName);
   cJSON_AddItemToObject(doc, "payload", payload);
 
   char* body = cJSON_PrintUnformatted(doc);
   cJSON_Delete(doc);
+  if (!body) return false;
 
   char url[220];
   snprintf(url, sizeof(url), "%s/sync.php", cfg.serverUrl);
-  http_do_request(url, HTTP_METHOD_POST, body, NULL, 0);
+  int code = http_do_request(url, HTTP_METHOD_POST, body, NULL, 0);
   cJSON_free(body);
+  if (code == 200) {
+    safe_copy(friendPet.linkMode, sizeof(friendPet.linkMode), "NET");
+    return true;
+  }
+  return false;
+}
+
+void cyd_net_send_packet(const CydConfig& cfg, FriendState& friendPet, const char* type, const char* textPayload) {
+  NetPacket pkt = {};
+  safe_copy(pkt.type, sizeof(pkt.type), type);
+  safe_copy(pkt.from, sizeof(pkt.from), cfg.deviceId);
+  safe_copy(pkt.text, sizeof(pkt.text), textPayload);
+  cyd_net_send_packet_ex(cfg, friendPet, pkt);
 }
 
 // ============================================================================
-// DUAL-SLOT A/B OTA FIRMWARE & SPIFFS RULES UPDATE
+// DUAL-SLOT A/B OTA FIRMWARE & SPIFFS RULES UPDATE (WITH SHA256 CHECKSUM)
 // ============================================================================
 static void resolve_ota_url(const CydConfig& cfg, const char* pathOrUrl, char* out, size_t maxLen) {
   if (strncmp(pathOrUrl, "http://", 7) == 0 || strncmp(pathOrUrl, "https://", 8) == 0) {
-    strncpy(out, pathOrUrl, maxLen - 1);
-    out[maxLen - 1] = '\0';
+    safe_copy(out, maxLen, pathOrUrl);
   } else if (pathOrUrl[0] == '/') {
     snprintf(out, maxLen, "%s%s", cfg.serverUrl, pathOrUrl);
   } else {
@@ -661,7 +938,33 @@ static void resolve_ota_url(const CydConfig& cfg, const char* pathOrUrl, char* o
   }
 }
 
-static bool perform_firmware_ota(const char* downloadUrl, int expectedSize, OtaProgressCb progressCb) {
+void cyd_net_report_ota(const CydConfig& cfg, const char* event, const char* detail) {
+  if (!s_wifi_connected) return;
+  const esp_partition_t* running = esp_ota_get_running_partition();
+
+  cJSON* doc = cJSON_CreateObject();
+  cJSON_AddStringToObject(doc, "deviceId", cfg.deviceId);
+  cJSON_AddStringToObject(doc, "event", event ? event : "status");
+  cJSON_AddStringToObject(doc, "version", FIRMWARE_VERSION);
+  cJSON_AddStringToObject(doc, "partition", running ? running->label : "unknown");
+  cJSON_AddStringToObject(doc, "detail", detail ? detail : "");
+  char* body = cJSON_PrintUnformatted(doc);
+  cJSON_Delete(doc);
+  if (!body) return;
+
+  char url[220];
+  snprintf(url, sizeof(url), "%s/ota_report.php", cfg.serverUrl);
+  http_do_request(url, HTTP_METHOD_POST, body, NULL, 0);
+  cJSON_free(body);
+}
+
+static bool perform_firmware_ota(
+  const CydConfig& cfg,
+  const char* downloadUrl,
+  int expectedSize,
+  const char* expectedSha256,
+  OtaProgressCb progressCb
+) {
   ESP_LOGI(TAG, "Starting A/B Firmware OTA from %s", downloadUrl);
   if (progressCb) progressCb("Verbinde mit OTA-Server...", 0);
   cyd_sound_level_up();
@@ -717,6 +1020,10 @@ static bool perform_firmware_ota(const char* downloadUrl, int expectedSize, OtaP
     return false;
   }
 
+  mbedtls_sha256_context shaCtx;
+  mbedtls_sha256_init(&shaCtx);
+  mbedtls_sha256_starts(&shaCtx, 0);
+
   int written = 0;
   int lastPct = -1;
   bool ok = true;
@@ -727,6 +1034,7 @@ static bool perform_firmware_ota(const char* downloadUrl, int expectedSize, OtaP
       break;
     }
     if (n == 0) break;
+    mbedtls_sha256_update(&shaCtx, chunk, (size_t)n);
     if (esp_ota_write(otaHandle, chunk, (size_t)n) != ESP_OK) {
       ok = false;
       break;
@@ -745,8 +1053,23 @@ static bool perform_firmware_ota(const char* downloadUrl, int expectedSize, OtaP
   esp_http_client_close(client);
   esp_http_client_cleanup(client);
 
+  uint8_t shaBin[32];
+  char actualHex[65];
+  mbedtls_sha256_finish(&shaCtx, shaBin);
+  mbedtls_sha256_free(&shaCtx);
+  sha256_bytes_to_hex(shaBin, actualHex);
+
+  if (ok && !sha256_hex_matches(actualHex, expectedSha256)) {
+    ESP_LOGE(TAG, "OTA SHA256 mismatch! actual=%s expected=%s", actualHex, expectedSha256);
+    if (progressCb) progressCb("SHA256 Pruefung fehlgeschlagen!", 0);
+    cyd_net_report_ota(cfg, "sha256_mismatch", actualHex);
+    esp_ota_abort(otaHandle);
+    return false;
+  }
+
   if (!ok || written <= 0 || esp_ota_end(otaHandle) != ESP_OK) {
     esp_ota_abort(otaHandle);
+    cyd_net_report_ota(cfg, "ota_write_failed", "esp_ota_end");
     return false;
   }
 
@@ -754,7 +1077,8 @@ static bool perform_firmware_ota(const char* downloadUrl, int expectedSize, OtaP
     return false;
   }
 
-  if (progressCb) progressCb("OTA OK! Starte neu...", 100);
+  cyd_net_report_ota(cfg, "ota_flashed", updatePart->label);
+  if (progressCb) progressCb("SHA256 OK! Starte neu...", 100);
   cyd_sound_level_up();
   vTaskDelay(pdMS_TO_TICKS(1500));
   esp_restart();
@@ -773,10 +1097,11 @@ int cyd_net_check_ota(
     return -1;
   }
 
+  const char* activeRulesVer = (strlen(engine.rules.version) > 0) ? engine.rules.version : RULES_VERSION;
   char url[280];
   snprintf(url, sizeof(url),
            "%s" OTA_CHECK_ENDPOINT "?device=%s&fw_version=%s&rules_version=%s",
-           cfg.serverUrl, cfg.deviceId, FIRMWARE_VERSION, RULES_VERSION);
+           cfg.serverUrl, cfg.deviceId, FIRMWARE_VERSION, activeRulesVer);
 
   char* resp = (char*)malloc(2048);
   if (!resp) return -1;
@@ -801,16 +1126,40 @@ int cyd_net_check_ota(
   int result = 0;
   if (rulesAvail) {
     cJSON* rUrl = cJSON_GetObjectItemCaseSensitive(doc, "rules_url");
+    cJSON* rSha = cJSON_GetObjectItemCaseSensitive(doc, "rules_sha256");
+    const char* expSha = cJSON_IsString(rSha) ? rSha->valuestring : "";
+
     if (cJSON_IsString(rUrl)) {
       char fullUrl[260];
       resolve_ota_url(cfg, rUrl->valuestring, fullUrl, sizeof(fullUrl));
-      char* rulesBuf = (char*)malloc(16384);
+      char* rulesBuf = (char*)malloc(36864);
       if (rulesBuf) {
-        if (http_do_request(fullUrl, HTTP_METHOD_GET, NULL, rulesBuf, 16384) == 200) {
-          cyd_storage_save_rules(rulesBuf, strlen(rulesBuf), engine);
-          cyd_sound_level_up();
-          if (outMessage) snprintf(outMessage, outMsgLen, "Regeln per OTA geladen!");
-          result = 1;
+        if (http_do_request(fullUrl, HTTP_METHOD_GET, NULL, rulesBuf, 36864) == 200) {
+          size_t rLen = strlen(rulesBuf);
+          uint8_t shaBin[32];
+          char actualHex[65];
+          mbedtls_sha256_context rShaCtx;
+          mbedtls_sha256_init(&rShaCtx);
+          mbedtls_sha256_starts(&rShaCtx, 0);
+          mbedtls_sha256_update(&rShaCtx, (const unsigned char*)rulesBuf, rLen);
+          mbedtls_sha256_finish(&rShaCtx, shaBin);
+          mbedtls_sha256_free(&rShaCtx);
+          sha256_bytes_to_hex(shaBin, actualHex);
+
+          cJSON* parsedRules = cJSON_Parse(rulesBuf);
+          if (parsedRules && sha256_hex_matches(actualHex, expSha)) {
+            cJSON_Delete(parsedRules);
+            if (cyd_storage_save_rules(rulesBuf, rLen, engine)) {
+              cyd_sound_level_up();
+              if (outMessage) snprintf(outMessage, outMsgLen, "Regeln (SHA256 OK) geladen!");
+              cyd_net_report_ota(cfg, "rules_hot_reload", "ok");
+              result = 1;
+            }
+          } else {
+            if (parsedRules) cJSON_Delete(parsedRules);
+            if (outMessage) snprintf(outMessage, outMsgLen, "Regeln SHA256/JSON Fehler!");
+            result = -1;
+          }
         }
         free(rulesBuf);
       }
@@ -818,13 +1167,16 @@ int cyd_net_check_ota(
   } else if (fwAvail) {
     cJSON* fUrl = cJSON_GetObjectItemCaseSensitive(doc, "fw_url");
     cJSON* fSz  = cJSON_GetObjectItemCaseSensitive(doc, "fw_size");
+    cJSON* fSha = cJSON_GetObjectItemCaseSensitive(doc, "fw_sha256");
     if (cJSON_IsString(fUrl)) {
       char fullUrl[260];
       resolve_ota_url(cfg, fUrl->valuestring, fullUrl, sizeof(fullUrl));
       int fwSize = cJSON_IsNumber(fSz) ? fSz->valueint : 0;
+      char expSha[65] = "";
+      if (cJSON_IsString(fSha)) safe_copy(expSha, sizeof(expSha), fSha->valuestring);
       cJSON_Delete(doc);
-      if (!perform_firmware_ota(fullUrl, fwSize, progressCb)) {
-        if (outMessage) snprintf(outMessage, outMsgLen, "OTA Download Fehler!");
+      if (!perform_firmware_ota(cfg, fullUrl, fwSize, expSha, progressCb)) {
+        if (outMessage) snprintf(outMessage, outMsgLen, "OTA SHA256/Download Fehler!");
         return -1;
       }
       return 1;

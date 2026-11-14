@@ -22,34 +22,121 @@ static void on_ota_progress(const char* stage, int percent) {
   cyd_lvgl_show_ota_progress(stage, percent);
 }
 
-static void on_p2p_packet(const char* type, const char* text) {
-  if (!type) return;
-  if (strcmp(type, "TREAT") == 0) {
+static void handle_net_packet(const NetPacket& pkt, const char* viaMode) {
+  if (strlen(pkt.type) == 0) return;
+
+  if (viaMode && strlen(viaMode) > 0) {
+    if (strcmp(viaMode, "LAN") == 0 || strcmp(s_app.friendPet.linkMode, "LAN") != 0) {
+      strncpy(s_app.friendPet.linkMode, viaMode, sizeof(s_app.friendPet.linkMode) - 1);
+      s_app.friendPet.linkMode[sizeof(s_app.friendPet.linkMode) - 1] = '\0';
+    }
+  }
+
+  if (strcmp(pkt.type, "TREAT") == 0) {
     cyd_sound_treat_received();
     s_app.engine.receiveRemoteTreat();
     cyd_lvgl_show_banner("Freund hat Snack gesendet!", 3000);
-  } else if (strcmp(type, "CHAT") == 0) {
+  } else if (strcmp(pkt.type, "CHAT") == 0) {
     cyd_sound_treat_received();
-    if (text) {
-      strncpy(s_app.friendPet.speechBalloon, text, sizeof(s_app.friendPet.speechBalloon) - 1);
+    if (strlen(pkt.text) > 0) {
+      strncpy(s_app.friendPet.speechBalloon, pkt.text, sizeof(s_app.friendPet.speechBalloon) - 1);
       s_app.friendPet.speechBalloon[sizeof(s_app.friendPet.speechBalloon) - 1] = '\0';
       s_app.friendPet.balloonUntilMs = cyd_millis() + 6000;
     }
-  } else if (strcmp(type, "MAGIC") == 0) {
+  } else if (strcmp(pkt.type, "MAGIC") == 0) {
     cyd_sound_treat_received();
     s_app.engine.stats.health = (uint8_t)engineMin(100, s_app.engine.stats.health + 30);
     s_app.engine.stats.happiness = (uint8_t)engineMin(100, s_app.engine.stats.happiness + 25);
     cyd_lvgl_show_banner("Freund-Segen erhalten!", 3000);
-  } else if (strcmp(type, "QUEST") == 0) {
+  } else if (strcmp(pkt.type, "MAGIC_SYNC") == 0) {
+    uint32_t now = cyd_millis();
+    if (s_app.dualCastUntilMs > 0 && now <= s_app.dualCastUntilMs) {
+      s_app.dualCastUntilMs = 0;
+      s_app.friendDualCastUntilMs = 0;
+      s_app.engine.stats.health = (uint8_t)engineMin(100, s_app.engine.stats.health + 50);
+      s_app.engine.stats.happiness = (uint8_t)engineMin(100, s_app.engine.stats.happiness + 40);
+      s_app.engine.addXP(100);
+      s_app.engine.addKnownItemById("food_berry_pie", 1);
+      cyd_sound_level_up();
+      cyd_lvgl_show_banner("ASTRALE HARMONIE! +100XP +Tarte!", 3500);
+    } else {
+      s_app.friendDualCastUntilMs = now + 10000U;
+      cyd_sound_treat_received();
+      cyd_lvgl_show_banner("Freund ruft Harmonie! Jetzt MGC+!", 3500);
+    }
+  } else if (strcmp(pkt.type, "QUEST") == 0) {
     cyd_sound_treat_received();
     s_app.engine.coins += 20;
     s_app.engine.addXP(25);
     cyd_lvgl_show_banner("Koop-Quest vom Freund! +20$", 3000);
-  } else if (strcmp(type, "TRADE") == 0) {
+  } else if (strcmp(pkt.type, "TRADE") == 0) {
     cyd_sound_treat_received();
     cyd_lvgl_show_banner("Tausch-Angebot erhalten!", 3000);
+  } else if (strcmp(pkt.type, "TRADE_OFFER") == 0) {
+    s_app.incomingTrade.active = true;
+    const char* fromSrc = strlen(pkt.from) > 0 ? pkt.from : s_app.friendPet.deviceId;
+    strncpy(s_app.incomingTrade.fromDevice, fromSrc, sizeof(s_app.incomingTrade.fromDevice) - 1);
+    s_app.incomingTrade.fromDevice[sizeof(s_app.incomingTrade.fromDevice) - 1] = '\0';
+    strncpy(s_app.incomingTrade.tradeId, pkt.tradeId, sizeof(s_app.incomingTrade.tradeId) - 1);
+    s_app.incomingTrade.tradeId[sizeof(s_app.incomingTrade.tradeId) - 1] = '\0';
+    strncpy(s_app.incomingTrade.offeredId, pkt.offeredId, sizeof(s_app.incomingTrade.offeredId) - 1);
+    s_app.incomingTrade.offeredId[sizeof(s_app.incomingTrade.offeredId) - 1] = '\0';
+    const char* offName = strlen(pkt.offeredName) > 0 ? pkt.offeredName : pkt.offeredId;
+    strncpy(s_app.incomingTrade.offeredName, offName, sizeof(s_app.incomingTrade.offeredName) - 1);
+    s_app.incomingTrade.offeredName[sizeof(s_app.incomingTrade.offeredName) - 1] = '\0';
+    strncpy(s_app.incomingTrade.requestedId, pkt.requestedId, sizeof(s_app.incomingTrade.requestedId) - 1);
+    s_app.incomingTrade.requestedId[sizeof(s_app.incomingTrade.requestedId) - 1] = '\0';
+    const char* reqName = strlen(pkt.requestedName) > 0 ? pkt.requestedName : "Geschenk";
+    strncpy(s_app.incomingTrade.requestedName, reqName, sizeof(s_app.incomingTrade.requestedName) - 1);
+    s_app.incomingTrade.requestedName[sizeof(s_app.incomingTrade.requestedName) - 1] = '\0';
+    cyd_sound_treat_received();
+    cyd_lvgl_show_banner("Tausch-Angebot! TRADE druecken!", 3500);
+    if (s_app.activeModal == TAB_TRADE) {
+      cyd_lvgl_open_modal(TAB_TRADE);
+    }
+  } else if (strcmp(pkt.type, "TRADE_ACCEPT") == 0) {
+    if (s_app.outgoingTrade.active &&
+        (strlen(pkt.tradeId) == 0 || strcmp(pkt.tradeId, s_app.outgoingTrade.tradeId) == 0)) {
+      const char* recvId = strlen(pkt.requestedId) > 0 ? pkt.requestedId : s_app.outgoingTrade.requestedId;
+      if (recvId && strlen(recvId) > 0) {
+        s_app.engine.addKnownItemById(recvId, 1);
+      }
+      s_app.engine.addXP(35);
+      memset(&s_app.outgoingTrade, 0, sizeof(s_app.outgoingTrade));
+      cyd_sound_level_up();
+      cyd_lvgl_show_banner("Tausch erfolgreich! +35XP", 3200);
+      if (s_app.activeModal == TAB_TRADE) {
+        cyd_lvgl_open_modal(TAB_TRADE);
+      }
+    }
+  } else if (strcmp(pkt.type, "TRADE_DECLINE") == 0) {
+    if (s_app.outgoingTrade.active &&
+        (strlen(pkt.tradeId) == 0 || strcmp(pkt.tradeId, s_app.outgoingTrade.tradeId) == 0)) {
+      s_app.engine.addKnownItemById(s_app.outgoingTrade.offeredId, 1);
+      memset(&s_app.outgoingTrade, 0, sizeof(s_app.outgoingTrade));
+      cyd_sound_warning();
+      cyd_lvgl_show_banner("Tausch abgelehnt (zurueck)", 3000);
+      if (s_app.activeModal == TAB_TRADE) {
+        cyd_lvgl_open_modal(TAB_TRADE);
+      }
+    } else if (s_app.incomingTrade.active &&
+               (strlen(pkt.tradeId) == 0 || strcmp(pkt.tradeId, s_app.incomingTrade.tradeId) == 0)) {
+      memset(&s_app.incomingTrade, 0, sizeof(s_app.incomingTrade));
+      cyd_lvgl_show_banner("Tausch abgebrochen.", 2500);
+      if (s_app.activeModal == TAB_TRADE) {
+        cyd_lvgl_open_modal(TAB_TRADE);
+      }
+    }
   }
   s_app.dirtyUi = true;
+}
+
+static void on_lan_packet(const NetPacket& pkt) {
+  handle_net_packet(pkt, "LAN");
+}
+
+static void on_relay_packet(const NetPacket& pkt) {
+  handle_net_packet(pkt, "NET");
 }
 
 static void enter_ap_portal_loop(void) {
@@ -65,6 +152,7 @@ static void enter_ap_portal_loop(void) {
 
   cyd_net_stop_all();
   s_app.offlineMode = true;
+  strcpy(s_app.friendPet.linkMode, "OFF");
   cyd_set_rgb(true, false, false);
   cyd_lvgl_show_main_screen();
   cyd_lvgl_show_banner("Offline Modus aktiv", 2500);
@@ -93,7 +181,9 @@ extern "C" void app_main(void) {
   strcpy(s_app.friendPet.phase, "Baby");
   s_app.friendPet.level = 2;
   s_app.friendPet.health = 95;
+  s_app.friendPet.hunger = 80;
   s_app.friendPet.port = SOCKET_PORT;
+  strcpy(s_app.friendPet.linkMode, "OFF");
   strcpy(s_app.friendPet.speechBalloon, "Hello Buddy!");
 
   cyd_storage_load_rules(s_app.engine);
@@ -101,7 +191,7 @@ extern "C" void app_main(void) {
   cyd_lvgl_set_app_state(&s_app);
 
   // Validate current A/B OTA partition after successful init
-  cyd_net_mark_ota_valid();
+  cyd_net_mark_ota_valid(nullptr);
 
   // 3. BOOT button held -> force SoftAP WiFi config portal
   if (cyd_boot_button_pressed()) {
@@ -128,10 +218,12 @@ extern "C" void app_main(void) {
           enter_ap_portal_loop();
         } else {
           s_app.offlineMode = true;
+          strcpy(s_app.friendPet.linkMode, "OFF");
           cyd_set_rgb(true, false, false);
           cyd_lvgl_show_main_screen();
         }
       } else {
+        cyd_net_mark_ota_valid(&s_app.config);
         cyd_net_sync_php_server(s_app.config, s_app.engine, s_app.friendPet);
         char otaMsg[48] = "";
         cyd_net_check_ota(s_app.config, s_app.engine, on_ota_progress, otaMsg, sizeof(otaMsg));
@@ -145,18 +237,23 @@ extern "C" void app_main(void) {
   }
 
   // 4. Main Real-Time Loop
-  uint32_t lastTickMs = cyd_millis();
-  uint32_t lastSyncMs = cyd_millis();
-  uint32_t lastOtaMs  = cyd_millis();
-  uint32_t lastSaveMs = cyd_millis();
+  uint32_t lastTickMs  = cyd_millis();
+  uint32_t lastRelayMs = cyd_millis();
+  uint32_t lastSyncMs  = cyd_millis();
+  uint32_t lastOtaMs   = cyd_millis();
+  uint32_t lastSaveMs  = cyd_millis();
   uint32_t lastJobUiMs = cyd_millis();
 
   while (true) {
     uint32_t now = cyd_millis();
 
-    // Incoming LAN socket messages
+    // Incoming LAN socket messages + PHP relay polling (3s)
     if (!s_app.offlineMode) {
-      cyd_net_poll_p2p_socket(on_p2p_packet);
+      cyd_net_poll_p2p_socket(on_lan_packet);
+      if ((now - lastRelayMs) >= 3000U) {
+        lastRelayMs = now;
+        cyd_net_poll_relay(s_app.config, on_relay_packet);
+      }
     }
 
     // Active job countdown & completion
@@ -164,24 +261,28 @@ extern "C" void app_main(void) {
       if ((now - s_app.activeJob.startedMs) >= s_app.activeJob.durationMs) {
         s_app.activeJob.running = false;
         uint8_t jIdx = s_app.activeJob.jobIndex;
-        uint16_t cGain = (jIdx == 0) ? 20 : (jIdx == 1 ? 35 : 60);
-        uint16_t xGain = (jIdx == 0) ? 25 : (jIdx == 1 ? 45 : 70);
+        uint16_t cGain = 20;
+        uint16_t xGain = 25;
+        if (jIdx < s_app.engine.rules.jobCount) {
+          const EngineJob& job = s_app.engine.rules.jobs[jIdx];
+          cGain = job.coinReward;
+          xGain = job.xpReward;
+          if (strlen(job.matRewardId) > 0 && job.matRewardQty > 0) {
+            s_app.engine.addKnownItemById(job.matRewardId, job.matRewardQty);
+          }
+          if (strlen(job.matReward2Id) > 0 && job.matReward2Qty > 0) {
+            s_app.engine.addKnownItemById(job.matReward2Id, job.matReward2Qty);
+          }
+          if (strlen(job.foodRewardId) > 0 && job.foodRewardQty > 0) {
+            s_app.engine.addKnownItemById(job.foodRewardId, job.foodRewardQty);
+          }
+        }
         s_app.engine.coins += cGain;
         s_app.engine.addXP(xGain);
         s_app.jobsCompleted++;
-        if (jIdx == 0) {
-          s_app.engine.addKnownItemById("mat_herb", 2);
-          s_app.engine.addKnownItemById("food_apple", 1);
-        } else if (jIdx == 1) {
-          s_app.engine.addKnownItemById("food_snack", 1);
-          s_app.engine.addKnownItemById("mat_meat", 1);
-        } else {
-          s_app.engine.addKnownItemById("mat_mushroom", 2);
-          s_app.engine.addKnownItemById("mat_sunstone", 1);
-        }
         cyd_sound_level_up();
         char bMsg[48];
-        snprintf(bMsg, sizeof(bMsg), "Beruf fertig! +%u$ +%uXP", cGain, xGain);
+        snprintf(bMsg, sizeof(bMsg), "Beruf fertig! +%u$ +%uXP", (unsigned)cGain, (unsigned)xGain);
         cyd_lvgl_show_banner(bMsg, 3200);
         if (s_app.activeModal == TAB_JOBS) {
           cyd_lvgl_open_modal(TAB_JOBS);
@@ -217,9 +318,31 @@ extern "C" void app_main(void) {
       s_app.triggerSaveRequested = false;
       cyd_storage_save_pet(s_app.engine, s_app.recipesCrafted, s_app.jobsCompleted, s_app.spellsCast, s_app.treatsSent);
       if (!s_app.offlineMode) {
-        cyd_net_cloud_save(s_app.config, s_app.engine);
+        bool ok = cyd_net_cloud_save(
+          s_app.config, s_app.engine,
+          s_app.recipesCrafted, s_app.jobsCompleted, s_app.spellsCast, s_app.treatsSent
+        );
+        cyd_lvgl_show_banner(ok ? "Lokal & Cloud gespeichert!" : "Lokal gespeichert (Cloud Err)", 2500);
+      } else {
+        cyd_lvgl_show_banner("Lokal im Flash gespeichert!", 2500);
       }
-      cyd_lvgl_show_banner("Lokal & Cloud gespeichert!", 2500);
+    }
+
+    // Manual Cloud Restore triggered via Status tab
+    if (s_app.triggerCloudLoadRequested) {
+      s_app.triggerCloudLoadRequested = false;
+      if (!s_app.offlineMode &&
+          cyd_net_cloud_load(
+            s_app.config, s_app.engine,
+            s_app.recipesCrafted, s_app.jobsCompleted, s_app.spellsCast, s_app.treatsSent)) {
+        cyd_storage_save_pet(s_app.engine, s_app.recipesCrafted, s_app.jobsCompleted, s_app.spellsCast, s_app.treatsSent);
+        cyd_sound_level_up();
+        cyd_lvgl_show_banner("Cloud-Stand geladen!", 2800);
+      } else {
+        cyd_sound_warning();
+        cyd_lvgl_show_banner("Cloud-Stand nicht gefunden!", 2500);
+      }
+      s_app.dirtyUi = true;
     }
 
     // Periodic PHP Server sync (10s)

@@ -30,7 +30,7 @@ function copyDirRecursive(string $src, string $dst): void {
     foreach (scandir($src) as $item) {
         if ($item === '.' || $item === '..') continue;
         // Skip runtime generated state folders
-        if (in_array($item, ['saves', 'purchases', 'cyd_devices.json', 'cyd_mailbox.json'], true)) continue;
+        if (in_array($item, ['saves', 'purchases', 'cyd_devices.json', 'cyd_mailbox.json', 'cyd_ota_reports.json'], true)) continue;
         $from = $src . DIRECTORY_SEPARATOR . $item;
         $to   = $dst . DIRECTORY_SEPARATOR . $item;
         if (is_dir($from)) {
@@ -329,6 +329,25 @@ try {
 
     $res = httpReq('HEAD', '/ota_download.php?type=firmware');
     check($res['status'] === 200, 'ota_download.php HEAD firmware returns 200');
+
+    // 9. OTA Report Endpoint
+    $res = httpReq('OPTIONS', '/ota_report.php');
+    check($res['status'] === 200, 'ota_report.php OPTIONS returns 200');
+
+    $res = httpReq('POST', '/ota_report.php', ['deviceId' => '', 'event' => 'ota_valid']);
+    check($res['status'] === 400, 'ota_report.php rejects empty deviceId');
+
+    $res = httpReq('POST', '/ota_report.php', [
+        'deviceId' => 'CYD-DEV1',
+        'event' => 'ota_valid',
+        'version' => '2.1.4',
+        'partition' => 'ota_0',
+        'detail' => 'ota_0'
+    ]);
+    check($res['status'] === 200 && ($res['json']['logged']['event'] ?? '') === 'ota_valid', 'ota_report.php logs ota_valid event');
+
+    $res = httpReq('GET', '/ota_report.php');
+    check($res['status'] === 200 && count($res['json']['reports'] ?? []) === 1, 'ota_report.php GET lists logged reports');
 
     // Also run index.php again after devices exist so table branch executes
     $res = httpReq('GET', '/index.php');

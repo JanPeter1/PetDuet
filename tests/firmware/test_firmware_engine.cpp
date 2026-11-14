@@ -268,12 +268,156 @@ static void testEggEvolutionTreatAndConfig() {
   CHECK(std::strcmp(g_lastEvent, "CONFIG_LOADED") == 0);
 }
 
+static void testJsonRuleParser() {
+  TamagotchiCoreEngine eng;
+  eng.onEvent = testEventCallback;
+  g_eventCount = 0;
+
+  const char* fullSampleJson =
+    "{\n"
+    "  \"version\": \"1.1.0\",\n"
+    "  \"meta\": { \"title\": \"PetDuet\", \"tick_interval_seconds\": 60 },\n"
+    "  \"stats\": {\n"
+    "    \"food\": { \"max\": 100, \"decay_per_tick\": 0.5 },\n"
+    "    \"health\": { \"starve_decay\": 1.5, \"sick_decay\": 1.0 },\n"
+    "    \"happiness\": { \"decay_per_tick\": 0.25 },\n"
+    "    \"energy\": { \"decay_per_tick\": 0.5 },\n"
+    "    \"mana\": { \"regen_per_tick\": 0.5 }\n"
+    "  },\n"
+    "  \"foods\": [\n"
+    "    { \"id\": \"food_ambrosia\", \"name\": \"Elemental Ambrosia\", \"name_de\": \"Elementar-Ambrosia\", \"hunger_gain\": 100, \"happiness_gain\": 100, \"health_gain\": 100, \"energy_gain\": 100, \"satiety_ticks\": 12, \"sick_chance\": 0.0 }\n"
+    "  ],\n"
+    "  \"starting_inventory\": [\n"
+    "    { \"id\": \"food_apple\", \"quantity\": 3 },\n"
+    "    { \"id\": \"mat_herb\", \"quantity\": 2 }\n"
+    "  ],\n"
+    "  \"lifecycle\": {\n"
+    "    \"phases\": [\n"
+    "      { \"id\": \"egg\", \"warmth_required\": 50 },\n"
+    "      { \"id\": \"youth\", \"min_level\": 3 },\n"
+    "      { \"id\": \"adult\", \"min_level\": 8 },\n"
+    "      { \"id\": \"elder\", \"min_level\": 20 }\n"
+    "    ],\n"
+    "    \"care_mistake_threshold_seconds\": 900\n"
+    "  },\n"
+    "  \"biomes\": {\n"
+    "    \"desert\": { \"name\": \"Desert\", \"name_de\": \"W\\u00fcste\", \"modifiers\": { \"food_decay\": 2.0, \"energy_decay\": 2.0 } },\n"
+    "    \"water\": { \"name\": \"Water\", \"name_de\": \"Wasser\", \"modifiers\": { \"max_mana\": 20 } }\n"
+    "  },\n"
+    "  \"recipes\": [\n"
+    "    { \"id\": \"rcp_salad\", \"name\": \"Herb Salad\", \"name_de\": \"Wiesenkr\\u00e4uter-Salat\", \"min_level\": 1, \"ingredients\": { \"mat_herb\": 2 }, \"result_item_id\": \"food_herb_salad\", \"effects\": { \"food\": 35, \"health\": 10, \"energy\": 10, \"satiety_ticks\": 4, \"xp\": 35 } },\n"
+    "    { \"id\": \"rcp_berry_pie\", \"name\": \"Berry Tart\", \"name_de\": \"Waldbeeren-Tarte\", \"min_level\": 2, \"ingredients\": { \"mat_mushroom\": 1, \"mat_herb\": 1 }, \"result_item_id\": \"food_berry_pie\", \"effects\": { \"food\": 45, \"happiness\": 25, \"health\": 15, \"satiety_ticks\": 5, \"xp\": 80 } }\n"
+    "  ],\n"
+    "  \"jobs\": [\n"
+    "    { \"id\": \"job_mine\", \"name\": \"Crystal Miner\", \"name_de\": \"Kristall-Sammler\", \"min_level\": 3, \"energy_cost\": 30, \"duration_seconds\": 180, \"rewards\": { \"xp\": 90, \"coins\": 55, \"materials\": { \"mat_sunstone\": 1, \"mat_mushroom\": 1 }, \"food\": { \"food_sun_jerky\": 1 } } }\n"
+    "  ],\n"
+    "  \"spells\": [\n"
+    "    { \"id\": \"spl_cleanse\", \"name\": \"Purify\", \"name_de\": \"L\\u00e4uterung\", \"min_level\": 1, \"mana_cost\": 15, \"target\": \"self\", \"effects\": { \"clean_poop\": true, \"cure_sickness\": true, \"health\": 10, \"xp\": 20 } }\n"
+    "  ],\n"
+    "  \"daily_missions\": [\n"
+    "    { \"id\": \"mission_feed\", \"action_type\": \"feed\", \"target_count\": 3, \"name\": \"Nourish\", \"name_de\": \"F\\u00fcttern\", \"rewards\": { \"coins\": 40, \"xp\": 50 } }\n"
+    "  ],\n"
+    "  \"shop\": {\n"
+    "    \"items\": [\n"
+    "      { \"id\": \"food_berry_pie\", \"name\": \"Forest Berry Tart\", \"name_de\": \"Waldbeeren-Tarte\", \"price_coins\": 40, \"min_level\": 2, \"category\": \"food\", \"effects\": { \"hunger\": 45, \"happiness\": 25, \"health\": 15, \"satiety_ticks\": 5, \"sick_chance\": 0 } }\n"
+    "    ],\n"
+    "    \"recipes\": [],\n"
+    "    \"spells\": []\n"
+    "  }\n"
+    "}\n";
+
+  eng.loadConfigFromText(fullSampleJson);
+  CHECK(std::strcmp(g_lastEvent, "CONFIG_LOADED") == 0);
+  CHECK(std::strcmp(eng.rules.version, "1.1.0") == 0);
+  CHECK(eng.rules.tickIntervalSeconds == 60);
+  CHECK(eng.rules.eggWarmthRequired == 50);
+  CHECK(eng.rules.youthMinLevel == 3);
+  CHECK(eng.rules.adultMinLevel == 8);
+  CHECK(eng.rules.elderMinLevel == 20);
+  CHECK(eng.rules.careMistakeThresholdSec == 900);
+  CHECK(eng.rules.foodDefCount == 1);
+  CHECK(std::strcmp(eng.rules.foodDefs[0].id, "food_ambrosia") == 0);
+  CHECK(eng.rules.foodDefs[0].satietyTicks == 12);
+
+  // Starting inventory rule & Ambrosia dynamic food lookup
+  eng.applyStartingInventoryFromRules();
+  CHECK(eng.getItemQuantity("food_apple") == 3);
+  CHECK(eng.getItemQuantity("mat_herb") == 2);
+  CHECK(eng.addKnownItemById("food_ambrosia", 1));
+
+  // Biome modifiers: Water max_mana +20 = 120; Desert doubles decay
+  std::strcpy(eng.biome, "water");
+  CHECK(eng.getEffectiveMaxMana() == 120);
+  std::strcpy(eng.biome, "desert");
+  CHECK(eng.getEffectiveMaxMana() == 100);
+
+  std::strcpy(eng.phase, "Baby");
+  eng.stats.hunger = 50;
+  eng.stats.energy = 50;
+  eng.stats.happiness = 50;
+  eng.stats.mana = 50;
+  eng.tick(); // desert: hunger 0.5*2.0=1.0 -> -1, energy 0.5*2.0=1.0 -> -1, mana +0.5 (acc)
+  CHECK(eng.stats.hunger == 49);
+  CHECK(eng.stats.energy == 49);
+  CHECK(eng.stats.mana == 50);
+  eng.tick(); // mana accumulator hits 1.0 -> +1
+  CHECK(eng.stats.mana == 51);
+
+  // Dynamic crafting by ID, spell cast, shop purchase, job rules
+  CHECK(eng.craftRecipeById("rcp_salad"));
+  CHECK(eng.getItemQuantity("food_herb_salad") == 1);
+  eng.isSick = true;
+  eng.stats.health = 60;
+  CHECK(eng.castSpell(0));
+  CHECK(!eng.isSick);
+  CHECK(eng.stats.health == 70);
+  CHECK(eng.stats.mana == 36);
+
+  CHECK(eng.rules.jobCount == 1);
+  CHECK(std::strcmp(eng.rules.jobs[0].matReward2Id, "mat_mushroom") == 0);
+  CHECK(std::strcmp(eng.rules.jobs[0].foodRewardId, "food_sun_jerky") == 0);
+
+  eng.coins = 100;
+  eng.level = 2;
+  CHECK(eng.purchaseItem("food_berry_pie"));
+  CHECK(eng.coins == 60);
+  CHECK(eng.getItemQuantity("food_berry_pie") >= 1);
+
+  // Optional check against actual repository esp32_firmware/rules.json if accessible from CWD
+  const char* candidatePaths[2] = { "esp32_firmware/rules.json", "../../esp32_firmware/rules.json" };
+  for (int i = 0; i < 2; i++) {
+    std::FILE* f = std::fopen(candidatePaths[i], "rb");
+    if (f) {
+      static char fileBuf[40960];
+      size_t n = std::fread(fileBuf, 1, sizeof(fileBuf) - 1, f);
+      std::fclose(f);
+      fileBuf[n] = '\0';
+      TamagotchiCoreEngine fullEng;
+      CHECK(fullEng.loadRulesJson(fileBuf));
+      CHECK(std::strcmp(fullEng.rules.version, "1.1.0") == 0);
+      CHECK(fullEng.rules.foodDefCount == 7);
+      CHECK(fullEng.rules.biomeCount == 4);
+      CHECK(fullEng.rules.recipeCount == 5);
+      CHECK(fullEng.rules.jobCount == 4);
+      CHECK(fullEng.rules.spellCount == 5);
+      CHECK(fullEng.missionCount == 5);
+      CHECK(fullEng.rules.shopItemCount == 13);
+      CHECK(fullEng.rules.shopRecipeCount == 5);
+      CHECK(fullEng.rules.shopSpellCount == 5);
+      std::strcpy(fullEng.biome, "water");
+      CHECK(fullEng.getEffectiveMaxMana() == 120);
+      break;
+    }
+  }
+}
+
 int main() {
   testStartingStateAndInventory();
   testFeedingSatietyAndSickness();
   testTickSimulation();
   testCookingMissionsStreakAndShop();
   testEggEvolutionTreatAndConfig();
+  testJsonRuleParser();
 
   std::printf("[Firmware Unit Tests] Executed: %d assertions | Failed: %d\n",
               g_testsRun, g_testsFailed);

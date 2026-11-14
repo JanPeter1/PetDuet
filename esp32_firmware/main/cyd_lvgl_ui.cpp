@@ -12,6 +12,57 @@
 #include <string.h>
 
 // ============================================================================
+// BILINGUAL RULE NAME SELECTION & LVGL ASCII/UMLAUT SANITIZER
+// ============================================================================
+#if LANG_DE
+  #define PICK_RULE_NAME(obj) (strlen((obj).name_de) > 0 ? (obj).name_de : (obj).name)
+#else
+  #define PICK_RULE_NAME(obj) (strlen((obj).name) > 0 ? (obj).name : (obj).name_de)
+#endif
+
+static void sanitize_lvgl_text(const char* src, char* dst, size_t maxLen) {
+  if (!dst || maxLen == 0) return;
+  if (!src) { dst[0] = '\0'; return; }
+  size_t out = 0;
+  const unsigned char* p = (const unsigned char*)src;
+  while (*p && out + 1 < maxLen) {
+    unsigned char c = *p;
+    if (c == 0xC3 && p[1] != '\0') {
+      unsigned char c2 = p[1];
+      const char* rep = nullptr;
+      if (c2 == 0xA4) rep = "ae";
+      else if (c2 == 0xB6) rep = "oe";
+      else if (c2 == 0xBC) rep = "ue";
+      else if (c2 == 0x84) rep = "Ae";
+      else if (c2 == 0x96) rep = "Oe";
+      else if (c2 == 0x9C) rep = "Ue";
+      else if (c2 == 0x9F) rep = "ss";
+      if (rep) {
+        if (out + 2 < maxLen) {
+          dst[out++] = rep[0];
+          dst[out++] = rep[1];
+        }
+        p += 2;
+        continue;
+      }
+      p += 2;
+      continue;
+    }
+    if (c >= 0xC0) {
+      // Skip multi-byte UTF-8 glyphs/emojis unsupported by ASCII Montserrat font
+      p++;
+      while (*p && ((*p & 0xC0) == 0x80)) p++;
+      continue;
+    }
+    if (c == '\n' || c == '\t' || (c >= 0x20 && c <= 0x7E)) {
+      dst[out++] = (char)c;
+    }
+    p++;
+  }
+  dst[out] = '\0';
+}
+
+// ============================================================================
 // BILINGUAL UI TEXT MACROS (EN / DE)
 // ============================================================================
 #if LANG_DE
@@ -525,26 +576,47 @@ static void on_right_btn_clicked(lv_event_t* e) {
     case 7: // CHAT Modal
       cyd_lvgl_open_modal(TAB_CHAT);
       return;
-    case 8: // MGC+
+    case 8: { // MGC+ (Friend Blessing + 10s Dual Astral Harmony Co-op Window)
       if (s_app->engine.stats.mana >= 30) {
         s_app->engine.stats.mana -= 30;
-        cyd_net_send_packet(s_app->config, s_app->friendPet, "MAGIC", "Friend Blessing");
+        uint32_t now = cyd_millis();
+        NetPacket pkt = {};
+        strncpy(pkt.from, s_app->config.deviceId, sizeof(pkt.from) - 1);
+        if (s_app->friendDualCastUntilMs > 0 && now <= s_app->friendDualCastUntilMs) {
+          // Both devices pressed MGC+ within 10s -> Dual Astral Harmony!
+          s_app->friendDualCastUntilMs = 0;
+          s_app->dualCastUntilMs = 0;
+          strncpy(pkt.type, "MAGIC_SYNC", sizeof(pkt.type) - 1);
+          strncpy(pkt.text, "Astral Harmony!", sizeof(pkt.text) - 1);
+          cyd_net_send_packet_ex(s_app->config, s_app->friendPet, pkt);
+          s_app->engine.stats.health = (uint8_t)engineMin(100, s_app->engine.stats.health + 50);
+          s_app->engine.stats.happiness = (uint8_t)engineMin(100, s_app->engine.stats.happiness + 40);
+          s_app->engine.addXP(100);
+          s_app->engine.addKnownItemById("food_berry_pie", 1);
+          cyd_sound_level_up();
+          cyd_lvgl_show_banner("ASTRALE HARMONIE! +100XP +Tarte!", 3500);
+        } else {
+          s_app->dualCastUntilMs = now + 10000U;
+          strncpy(pkt.type, "MAGIC_SYNC", sizeof(pkt.type) - 1);
+          strncpy(pkt.text, "Friend Blessing", sizeof(pkt.text) - 1);
+          cyd_net_send_packet_ex(s_app->config, s_app->friendPet, pkt);
+          s_app->engine.addXP(40);
+          cyd_sound_treat_sent();
+          cyd_lvgl_show_banner("Segen! Dual-Cast 10s offen!", 2800);
+        }
         s_app->spellsCast++;
-        s_app->engine.addXP(40);
         s_app->engine.recordAction("magic", 1);
-        cyd_sound_treat_sent();
-        cyd_lvgl_show_banner(TXT_BANNER_BLESSING, 2500);
       } else {
         cyd_lvgl_show_banner(TXT_BANNER_NO_MANA, 2000);
       }
       break;
+    }
     case 9: // QUEST Modal
       cyd_lvgl_open_modal(TAB_QUEST);
       return;
-    case 10: // TRADE
-      cyd_net_send_packet(s_app->config, s_app->friendPet, "TRADE", "Star Charm");
-      cyd_lvgl_show_banner(TXT_BANNER_TRADE, 2500);
-      break;
+    case 10: // TRADE Modal
+      cyd_lvgl_open_modal(TAB_TRADE);
+      return;
   }
   check_level_up_notify(prevLv);
   cyd_lvgl_refresh_main_screen();
@@ -597,30 +669,57 @@ static void on_bag_action_cb(lv_event_t* e) {
   cyd_sound_click();
   uint8_t prevLv = s_app->engine.level;
 
-  if (code == 100) { // Craft Herb Salad
-    if (s_app->engine.craftRecipe(0)) {
+  if (code >= 100 && code < 100 + (int)s_app->engine.rules.recipeCount) {
+    int rIdx = code - 100;
+    const EngineRecipe& r = s_app->engine.rules.recipes[rIdx];
+    char rName[28];
+    sanitize_lvgl_text(PICK_RULE_NAME(r), rName, sizeof(rName));
+    if (s_app->engine.craftRecipe((uint8_t)rIdx)) {
       s_app->recipesCrafted++;
       cyd_sound_munch();
-      cyd_lvgl_show_banner("Gekocht: Kraeuter-Salat!", 2200);
+      char msg[56];
+      snprintf(msg, sizeof(msg), "Gekocht: %s!", rName);
+      cyd_lvgl_show_banner(msg, 2200);
+    } else if (s_app->engine.level < r.minLevel) {
+      char msg[40];
+      snprintf(msg, sizeof(msg), "Braucht Level %u!", (unsigned)r.minLevel);
+      cyd_lvgl_show_banner(msg, 2000);
     } else {
-      cyd_lvgl_show_banner("Braucht 2x Kraeuter!", 2000);
+      cyd_lvgl_show_banner("Zutaten fehlen!", 2000);
     }
-  } else if (code == 101) { // Craft Berry Pie
-    if (s_app->engine.craftRecipe(1)) {
-      s_app->recipesCrafted++;
-      cyd_sound_munch();
-      cyd_lvgl_show_banner("Gekocht: Beeren-Tarte!", 2200);
-    } else {
-      cyd_lvgl_show_banner("Braucht Lv2, Kraut+Pilz!", 2000);
+  } else if (code >= 200 && code < 200 + (int)s_app->engine.rules.shopItemCount) {
+    int sIdx = code - 200;
+    const EngineShopItem& sh = s_app->engine.rules.shopItems[sIdx];
+    char sName[28];
+    sanitize_lvgl_text(PICK_RULE_NAME(sh), sName, sizeof(sName));
+    bool allowLocal = true;
+    if (!s_app->offlineMode) {
+      char srvErr[64] = "";
+      int srvRes = cyd_net_shop_purchase(
+        s_app->config, "item", sh.id,
+        s_app->engine.coins, s_app->engine.level,
+        srvErr, sizeof(srvErr)
+      );
+      if (srvRes == 0) {
+        allowLocal = false;
+        cyd_sound_warning();
+        cyd_lvgl_show_banner(strlen(srvErr) > 0 ? srvErr : "Shop abgelehnt!", 2200);
+      }
     }
-  } else if (code == 200) { // Buy Apple
-    cyd_lvgl_show_banner(s_app->engine.purchaseItem("food_apple") ? "Apfel gekauft (-5$)" : "Zu wenig Coins!", 1800);
-  } else if (code == 201) { // Buy Snack
-    cyd_lvgl_show_banner(s_app->engine.purchaseItem("food_snack") ? "Snack gekauft (-8$)" : "Zu wenig Coins!", 1800);
-  } else if (code == 202) { // Buy Salve
-    cyd_lvgl_show_banner(s_app->engine.purchaseItem("item_salve") ? "Heilsalbe gekauft (-25$)" : "Zu wenig Coins!", 1800);
-  } else if (code == 203) { // Buy Herb
-    cyd_lvgl_show_banner(s_app->engine.purchaseItem("mat_herb") ? "Kraeuter gekauft (-8$)" : "Zu wenig Coins!", 1800);
+    if (allowLocal) {
+      if (s_app->engine.purchaseItem(sh.id)) {
+        cyd_sound_treat_sent();
+        char msg[56];
+        snprintf(msg, sizeof(msg), "%s (-%u$)", sName, (unsigned)sh.cost);
+        cyd_lvgl_show_banner(msg, 1800);
+      } else if (s_app->engine.level < sh.minLevel) {
+        char msg[40];
+        snprintf(msg, sizeof(msg), "Braucht Level %u!", (unsigned)sh.minLevel);
+        cyd_lvgl_show_banner(msg, 1800);
+      } else {
+        cyd_lvgl_show_banner("Zu wenig Coins!", 1800);
+      }
+    }
   } else if (code >= 0 && code < s_app->engine.inventoryCount) {
     char id[20];
     strncpy(id, s_app->engine.inventory[code].id, sizeof(id) - 1);
@@ -646,22 +745,32 @@ static void on_bag_action_cb(lv_event_t* e) {
 static void on_job_start_cb(lv_event_t* e) {
   if (!s_app) return;
   int jIdx = (int)(intptr_t)lv_event_get_user_data(e);
+  if (jIdx < 0 || jIdx >= (int)s_app->engine.rules.jobCount) return;
   cyd_sound_click();
   if (s_app->activeJob.running) {
     cyd_lvgl_show_banner("Beruf laeuft bereits!", 1800);
     return;
   }
-  uint8_t enCost = (jIdx == 0) ? 15 : (jIdx == 1 ? 25 : 35);
-  if (s_app->engine.stats.energy < enCost) {
+  const EngineJob& job = s_app->engine.rules.jobs[jIdx];
+  if (s_app->engine.level < job.minLevel) {
+    char msg[40];
+    snprintf(msg, sizeof(msg), "Braucht Level %u!", (unsigned)job.minLevel);
+    cyd_lvgl_show_banner(msg, 1800);
+    return;
+  }
+  if (s_app->engine.stats.energy < job.energyCost) {
     cyd_lvgl_show_banner("Zu wenig Energie!", 1800);
     return;
   }
-  s_app->engine.stats.energy -= enCost;
+  s_app->engine.stats.energy -= job.energyCost;
   s_app->activeJob.running = true;
   s_app->activeJob.jobIndex = (uint8_t)jIdx;
   s_app->activeJob.startedMs = cyd_millis();
-  s_app->activeJob.durationMs = (jIdx == 0) ? 60000U : (jIdx == 1 ? 120000U : 180000U);
-  cyd_lvgl_show_banner("Beruf gestartet!", 2000);
+  s_app->activeJob.durationMs = (uint32_t)(job.durationSec > 0 ? job.durationSec : 60) * 1000U;
+  char jName[32], msg[64];
+  sanitize_lvgl_text(PICK_RULE_NAME(job), jName, sizeof(jName));
+  snprintf(msg, sizeof(msg), "Gestartet: %s", jName);
+  cyd_lvgl_show_banner(msg, 2000);
   cyd_lvgl_open_modal(TAB_JOBS);
   cyd_lvgl_refresh_main_screen();
 }
@@ -672,50 +781,61 @@ static void on_magic_action_cb(lv_event_t* e) {
   cyd_sound_click();
   uint8_t prevLv = s_app->engine.level;
 
-  if (mIdx == 0) { // Purify (15 MP)
-    if (s_app->engine.stats.mana >= 15) {
-      s_app->engine.stats.mana -= 15;
-      s_app->engine.isSick = false;
-      s_app->engine.stats.health = (uint8_t)engineMin(100, s_app->engine.stats.health + 20);
-      s_app->engine.stats.hygiene = 100;
-      s_app->engine.addXP(25);
-      s_app->engine.recordAction("magic", 1);
-      s_app->spellsCast++;
-      cyd_sound_treat_sent();
-      cyd_lvgl_show_banner("Laeuterung! Geheilt & +20HP", 2500);
-    } else cyd_lvgl_show_banner(TXT_BANNER_NO_MANA, 1800);
-  } else if (mIdx == 1) { // Vitality Aura (20 MP)
-    if (s_app->engine.stats.mana >= 20) {
-      s_app->engine.stats.mana -= 20;
-      s_app->engine.stats.health = (uint8_t)engineMin(100, s_app->engine.stats.health + 30);
-      s_app->engine.addXP(30);
-      s_app->engine.recordAction("magic", 1);
-      s_app->spellsCast++;
-      cyd_sound_treat_sent();
-      cyd_lvgl_show_banner(TXT_BANNER_AURA, 2500);
-    } else cyd_lvgl_show_banner(TXT_BANNER_NO_MANA, 1800);
-  } else if (mIdx == 2) { // Astral Feast (30 MP)
-    if (s_app->engine.stats.mana >= 30) {
-      s_app->engine.stats.mana -= 30;
-      s_app->engine.stats.hunger = (uint8_t)engineMin(100, s_app->engine.stats.hunger + 30);
-      s_app->engine.satietyTicks = (uint8_t)engineMax(s_app->engine.satietyTicks, 4);
-      s_app->engine.addXP(40);
-      s_app->engine.recordAction("magic", 1);
-      s_app->spellsCast++;
-      cyd_net_send_packet(s_app->config, s_app->friendPet, "MAGIC", "Astral Feast");
-      cyd_sound_treat_sent();
-      cyd_lvgl_show_banner("Astral-Festmahl! Satt 4T", 2500);
-    } else cyd_lvgl_show_banner(TXT_BANNER_NO_MANA, 1800);
-  } else if (mIdx == 3) { // Research Magic (-15 EN -> +15 MP, +35 XP)
+  if (mIdx == 99) { // Research Magic (-15 EN -> +15 MP, +35 XP)
     if (s_app->engine.stats.energy >= 15) {
       s_app->engine.stats.energy -= 15;
-      s_app->engine.stats.mana = (uint8_t)engineMin(100, s_app->engine.stats.mana + 15);
+      uint8_t maxMana = s_app->engine.getEffectiveMaxMana();
+      s_app->engine.stats.mana = (uint8_t)engineMin((int)maxMana, (int)s_app->engine.stats.mana + 15);
       s_app->engine.addXP(35);
       s_app->engine.recordAction("magic", 1);
       cyd_sound_level_up();
       cyd_lvgl_show_banner("Erforscht! +15MP +35XP", 2500);
     } else {
       cyd_lvgl_show_banner("Braucht 15 Energie!", 1800);
+    }
+  } else if (mIdx >= 0 && mIdx < (int)s_app->engine.rules.spellCount) {
+    const EngineSpell& sp = s_app->engine.rules.spells[mIdx];
+    char spName[28];
+    sanitize_lvgl_text(PICK_RULE_NAME(sp), spName, sizeof(spName));
+    if (s_app->engine.level < sp.minLevel) {
+      char msg[40];
+      snprintf(msg, sizeof(msg), "Braucht Level %u!", (unsigned)sp.minLevel);
+      cyd_lvgl_show_banner(msg, 1800);
+    } else if (s_app->engine.stats.mana < sp.manaCost) {
+      cyd_lvgl_show_banner(TXT_BANNER_NO_MANA, 1800);
+    } else if (s_app->engine.castSpell((uint8_t)mIdx)) {
+      s_app->spellsCast++;
+      if (sp.target == 2) {
+        uint32_t now = cyd_millis();
+        NetPacket pkt = {};
+        strncpy(pkt.type, "MAGIC_SYNC", sizeof(pkt.type) - 1);
+        strncpy(pkt.from, s_app->config.deviceId, sizeof(pkt.from) - 1);
+        strncpy(pkt.text, sp.name, sizeof(pkt.text) - 1);
+        cyd_net_send_packet_ex(s_app->config, s_app->friendPet, pkt);
+        if (s_app->friendDualCastUntilMs > 0 && now <= s_app->friendDualCastUntilMs) {
+          s_app->friendDualCastUntilMs = 0;
+          s_app->dualCastUntilMs = 0;
+          cyd_sound_level_up();
+          cyd_lvgl_show_banner("ASTRALE HARMONIE AKTIV!", 3000);
+        } else {
+          s_app->dualCastUntilMs = now + 10000U;
+          cyd_sound_treat_sent();
+          char msg[56];
+          snprintf(msg, sizeof(msg), "%s! Dual-Window 10s!", spName);
+          cyd_lvgl_show_banner(msg, 2800);
+        }
+      } else if (sp.target == 1) {
+        cyd_net_send_packet(s_app->config, s_app->friendPet, "MAGIC", sp.name);
+        cyd_sound_treat_sent();
+        char msg[56];
+        snprintf(msg, sizeof(msg), "Segen gesendet: %s!", spName);
+        cyd_lvgl_show_banner(msg, 2500);
+      } else {
+        cyd_sound_treat_sent();
+        char msg[56];
+        snprintf(msg, sizeof(msg), "Zauber: %s!", spName);
+        cyd_lvgl_show_banner(msg, 2500);
+      }
     }
   }
   check_level_up_notify(prevLv);
@@ -801,6 +921,129 @@ static void on_save_cloud_cb(lv_event_t* /*e*/) {
   cyd_lvgl_close_modal();
 }
 
+static void on_load_cloud_cb(lv_event_t* /*e*/) {
+  if (!s_app) return;
+  cyd_sound_click();
+  s_app->triggerCloudLoadRequested = true;
+  cyd_lvgl_close_modal();
+}
+
+static const char* const TRADE_WANT_IDS[5]   = { "", "food_apple", "mat_herb", "mat_mushroom", "item_salve" };
+static const char* const TRADE_WANT_NAMES[5] = { "Freies Geschenk", "Frischer Apfel", "Wiesenkraeuter", "Waldpilz", "Heilsalbe" };
+
+static void on_trade_want_cycle_cb(lv_event_t* /*e*/) {
+  if (!s_app) return;
+  cyd_sound_click();
+  s_app->tradeSelectedWantIdx = (uint8_t)((s_app->tradeSelectedWantIdx + 1) % 5);
+  cyd_lvgl_open_modal(TAB_TRADE);
+}
+
+static void on_trade_send_offer_cb(lv_event_t* e) {
+  if (!s_app) return;
+  int slotIdx = (int)(intptr_t)lv_event_get_user_data(e);
+  if (s_app->outgoingTrade.active) {
+    cyd_lvgl_show_banner("Tausch laeuft noch!", 1800);
+    return;
+  }
+  if (slotIdx < 0 || slotIdx >= s_app->engine.inventoryCount) return;
+
+  cyd_sound_click();
+  char offerId[20];
+  char offerName[28];
+  strncpy(offerId, s_app->engine.inventory[slotIdx].id, sizeof(offerId) - 1);
+  offerId[sizeof(offerId) - 1] = '\0';
+  strncpy(offerName, s_app->engine.inventory[slotIdx].name_de, sizeof(offerName) - 1);
+  offerName[sizeof(offerName) - 1] = '\0';
+
+  if (!s_app->engine.consumeInventoryItem(offerId, 1)) return;
+
+  uint8_t wIdx = s_app->tradeSelectedWantIdx % 5;
+  s_app->outgoingTrade.active = true;
+  snprintf(s_app->outgoingTrade.tradeId, sizeof(s_app->outgoingTrade.tradeId), "tr_%lu", (unsigned long)cyd_millis());
+  strncpy(s_app->outgoingTrade.offeredId, offerId, sizeof(s_app->outgoingTrade.offeredId) - 1);
+  strncpy(s_app->outgoingTrade.offeredName, offerName, sizeof(s_app->outgoingTrade.offeredName) - 1);
+  strncpy(s_app->outgoingTrade.requestedId, TRADE_WANT_IDS[wIdx], sizeof(s_app->outgoingTrade.requestedId) - 1);
+  strncpy(s_app->outgoingTrade.requestedName, TRADE_WANT_NAMES[wIdx], sizeof(s_app->outgoingTrade.requestedName) - 1);
+
+  NetPacket pkt = {};
+  strncpy(pkt.type, "TRADE_OFFER", sizeof(pkt.type) - 1);
+  strncpy(pkt.from, s_app->config.deviceId, sizeof(pkt.from) - 1);
+  snprintf(pkt.text, sizeof(pkt.text), "%s -> %s", offerName, TRADE_WANT_NAMES[wIdx]);
+  strncpy(pkt.tradeId, s_app->outgoingTrade.tradeId, sizeof(pkt.tradeId) - 1);
+  strncpy(pkt.offeredId, offerId, sizeof(pkt.offeredId) - 1);
+  strncpy(pkt.offeredName, offerName, sizeof(pkt.offeredName) - 1);
+  strncpy(pkt.requestedId, TRADE_WANT_IDS[wIdx], sizeof(pkt.requestedId) - 1);
+  strncpy(pkt.requestedName, TRADE_WANT_NAMES[wIdx], sizeof(pkt.requestedName) - 1);
+
+  cyd_net_send_packet_ex(s_app->config, s_app->friendPet, pkt);
+  cyd_sound_treat_sent();
+  cyd_lvgl_show_banner("Tausch in Escrow gesendet!", 2500);
+  cyd_lvgl_open_modal(TAB_TRADE);
+  cyd_lvgl_refresh_main_screen();
+}
+
+static void on_trade_cancel_outgoing_cb(lv_event_t* /*e*/) {
+  if (!s_app || !s_app->outgoingTrade.active) return;
+  cyd_sound_click();
+  s_app->engine.addKnownItemById(s_app->outgoingTrade.offeredId, 1);
+
+  NetPacket pkt = {};
+  strncpy(pkt.type, "TRADE_DECLINE", sizeof(pkt.type) - 1);
+  strncpy(pkt.from, s_app->config.deviceId, sizeof(pkt.from) - 1);
+  strncpy(pkt.tradeId, s_app->outgoingTrade.tradeId, sizeof(pkt.tradeId) - 1);
+  cyd_net_send_packet_ex(s_app->config, s_app->friendPet, pkt);
+
+  memset(&s_app->outgoingTrade, 0, sizeof(s_app->outgoingTrade));
+  cyd_lvgl_show_banner("Escrow abgebrochen (zurueck)", 2200);
+  cyd_lvgl_open_modal(TAB_TRADE);
+  cyd_lvgl_refresh_main_screen();
+}
+
+static void on_trade_accept_cb(lv_event_t* /*e*/) {
+  if (!s_app || !s_app->incomingTrade.active) return;
+  cyd_sound_click();
+
+  if (strlen(s_app->incomingTrade.requestedId) > 0) {
+    if (s_app->engine.getItemQuantity(s_app->incomingTrade.requestedId) == 0) {
+      cyd_sound_warning();
+      cyd_lvgl_show_banner("Gegenstand fehlt im Beutel!", 2200);
+      return;
+    }
+    s_app->engine.consumeInventoryItem(s_app->incomingTrade.requestedId, 1);
+  }
+
+  s_app->engine.addKnownItemById(s_app->incomingTrade.offeredId, 1);
+  s_app->engine.addXP(35);
+
+  NetPacket pkt = {};
+  strncpy(pkt.type, "TRADE_ACCEPT", sizeof(pkt.type) - 1);
+  strncpy(pkt.from, s_app->config.deviceId, sizeof(pkt.from) - 1);
+  strncpy(pkt.tradeId, s_app->incomingTrade.tradeId, sizeof(pkt.tradeId) - 1);
+  strncpy(pkt.offeredId, s_app->incomingTrade.offeredId, sizeof(pkt.offeredId) - 1);
+  strncpy(pkt.requestedId, s_app->incomingTrade.requestedId, sizeof(pkt.requestedId) - 1);
+  cyd_net_send_packet_ex(s_app->config, s_app->friendPet, pkt);
+
+  memset(&s_app->incomingTrade, 0, sizeof(s_app->incomingTrade));
+  cyd_sound_level_up();
+  cyd_lvgl_show_banner("Tausch abgeschlossen! +35XP", 2800);
+  cyd_lvgl_close_modal();
+  cyd_lvgl_refresh_main_screen();
+}
+
+static void on_trade_decline_cb(lv_event_t* /*e*/) {
+  if (!s_app || !s_app->incomingTrade.active) return;
+  cyd_sound_click();
+  NetPacket pkt = {};
+  strncpy(pkt.type, "TRADE_DECLINE", sizeof(pkt.type) - 1);
+  strncpy(pkt.from, s_app->config.deviceId, sizeof(pkt.from) - 1);
+  strncpy(pkt.tradeId, s_app->incomingTrade.tradeId, sizeof(pkt.tradeId) - 1);
+  cyd_net_send_packet_ex(s_app->config, s_app->friendPet, pkt);
+
+  memset(&s_app->incomingTrade, 0, sizeof(s_app->incomingTrade));
+  cyd_lvgl_show_banner("Tausch abgelehnt.", 2000);
+  cyd_lvgl_open_modal(TAB_TRADE);
+}
+
 static void on_cancel_ap_cb(lv_event_t* /*e*/) {
   if (!s_app) return;
   cyd_sound_click();
@@ -866,7 +1109,8 @@ void cyd_lvgl_show_boot_screen(const char* ssid) {
   lv_obj_align(sub, LV_ALIGN_CENTER, 0, -4);
 
   lv_obj_t* ver = lv_label_create(scr);
-  lv_label_set_text_fmt(ver, "FW v%s  |  Rules v%s", FIRMWARE_VERSION, RULES_VERSION);
+  const char* rulesVer = (s_app && strlen(s_app->engine.rules.version) > 0) ? s_app->engine.rules.version : RULES_VERSION;
+  lv_label_set_text_fmt(ver, "FW v%s  |  Rules v%s", FIRMWARE_VERSION, rulesVer);
   lv_obj_set_style_text_color(ver, lv_color_hex(0x22D3EE), 0);
   lv_obj_align(ver, LV_ALIGN_CENTER, 0, 28);
 
@@ -1269,7 +1513,7 @@ void cyd_lvgl_refresh_main_screen(void) {
   } else {
     lv_obj_add_flag(s_fr_balloon_box, LV_OBJ_FLAG_HIDDEN);
   }
-  lv_label_set_text(s_fr_footer_lbl, fr.deviceId);
+  lv_label_set_text_fmt(s_fr_footer_lbl, "%s [%s]", fr.deviceId, strlen(fr.linkMode) > 0 ? fr.linkMode : "OFF");
 
   // Notification banner visibility
   if (strlen(s_app->bannerMsg) > 0 && !s_app->feedFlyoutOpen) {
@@ -1370,41 +1614,65 @@ void cyd_lvgl_open_modal(SubModalTab tab) {
   const TamagotchiCoreEngine& eng = s_app->engine;
 
   if (tab == TAB_STATUS) {
-    char jobTxt[48] = "Beruf: keiner";
+    char jobTxt[56] = "Beruf: keiner";
     if (s_app->activeJob.running) {
       uint32_t elapsed = cyd_millis() - s_app->activeJob.startedMs;
       uint32_t remS = (elapsed < s_app->activeJob.durationMs) ? ((s_app->activeJob.durationMs - elapsed) / 1000U) : 0;
-      snprintf(jobTxt, sizeof(jobTxt), "Aktiver Beruf: noch %lus", (unsigned long)remS);
+      char jName[28] = "Beruf";
+      if (s_app->activeJob.jobIndex < eng.rules.jobCount) {
+        sanitize_lvgl_text(PICK_RULE_NAME(eng.rules.jobs[s_app->activeJob.jobIndex]), jName, sizeof(jName));
+      }
+      snprintf(jobTxt, sizeof(jobTxt), "%s: noch %lus", jName, (unsigned long)remS);
     }
+    const char* linkLbl = s_app->offlineMode ? "Offline" : (strlen(s_app->friendPet.linkMode) > 0 ? s_app->friendPet.linkMode : "NET");
+    const char* rulesVer = (strlen(eng.rules.version) > 0) ? eng.rules.version : RULES_VERSION;
+    char petSafeName[20];
+    sanitize_lvgl_text(eng.name, petSafeName, sizeof(petSafeName));
     lv_obj_t* lbl = lv_label_create(body);
     lv_label_set_text_fmt(lbl,
-      "%s (Lv.%u %s) | $%u Coins\n"
+      "%s (Lv.%u %s) | $%u | Link:%s\n"
       "HP:%u%% Hunger:%u%% Energie:%u%%\n"
-      "Saub:%u%% Freude:%u%% Mana:%u%%\n"
-      "Satt-Schutz: %uT | Zustand: %s\n%s\nFW: v%s (ESP-IDF LVGL)",
-      eng.name, eng.level, eng.phase, eng.coins,
-      eng.stats.health, eng.stats.hunger, eng.stats.energy,
-      eng.stats.hygiene, eng.stats.happiness, eng.stats.mana,
-      eng.satietyTicks, eng.isSick ? "KRANK!" : "Gesund", jobTxt, FIRMWARE_VERSION);
+      "Saub:%u%% Freude:%u%% Mana:%u/%u\n"
+      "Satt-Schutz: %uT | Zustand: %s\n%s\nRules: v%s | FW: v%s",
+      petSafeName, (unsigned)eng.level, eng.phase, (unsigned)eng.coins, linkLbl,
+      (unsigned)eng.stats.health, (unsigned)eng.stats.hunger, (unsigned)eng.stats.energy,
+      (unsigned)eng.stats.hygiene, (unsigned)eng.stats.happiness, (unsigned)eng.stats.mana,
+      (unsigned)eng.getEffectiveMaxMana(),
+      (unsigned)eng.satietyTicks, eng.isSick ? "KRANK!" : "Gesund", jobTxt, rulesVer, FIRMWARE_VERSION);
     lv_obj_set_style_text_color(lbl, lv_color_hex(0xE2E8F0), 0);
 
     add_modal_btn(body, "In Flash & Cloud speichern", 0x0369A1, on_save_cloud_cb, 0);
+    if (!s_app->offlineMode) {
+      add_modal_btn(body, "Stand aus Cloud laden", 0x1E40AF, on_load_cloud_cb, 0);
+    }
   } else if (tab == TAB_BAG) {
     for (uint8_t i = 0; i < eng.inventoryCount; i++) {
       const EngineInventorySlot& sl = eng.inventory[i];
-      char rowTxt[64];
+      char safeName[28], rowTxt[64];
+      sanitize_lvgl_text(PICK_RULE_NAME(sl), safeName, sizeof(safeName));
       snprintf(rowTxt, sizeof(rowTxt), "%s x%u %s",
-               sl.name_de, sl.quantity,
+               safeName, sl.quantity,
                sl.category == 0 ? "[Essen]" : (sl.category == 2 ? "[Nutzen]" : "[Zutat]"));
       uint32_t col = (sl.category == 0) ? 0x065F46 : ((sl.category == 2) ? 0x9F1239 : 0x334155);
       add_modal_btn(body, rowTxt, col, on_bag_action_cb, (int)i);
     }
-    add_modal_btn(body, "Kochen: Kraeuter-Salat (2x Kraut)", 0x7C2D12, on_bag_action_cb, 100);
-    add_modal_btn(body, "Kochen: Beeren-Tarte (Lv2)", 0x7C2D12, on_bag_action_cb, 101);
-    add_modal_btn(body, "Shop: Apfel ($5)", 0x854D0E, on_bag_action_cb, 200);
-    add_modal_btn(body, "Shop: Pixel-Snack ($8)", 0x854D0E, on_bag_action_cb, 201);
-    add_modal_btn(body, "Shop: Heilsalbe ($25)", 0x854D0E, on_bag_action_cb, 202);
-    add_modal_btn(body, "Shop: Wiesenkraeuter ($8)", 0x854D0E, on_bag_action_cb, 203);
+    for (uint8_t r = 0; r < eng.rules.recipeCount; r++) {
+      const EngineRecipe& rec = eng.rules.recipes[r];
+      char rName[28], rowTxt[64];
+      sanitize_lvgl_text(PICK_RULE_NAME(rec), rName, sizeof(rName));
+      snprintf(rowTxt, sizeof(rowTxt), "Kochen: %s (Lv%u)", rName, (unsigned)rec.minLevel);
+      uint32_t col = (eng.level >= rec.minLevel) ? 0x7C2D12 : 0x451A03;
+      add_modal_btn(body, rowTxt, col, on_bag_action_cb, 100 + (int)r);
+    }
+    for (uint8_t s = 0; s < eng.rules.shopItemCount; s++) {
+      const EngineShopItem& sh = eng.rules.shopItems[s];
+      if (sh.category > 2) continue; // Only food, material, potion items
+      char sName[28], rowTxt[64];
+      sanitize_lvgl_text(PICK_RULE_NAME(sh), sName, sizeof(sName));
+      snprintf(rowTxt, sizeof(rowTxt), "Shop: %s ($%u, Lv%u)", sName, (unsigned)sh.cost, (unsigned)sh.minLevel);
+      uint32_t col = (eng.coins >= sh.cost && eng.level >= sh.minLevel) ? 0x854D0E : 0x422006;
+      add_modal_btn(body, rowTxt, col, on_bag_action_cb, 200 + (int)s);
+    }
   } else if (tab == TAB_JOBS) {
     if (s_app->activeJob.running) {
       uint32_t elapsed = cyd_millis() - s_app->activeJob.startedMs;
@@ -1420,17 +1688,32 @@ void cyd_lvgl_open_modal(SubModalTab tab) {
       if (pct > 100) pct = 100;
       lv_bar_set_value(jb, pct, LV_ANIM_OFF);
     }
-    add_modal_btn(body, "Kraeuter-Sammler (60s, -15EN -> +20$ Apfel)", 0x166534, on_job_start_cb, 0);
-    add_modal_btn(body, "Dorf-Spaeher (120s, -25EN -> +35$ Snack)", 0x1E40AF, on_job_start_cb, 1);
-    add_modal_btn(body, "Kristall-Mine (180s, -35EN -> +60$ Pilz)", 0x6B21A8, on_job_start_cb, 2);
+    static const uint32_t JOB_COLS[4] = { 0x166534, 0x1E40AF, 0x6B21A8, 0x9A3412 };
+    for (uint8_t j = 0; j < eng.rules.jobCount; j++) {
+      const EngineJob& job = eng.rules.jobs[j];
+      char jName[28], rowTxt[64];
+      sanitize_lvgl_text(PICK_RULE_NAME(job), jName, sizeof(jName));
+      snprintf(rowTxt, sizeof(rowTxt), "%s (%us -%uEN +%u$)",
+               jName, (unsigned)job.durationSec, (unsigned)job.energyCost, (unsigned)job.coinReward);
+      uint32_t col = (eng.level >= job.minLevel) ? JOB_COLS[j % 4] : 0x334155;
+      add_modal_btn(body, rowTxt, col, on_job_start_cb, (int)j);
+    }
   } else if (tab == TAB_MAGIC) {
     lv_obj_t* mpL = lv_label_create(body);
-    lv_label_set_text_fmt(mpL, "Mana: %u / 100 | Energie: %u / 100", eng.stats.mana, eng.stats.energy);
+    lv_label_set_text_fmt(mpL, "Mana: %u / %u | Energie: %u / 100",
+                          (unsigned)eng.stats.mana, (unsigned)eng.getEffectiveMaxMana(), (unsigned)eng.stats.energy);
     lv_obj_set_style_text_color(mpL, lv_color_hex(0xC084FC), 0);
-    add_modal_btn(body, "1. Laeuterung (15MP -> Heilt +20HP)", 0x047857, on_magic_action_cb, 0);
-    add_modal_btn(body, "2. Heilaura (20MP -> +30HP +30XP)", 0x6D28D9, on_magic_action_cb, 1);
-    add_modal_btn(body, "3. Astral-Festmahl (30MP -> Satt 4T)", 0x9333EA, on_magic_action_cb, 2);
-    add_modal_btn(body, "Magie erforschen (-15EN -> +15MP +35XP)", 0x1D4ED8, on_magic_action_cb, 3);
+    static const uint32_t SPELL_COLS[5] = { 0x047857, 0x6D28D9, 0x9333EA, 0x0369A1, 0xB45309 };
+    for (uint8_t m = 0; m < eng.rules.spellCount; m++) {
+      const EngineSpell& sp = eng.rules.spells[m];
+      char spName[28], rowTxt[64];
+      sanitize_lvgl_text(PICK_RULE_NAME(sp), spName, sizeof(spName));
+      snprintf(rowTxt, sizeof(rowTxt), "%u. %s (%uMP, Lv%u)",
+               (unsigned)(m + 1), spName, (unsigned)sp.manaCost, (unsigned)sp.minLevel);
+      uint32_t col = (eng.level >= sp.minLevel) ? SPELL_COLS[m % 5] : 0x334155;
+      add_modal_btn(body, rowTxt, col, on_magic_action_cb, (int)m);
+    }
+    add_modal_btn(body, "Magie erforschen (-15EN -> +15MP +35XP)", 0x1D4ED8, on_magic_action_cb, 99);
   } else if (tab == TAB_QUEST) {
     if (eng.canClaimStreakBonus()) {
       char sTxt[48];
@@ -1451,6 +1734,35 @@ void cyd_lvgl_open_modal(SubModalTab tab) {
     lv_obj_set_style_text_color(hdr, lv_color_hex(0x38BDF8), 0);
     for (int c = 0; c < 6; c++) {
       add_modal_btn(body, CHAT_PHRASES[c], 0x0E7490, on_chat_phrase_cb, c);
+    }
+  } else if (tab == TAB_TRADE) {
+    if (s_app->incomingTrade.active) {
+      lv_obj_t* inL = lv_label_create(body);
+      lv_label_set_text_fmt(inL, "Angebot von %s:\nBietet: %s\nGegen: %s",
+                            s_app->incomingTrade.fromDevice,
+                            s_app->incomingTrade.offeredName,
+                            strlen(s_app->incomingTrade.requestedName) > 0 ? s_app->incomingTrade.requestedName : "Geschenk");
+      lv_obj_set_style_text_color(inL, lv_color_hex(0xFACC15), 0);
+      add_modal_btn(body, "Tausch ANNEHMEN (+35XP)", 0x15803D, on_trade_accept_cb, 0);
+      add_modal_btn(body, "Tausch ABLEHNEN", 0x991B1B, on_trade_decline_cb, 0);
+    } else if (s_app->outgoingTrade.active) {
+      lv_obj_t* outL = lv_label_create(body);
+      lv_label_set_text_fmt(outL, "Escrow aktiv:\nDu bietest: %s\nWunsch: %s",
+                            s_app->outgoingTrade.offeredName,
+                            s_app->outgoingTrade.requestedName);
+      lv_obj_set_style_text_color(outL, lv_color_hex(0x38BDF8), 0);
+      add_modal_btn(body, "Angebot zurueckziehen", 0x991B1B, on_trade_cancel_outgoing_cb, 0);
+    } else {
+      uint8_t wIdx = s_app->tradeSelectedWantIdx % 5;
+      char wantBtn[48];
+      snprintf(wantBtn, sizeof(wantBtn), "Wunsch: %s (Tippen)", TRADE_WANT_NAMES[wIdx]);
+      add_modal_btn(body, wantBtn, 0x334155, on_trade_want_cycle_cb, 0);
+
+      for (uint8_t i = 0; i < eng.inventoryCount; i++) {
+        char rowTxt[56];
+        snprintf(rowTxt, sizeof(rowTxt), "Bieten: %s (x%u)", eng.inventory[i].name_de, (unsigned)eng.inventory[i].quantity);
+        add_modal_btn(body, rowTxt, 0xB45309, on_trade_send_offer_cb, (int)i);
+      }
     }
   }
 }
