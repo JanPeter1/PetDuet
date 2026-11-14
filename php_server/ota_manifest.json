@@ -1,22 +1,22 @@
 {
-  "firmware": {
-    "latest_version": "2.2.0",
-    "min_supported_version": "1.0.0",
-    "download_url": "ota_download.php?type=firmware",
-    "binary_filename": "cyd_tamagotchi.bin",
-    "file_size": 1428528,
-    "sha256": "8f4e2c91b5a76e330d4198bfac851493e82012ef902b78129487c0e0b3d64112",
-    "release_date": "2026-11-12",
-    "release_notes_en": "Added horizontal inventory-gated Feed Flyout, Food Tiers & Satiety Shield, Snack Sickness & Purify/Salve cure, Magic Research & selectable Spells/Quests CYD sub-menus.",
-    "release_notes_de": "Horizontales Futter-Flyout aus dem Inventar, Essensstufen & Saettigungsschutz, Snack-Bauchweh & Heilung sowie auswaehlbare Zauber- & Quest-Untermenues auf dem CYD."
-  },
-  "rules": {
-    "latest_version": "1.1.0",
-    "download_url": "ota_download.php?type=rules",
-    "file_size": 4210,
-    "sha256": "3a7b51f089cbde7e62a39281a1795b2d87e0fa0c88344f62e879008bc215018e",
-    "release_date": "2026-11-12",
-    "release_notes_en": "Updated rules v1.1.0: Inventory-gated feeding, Apple/Snack/Cooked Meal satiety tiers, snack sickness risk, jobs food drops, and magic research.",
-    "release_notes_de": "Regelwerk v1.1.0: Fuetterung aus Inventar, Apfel/Snack/Gerichte mit Saettigungsschutz, Snack-Risiko, Jobs mit Essensfunden und Magieforschung."
-  }
+    "firmware":  {
+                     "latest_version":  "2.1.4",
+                     "min_supported_version":  "1.0.0",
+                     "download_url":  "ota_download.php?type=firmware",
+                     "binary_filename":  "cyd_tamagotchi.bin",
+                     "file_size":  1055216,
+                     "sha256":  "2eed69f50c696978a8ed9eb4b477fdf07bf117568e131b02122f2c7bd51151dc",
+                     "release_date":  "2026-11-13",
+                     "release_notes_en":  "Firmware Release v2.1.4",
+                     "release_notes_de":  "Firmware Release v2.1.4"
+                 },
+    "rules":  {
+                  "latest_version":  "1.1.0",
+                  "download_url":  "ota_download.php?type=rules",
+                  "file_size":  24984,
+                  "sha256":  "7c9107c6178803a12acfd114865b83cd637f46aefdbf15441ab5c6e3c48e3b41",
+                  "release_date":  "2026-11-13",
+                  "release_notes_en":  "Updated rules v1.1.0: Inventory-gated feeding, Apple/Snack/Cooked Meal satiety tiers, snack sickness risk, jobs food drops, and magic research.",
+                  "release_notes_de":  "Regelwerk v1.1.0: Fuetterung aus Inventar, Apfel/Snack/Gerichte mit Saettigungsschutz, Snack-Risiko, Jobs mit Essensfunden und Magieforschung."
+              }
 }

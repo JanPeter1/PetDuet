@@ -222,7 +222,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $input) {
         exit;
     }
 
-    $cost      = (int)($found_product['cost'] ?? 0);
+    $cost      = (int)($found_product['cost'] ?? $found_product['price_coins'] ?? 0);
     $min_level = (int)($found_product['min_level'] ?? 1);
 
     // Validate level

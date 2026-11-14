@@ -34,7 +34,8 @@ param(
     [string]$ComPort = "",
 
     [switch]$Flash,
-    [switch]$NoFlash
+    [switch]$NoFlash,
+    [switch]$Coverage
 )
 
 $ErrorActionPreference = "Stop"
@@ -167,145 +168,202 @@ try {
     Write-Host ("  Build OK: {0} ({1} Bytes, SHA256: {2}...)" -f $FirmwareBin, $binInfo.Length, $binHash.Substring(0, 16)) -ForegroundColor Green
 
     # ========================================================================
-    # SCHRITT 3: UNIT-TESTS & GETRENNTE CODE-COVERAGE (FIRMWARE & SERVER)
+    # SCHRITT 3: UNIT-TESTS (OHNE COVERAGE - NUR MIT -Coverage OPTION)
     # ========================================================================
-    Write-Step "[3/6] Unit-Tests & Code-Coverage (getrennt nach Firmware & Server)"
+    Write-Step "[3/6] Unit-Tests (ohne Code-Coverage - nutze -Coverage für Coverage)"
 
-    # --- 3A: Firmware Unit Tests + gcov Coverage ---
-    Write-Host "`n--- [3A] Firmware Unit-Tests & Code-Coverage (C++ / gcov) ---" -ForegroundColor Yellow
-
-    $gppExe = Find-Tool "g++" @(
-        "C:\msys64\ucrt64\bin\g++.exe",
-        "C:\msys64\mingw64\bin\g++.exe",
-        "C:\mingw64\bin\g++.exe",
-        "C:\WinLibs\mingw64\bin\g++.exe",
-        "C:\ProgramData\chocolatey\bin\g++.exe"
-    )
-    if (-not $gppExe) {
-        throw "Kein Host C++ Compiler (g++) fuer Firmware-Tests/Coverage gefunden (z.B. MSYS2/MinGW/WinLibs g++.exe)."
-    }
-
-    $gcovExe = Find-Tool "gcov" @(
-        (Join-Path (Split-Path $gppExe -Parent) "gcov.exe")
-    )
-    if (-not $gcovExe) {
-        throw "gcov.exe nicht gefunden (wird fuer Firmware Code-Coverage benoetigt)."
-    }
-
-    $fwCovWorkDir = Join-Path $env:TEMP ("petduet_fw_cov_" + $PID)
-    if (Test-Path $fwCovWorkDir) { Remove-Item $fwCovWorkDir -Recurse -Force }
-    New-Item -ItemType Directory -Path $fwCovWorkDir -Force | Out-Null
-
-    $fwTestExe = Join-Path $fwCovWorkDir "test_firmware_engine.exe"
+    $fwAssertionsPassed = $false
     $fwCovLinePct = $null
     $fwExecLines = 0
     $fwTotalLines = 0
-    $fwAssertionsPassed = $false
+    $srvCov = $null
 
-    Push-Location $fwCovWorkDir
-    try {
-        # Ensure g++ DLLs (e.g. libstdc++-6.dll) are resolvable at runtime
-        $oldPath = $env:PATH
-        $gppDir = Split-Path $gppExe -Parent
-        $env:PATH = "$gppDir;$oldPath"
+    if ($Coverage) {
+        Write-Host "  [Coverage-Modus aktiviert]" -ForegroundColor Yellow
 
-        & $gppExe -std=c++17 -O0 -g --coverage "-I$FwMockInc" "-I$FirmwareDir" "$FwTestSrc" -o "$fwTestExe"
-        if ($LASTEXITCODE -ne 0) {
-            throw "Kompilierung der Firmware-Unit-Tests fehlgeschlagen."
+        # --- 3A: Firmware Unit Tests + gcov Coverage ---
+        Write-Host "`n--- [3A] Firmware Unit-Tests & Code-Coverage (C++ / gcov) ---" -ForegroundColor Yellow
+
+        $gppExe = Find-Tool "g++" @(
+            "C:\msys64\ucrt64\bin\g++.exe",
+            "C:\msys64\mingw64\bin\g++.exe",
+            "C:\mingw64\bin\g++.exe",
+            "C:\WinLibs\mingw64\bin\g++.exe",
+            "C:\ProgramData\chocolatey\bin\g++.exe"
+        )
+        if (-not $gppExe) {
+            throw "Kein Host C++ Compiler (g++) fuer Firmware-Tests/Coverage gefunden (z.B. MSYS2/MinGW/WinLibs g++.exe)."
         }
 
-        & $fwTestExe
-        if ($LASTEXITCODE -ne 0) {
-            throw "Firmware-Unit-Tests sind fehlgeschlagen!"
+        $gcovExe = Find-Tool "gcov" @(
+            (Join-Path (Split-Path $gppExe -Parent) "gcov.exe")
+        )
+        if (-not $gcovExe) {
+            throw "gcov.exe nicht gefunden (wird fuer Firmware Code-Coverage benoetigt)."
         }
-        $fwAssertionsPassed = $true
 
-        # Run gcov to collect coverage strictly for TamagotchiCoreEngine.h
-        $gcdaItem = Get-ChildItem -Path $fwCovWorkDir -Filter "*.gcda" | Select-Object -First 1
-        if (-not $gcdaItem) {
-            throw "Keine .gcda Coverage-Daten von g++ erzeugt."
-        }
-        $gcovOut = & $gcovExe -b -c "$($gcdaItem.FullName)" 2>&1
+        $fwCovWorkDir = Join-Path $env:TEMP ("petduet_fw_cov_" + $PID)
+        if (Test-Path $fwCovWorkDir) { Remove-Item $fwCovWorkDir -Recurse -Force }
+        New-Item -ItemType Directory -Path $fwCovWorkDir -Force | Out-Null
 
-        $gcovHeaderFile = Get-ChildItem -Path $fwCovWorkDir -Filter "*TamagotchiCoreEngine.h.gcov" | Select-Object -First 1
-        if ($gcovHeaderFile) {
-            $lines = Get-Content $gcovHeaderFile.FullName
-            foreach ($ln in $lines) {
-                if ($ln -match '^\s*([^:]+):\s*(\d+):') {
-                    $cnt = $matches[1].Trim()
-                    if ($cnt -eq '-' -or $cnt -eq '') { continue }
-                    $fwTotalLines++
-                    if ($cnt -ne '#####' -and $cnt -ne '=====') {
-                        $fwExecLines++
+        $fwTestExe = Join-Path $fwCovWorkDir "test_firmware_engine.exe"
+
+        Push-Location $fwCovWorkDir
+        try {
+            # Ensure g++ DLLs (e.g. libstdc++-6.dll) are resolvable at runtime
+            $oldPath = $env:PATH
+            $gppDir = Split-Path $gppExe -Parent
+            $env:PATH = "$gppDir;$oldPath"
+
+            & $gppExe -std=c++17 -O0 -g --coverage "-I$FwMockInc" "-I$FirmwareDir" "$FwTestSrc" -o "$fwTestExe"
+            if ($LASTEXITCODE -ne 0) {
+                throw "Kompilierung der Firmware-Unit-Tests fehlgeschlagen."
+            }
+
+            & $fwTestExe
+            if ($LASTEXITCODE -ne 0) {
+                throw "Firmware-Unit-Tests sind fehlgeschlagen!"
+            }
+            $fwAssertionsPassed = $true
+
+            # Run gcov to collect coverage strictly for TamagotchiCoreEngine.h
+            $gcdaItem = Get-ChildItem -Path $fwCovWorkDir -Filter "*.gcda" | Select-Object -First 1
+            if (-not $gcdaItem) {
+                throw "Keine .gcda Coverage-Daten von g++ erzeugt."
+            }
+            $gcovOut = & $gcovExe -b -c "$($gcdaItem.FullName)" 2>&1
+
+            $gcovHeaderFile = Get-ChildItem -Path $fwCovWorkDir -Filter "*TamagotchiCoreEngine.h.gcov" | Select-Object -First 1
+            if ($gcovHeaderFile) {
+                $lines = Get-Content $gcovHeaderFile.FullName
+                foreach ($ln in $lines) {
+                    if ($ln -match '^\s*([^:]+):\s*(\d+):') {
+                        $cnt = $matches[1].Trim()
+                        if ($cnt -eq '-' -or $cnt -eq '') { continue }
+                        $fwTotalLines++
+                        if ($cnt -ne '#####' -and $cnt -ne '=====') {
+                            $fwExecLines++
+                        }
                     }
                 }
+                if ($fwTotalLines -gt 0) {
+                    $fwCovLinePct = [math]::Round(($fwExecLines / $fwTotalLines) * 100.0, 2)
+                }
             }
-            if ($fwTotalLines -gt 0) {
-                $fwCovLinePct = [math]::Round(($fwExecLines / $fwTotalLines) * 100.0, 2)
-            }
+
+            $fwReportText = @(
+                "PetDuet Firmware Unit-Test & Code-Coverage Report"
+                "================================================"
+                "Compiler       : $gppExe"
+                "Target Header  : esp32_firmware\TamagotchiCoreEngine.h"
+                "Tests Passed   : $fwAssertionsPassed"
+                "Line Coverage  : $fwCovLinePct% ($fwExecLines / $fwTotalLines ausfuehrbare Zeilen)"
+            ) -join [Environment]::NewLine
+
+            $fwTxtOut  = Join-Path $CoverageDir "firmware_coverage.txt"
+            $fwJsonOut = Join-Path $CoverageDir "firmware_coverage.json"
+            [System.IO.File]::WriteAllText($fwTxtOut, $fwReportText + [Environment]::NewLine, $Utf8NoBom)
+
+            $fwJsonObj = [ordered]@{
+                component = "firmware"
+                target = "esp32_firmware/TamagotchiCoreEngine.h"
+                tests_passed = $fwAssertionsPassed
+                line_coverage_pct = $fwCovLinePct
+                executed_lines = $fwExecLines
+                executable_lines = $fwTotalLines
+            } | ConvertTo-Json -Depth 4
+            [System.IO.File]::WriteAllText($fwJsonOut, $fwJsonObj, $Utf8NoBom)
+
+            Write-Host ("  Firmware Coverage (TamagotchiCoreEngine.h): {0}% ({1}/{2} Zeilen)" -f $fwCovLinePct, $fwExecLines, $fwTotalLines) -ForegroundColor Green
+        } finally {
+            if ($oldPath) { $env:PATH = $oldPath }
+            Pop-Location
+            if (Test-Path $fwCovWorkDir) { Remove-Item $fwCovWorkDir -Recurse -Force -ErrorAction SilentlyContinue }
         }
 
-        $fwReportText = @(
-            "PetDuet Firmware Unit-Test & Code-Coverage Report"
-            "================================================"
-            "Compiler       : $gppExe"
-            "Target Header  : esp32_firmware\TamagotchiCoreEngine.h"
-            "Tests Passed   : $fwAssertionsPassed"
-            "Line Coverage  : $fwCovLinePct% ($fwExecLines / $fwTotalLines ausfuehrbare Zeilen)"
-        ) -join [Environment]::NewLine
+        # --- 3B: Server Unit Tests + PHP Coverage ---
+        Write-Host "`n--- [3B] Server Unit-Tests & Code-Coverage (PHP Server Endpoints) ---" -ForegroundColor Yellow
 
-        $fwTxtOut  = Join-Path $CoverageDir "firmware_coverage.txt"
-        $fwJsonOut = Join-Path $CoverageDir "firmware_coverage.json"
-        [System.IO.File]::WriteAllText($fwTxtOut, $fwReportText + [Environment]::NewLine, $Utf8NoBom)
+        $laragonPhp = Get-ChildItem -Path "C:\laragon\bin\php" -Filter "php.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+        $phpExe = Find-Tool "php" @(
+            "C:\php\php.exe",
+            "C:\xampp\php\php.exe",
+            $laragonPhp,
+            "C:\tools\php\php.exe"
+        )
+        if (-not $phpExe) {
+            throw "PHP CLI ('php.exe') nicht gefunden. Bitte PHP installieren oder in PATH aufnehmen."
+        }
 
-        $fwJsonObj = [ordered]@{
-            component = "firmware"
-            target = "esp32_firmware/TamagotchiCoreEngine.h"
-            tests_passed = $fwAssertionsPassed
-            line_coverage_pct = $fwCovLinePct
-            executed_lines = $fwExecLines
-            executable_lines = $fwTotalLines
-        } | ConvertTo-Json -Depth 4
-        [System.IO.File]::WriteAllText($fwJsonOut, $fwJsonObj, $Utf8NoBom)
+        & $phpExe "$SrvTestRunner" "--cov-dir=$CoverageDir"
+        if ($LASTEXITCODE -ne 0) {
+            throw "Server-Unit-Tests sind fehlgeschlagen (Exit Code $LASTEXITCODE)!"
+        }
 
-        Write-Host ("  Firmware Coverage (TamagotchiCoreEngine.h): {0}% ({1}/{2} Zeilen)" -f $fwCovLinePct, $fwExecLines, $fwTotalLines) -ForegroundColor Green
-    } finally {
-        if ($oldPath) { $env:PATH = $oldPath }
-        Pop-Location
-        if (Test-Path $fwCovWorkDir) { Remove-Item $fwCovWorkDir -Recurse -Force -ErrorAction SilentlyContinue }
-    }
-
-    # --- 3B: Server Unit Tests + PHP Coverage ---
-    Write-Host "`n--- [3B] Server Unit-Tests & Code-Coverage (PHP Server Endpoints) ---" -ForegroundColor Yellow
-
-    $laragonPhp = Get-ChildItem -Path "C:\laragon\bin\php" -Filter "php.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-    $phpExe = Find-Tool "php" @(
-        "C:\php\php.exe",
-        "C:\xampp\php\php.exe",
-        $laragonPhp,
-        "C:\tools\php\php.exe"
-    )
-    if (-not $phpExe) {
-        throw "PHP CLI ('php.exe') nicht gefunden. Bitte PHP installieren oder in PATH aufnehmen."
-    }
-
-    & $phpExe "$SrvTestRunner" "--cov-dir=$CoverageDir"
-    if ($LASTEXITCODE -ne 0) {
-        throw "Server-Unit-Tests sind fehlgeschlagen (Exit Code $LASTEXITCODE)!"
-    }
-
-    $srvJsonPath = Join-Path $CoverageDir "server_coverage.json"
-    $srvCov = Get-Content $srvJsonPath -Raw | ConvertFrom-Json
-
-    # Getrennte Zusammenfassung ausgeben
-    Write-Host "`n=== GETRENNTE CODE-COVERAGE ZUSAMMENFASSUNG ===" -ForegroundColor Cyan
-    Write-Host ("  1. FIRMWARE (TamagotchiCoreEngine.h) : {0}% ({1}/{2} Zeilen)" -f $fwCovLinePct, $fwExecLines, $fwTotalLines) -ForegroundColor Green
-    if ($null -ne $srvCov.line_coverage_pct) {
-        Write-Host ("  2. SERVER   (php_server/*.php)       : {0}% ({1}/{2} Zeilen, Treiber: {3}) | Endpoints: {4}%" -f $srvCov.line_coverage_pct, $srvCov.executed_lines, $srvCov.executable_lines, $srvCov.coverage_driver, $srvCov.endpoint_coverage_pct) -ForegroundColor Green
+        $srvJsonPath = Join-Path $CoverageDir "server_coverage.json"
+        $srvCov = Get-Content $srvJsonPath -Raw | ConvertFrom-Json
     } else {
-        Write-Host ("  2. SERVER   (php_server/*.php)       : Endpoint-Coverage {0}% ({1}/{2} PHP-Skripte) | Zeilen-Coverage: PCOV/Xdebug nicht aktiv" -f $srvCov.endpoint_coverage_pct, $srvCov.tested_endpoints, $srvCov.total_endpoints) -ForegroundColor Yellow
+        # --- Without Coverage: Just run tests ---
+        Write-Host "  [Tests ohne Coverage-Messung]" -ForegroundColor Cyan
+
+        # Firmware tests without coverage flags
+        $gppExe = Find-Tool "g++" @(
+            "C:\msys64\ucrt64\bin\g++.exe",
+            "C:\msys64\mingw64\bin\g++.exe",
+            "C:\mingw64\bin\g++.exe",
+            "C:\WinLibs\mingw64\bin\g++.exe",
+            "C:\ProgramData\chocolatey\bin\g++.exe"
+        )
+        if ($gppExe) {
+            $fwTestWorkDir = Join-Path $env:TEMP ("petduet_fw_test_" + $PID)
+            if (Test-Path $fwTestWorkDir) { Remove-Item $fwTestWorkDir -Recurse -Force }
+            New-Item -ItemType Directory -Path $fwTestWorkDir -Force | Out-Null
+
+            $fwTestExe = Join-Path $fwTestWorkDir "test_firmware_engine.exe"
+            Push-Location $fwTestWorkDir
+            try {
+                $oldPath = $env:PATH
+                $gppDir = Split-Path $gppExe -Parent
+                $env:PATH = "$gppDir;$oldPath"
+
+                & $gppExe -std=c++17 -O0 -g "-I$FwMockInc" "-I$FirmwareDir" "$FwTestSrc" -o "$fwTestExe"
+                if ($LASTEXITCODE -ne 0) {
+                    throw "Kompilierung der Firmware-Unit-Tests fehlgeschlagen."
+                }
+
+                & $fwTestExe
+                if ($LASTEXITCODE -ne 0) {
+                    throw "Firmware-Unit-Tests sind fehlgeschlagen!"
+                }
+                $fwAssertionsPassed = $true
+                Write-Host "  Firmware Tests: PASSED" -ForegroundColor Green
+            } finally {
+                if ($oldPath) { $env:PATH = $oldPath }
+                Pop-Location
+                if (Test-Path $fwTestWorkDir) { Remove-Item $fwTestWorkDir -Recurse -Force -ErrorAction SilentlyContinue }
+            }
+        } else {
+            Write-Host "  Firmware Tests: ÜBERSPRUNGEN (kein g++ gefunden)" -ForegroundColor Yellow
+        }
+
+        # Server tests without coverage
+        $laragonPhp = Get-ChildItem -Path "C:\laragon\bin\php" -Filter "php.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+        $phpExe = Find-Tool "php" @(
+            "C:\php\php.exe",
+            "C:\xampp\php\php.exe",
+            $laragonPhp,
+            "C:\tools\php\php.exe"
+        )
+        if ($phpExe) {
+            & $phpExe "$SrvTestRunner"
+            if ($LASTEXITCODE -ne 0) {
+                throw "Server-Unit-Tests sind fehlgeschlagen (Exit Code $LASTEXITCODE)!"
+            }
+            Write-Host "  Server Tests: PASSED" -ForegroundColor Green
+        } else {
+            Write-Host "  Server Tests: ÜBERSPRUNGEN (kein PHP gefunden)" -ForegroundColor Yellow
+        }
     }
-    Write-Host "  Reports gespeichert in: $CoverageDir" -ForegroundColor Gray
 
     # ========================================================================
     # SCHRITT 4: FIRMWARE MIT VERSIONSFILE OTA-FAEHIG ZUM SERVER KOPIEREN

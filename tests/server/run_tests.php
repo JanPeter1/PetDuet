@@ -63,7 +63,7 @@ fclose($sock);
 [, $port] = explode(':', $addr);
 $baseUrl = "http://127.0.0.1:$port";
 
-// Launch PHP built-in server with coverage auto-prepend hook
+// Server management
 $phpBin = PHP_BINARY;
 $extraArgs = '';
 if (extension_loaded('xdebug')) {
@@ -86,23 +86,51 @@ $env = getenv();
 $env['PETDUET_COV_LOG'] = $covLogFile;
 
 $procOptions = ['bypass_shell' => true];
-$proc = proc_open($cmd, $descriptors, $pipes, $tmpServer, $env, $procOptions);
-if (!is_resource($proc)) {
-    fwrite(STDERR, "Failed to start local PHP test server\n");
-    removeDirRecursive($tmpRoot);
-    exit(1);
+
+$requestCount = 0;
+$maxRequestsPerServer = 15; // PHP built-in server limit ~20-22 requests
+
+function startServer(): array {
+    global $cmd, $descriptors, $tmpServer, $env, $procOptions, $port, $baseUrl;
+    $proc = proc_open($cmd, $descriptors, $pipes, $tmpServer, $env, $procOptions);
+    if (!is_resource($proc)) {
+        fwrite(STDERR, "Failed to start local PHP test server\n");
+        return [null, null];
+    }
+    // Wait until server accepts connections
+    $ready = false;
+    for ($i = 0; $i < 40; $i++) {
+        $fp = @fsockopen('127.0.0.1', (int)$port, $e1, $e2, 0.2);
+        if ($fp) {
+            fclose($fp);
+            $ready = true;
+            break;
+        }
+        usleep(50000);
+    }
+    if (!$ready) {
+        proc_terminate($proc);
+        @fclose($pipes[0]); @fclose($pipes[1]); @fclose($pipes[2]);
+        return [null, null];
+    }
+    return [$proc, $pipes];
 }
 
-// Wait until server accepts connections
-$ready = false;
-for ($i = 0; $i < 40; $i++) {
-    $fp = @fsockopen('127.0.0.1', (int)$port, $e1, $e2, 0.2);
-    if ($fp) {
-        fclose($fp);
-        $ready = true;
-        break;
+function stopServer($proc, $pipes): void {
+    if (is_resource($proc)) {
+        proc_terminate($proc);
+        @fclose($pipes[0]);
+        @fclose($pipes[1]);
+        @fclose($pipes[2]);
+        proc_close($proc);
     }
-    usleep(50000);
+}
+
+// Start initial server
+[$proc, $pipes] = startServer();
+if (!$proc) {
+    removeDirRecursive($tmpRoot);
+    exit(1);
 }
 
 $assertionsRun = 0;
@@ -119,7 +147,7 @@ function check(bool $cond, string $label): void {
 }
 
 function httpReq(string $method, string $path, $body = null): array {
-    global $baseUrl, $testedEndpoints;
+    global $baseUrl, $testedEndpoints, $proc, $pipes, $requestCount, $maxRequestsPerServer, $cmd, $descriptors, $tmpServer, $env, $procOptions, $port;
     $ep = strtok(ltrim($path, '/'), '?');
     if ($ep === '') $ep = 'index.php';
     $testedEndpoints[$ep] = true;
@@ -146,14 +174,23 @@ function httpReq(string $method, string $path, $body = null): array {
         $status = (int)$m[1];
     }
     $json = is_string($raw) ? json_decode($raw, true) : null;
+
+    $requestCount++;
+    // Restart server if approaching limit
+    if ($requestCount >= $maxRequestsPerServer) {
+        stopServer($proc, $pipes);
+        [$proc, $pipes] = startServer();
+        if (!$proc) {
+            fwrite(STDERR, "Failed to restart server\n");
+            exit(1);
+        }
+        $requestCount = 0;
+    }
+
     return ['status' => $status, 'raw' => $raw, 'json' => $json];
 }
 
 try {
-    if (!$ready) {
-        throw new RuntimeException('Test PHP HTTP server did not become ready in time.');
-    }
-
     // 1. Gateway index.php
     $res = httpReq('GET', '/index.php');
     check($res['status'] === 200 && str_contains((string)$res['raw'], 'PetDuet CYD Server Gateway'), 'index.php returns HTML gateway');
@@ -293,12 +330,9 @@ try {
     // Also run index.php again after devices exist so table branch executes
     $res = httpReq('GET', '/index.php');
     check($res['status'] === 200 && str_contains((string)$res['raw'], 'CYD-DEV1'), 'index.php renders registered devices table');
+
 } finally {
-    proc_terminate($proc);
-    @fclose($pipes[0]);
-    @fclose($pipes[1]);
-    @fclose($pipes[2]);
-    proc_close($proc);
+    stopServer($proc, $pipes);
 }
 
 // Compute PHP server code coverage

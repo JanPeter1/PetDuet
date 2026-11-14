@@ -39,7 +39,7 @@
 #define PHP_SERVER_BASE_URL "http://192.168.1.100/cyd-tamagotchi"
 
 // Versioning and OTA Updates (A/B Dual Partition Switching)
-#define FIRMWARE_VERSION        "2.1.3"
+#define FIRMWARE_VERSION        "2.1.4"
 #define RULES_VERSION           "1.0.4"
 #define OTA_CHECK_INTERVAL_MS   (15 * 60 * 1000) // Check for updates every 15 minutes
 
