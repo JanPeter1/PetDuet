@@ -53,10 +53,12 @@ static void handle_net_packet(const NetPacket& pkt, const char* viaMode) {
     if (s_app.dualCastUntilMs > 0 && now <= s_app.dualCastUntilMs) {
       s_app.dualCastUntilMs = 0;
       s_app.friendDualCastUntilMs = 0;
+      s_app.auroraUntilMs = now + 4000U;
       s_app.engine.stats.health = (uint8_t)engineMin(100, s_app.engine.stats.health + 50);
       s_app.engine.stats.happiness = (uint8_t)engineMin(100, s_app.engine.stats.happiness + 40);
       s_app.engine.addXP(100);
       s_app.engine.addKnownItemById("food_berry_pie", 1);
+      cyd_display_set_led(false, true, true); // Cyan Aurora flash
       cyd_sound_level_up();
       cyd_lvgl_show_banner("ASTRALE HARMONIE! +100XP +Tarte!", 3500);
     } else {
@@ -187,7 +189,11 @@ extern "C" void app_main(void) {
   strcpy(s_app.friendPet.speechBalloon, "Hello Buddy!");
 
   cyd_storage_load_rules(s_app.engine);
-  cyd_storage_load_pet(s_app.engine, s_app.recipesCrafted, s_app.jobsCompleted, s_app.spellsCast, s_app.treatsSent);
+  bool hasLocalSave = cyd_storage_has_pet_save();
+  if (hasLocalSave) {
+    cyd_storage_load_pet(s_app.engine, s_app.recipesCrafted, s_app.jobsCompleted, s_app.spellsCast, s_app.treatsSent);
+  }
+  s_app.lastCloudSaveEpoch = cyd_storage_load_cloud_ts();
   cyd_lvgl_set_app_state(&s_app);
 
   // Validate current A/B OTA partition after successful init
@@ -224,11 +230,42 @@ extern "C" void app_main(void) {
         }
       } else {
         cyd_net_mark_ota_valid(&s_app.config);
+        bool autoRestored = false;
+        if (!hasLocalSave) {
+          char restoredTrainer[24] = "";
+          uint32_t cldTs = 0;
+          if (cyd_net_cloud_load(
+                s_app.config, s_app.engine,
+                s_app.recipesCrafted, s_app.jobsCompleted, s_app.spellsCast, s_app.treatsSent,
+                restoredTrainer, sizeof(restoredTrainer), &cldTs)) {
+            if (strlen(restoredTrainer) > 0) {
+              strncpy(s_app.config.trainerName, restoredTrainer, sizeof(s_app.config.trainerName) - 1);
+              s_app.config.trainerName[sizeof(s_app.config.trainerName) - 1] = '\0';
+            }
+            strncpy(s_app.config.biome, s_app.engine.biome, sizeof(s_app.config.biome) - 1);
+            s_app.config.biome[sizeof(s_app.config.biome) - 1] = '\0';
+            cyd_storage_save_config(s_app.config);
+            cyd_storage_save_pet(s_app.engine, s_app.recipesCrafted, s_app.jobsCompleted, s_app.spellsCast, s_app.treatsSent);
+            if (cldTs > 0) {
+              s_app.lastCloudSaveEpoch = cldTs;
+              cyd_storage_save_cloud_ts(cldTs);
+            }
+            s_app.cloudSyncOk = true;
+            s_app.lastCloudSaveMs = cyd_millis();
+            autoRestored = true;
+            ESP_LOGI(TAG, "Fresh flash detected -> auto-restored cloud backup for %s", s_app.config.deviceId);
+          }
+        }
         cyd_net_sync_php_server(s_app.config, s_app.engine, s_app.friendPet);
         char otaMsg[48] = "";
         cyd_net_check_ota(s_app.config, s_app.engine, on_ota_progress, otaMsg, sizeof(otaMsg));
         cyd_lvgl_show_main_screen();
-        cyd_lvgl_show_banner("WLAN & Socket bereit!", 2500);
+        if (autoRestored) {
+          cyd_sound_level_up();
+          cyd_lvgl_show_banner(LANG_DE ? "Cloud-Stand wiederhergestellt!" : "Cloud backup restored!", 3200);
+        } else {
+          cyd_lvgl_show_banner(LANG_DE ? "WLAN & Socket bereit!" : "WiFi & Socket ready!", 2500);
+        }
       }
     } else {
       ESP_LOGW(TAG, "WiFi connect failed -> launching AP config portal");
@@ -317,30 +354,62 @@ extern "C" void app_main(void) {
     if (s_app.triggerSaveRequested) {
       s_app.triggerSaveRequested = false;
       cyd_storage_save_pet(s_app.engine, s_app.recipesCrafted, s_app.jobsCompleted, s_app.spellsCast, s_app.treatsSent);
-      if (!s_app.offlineMode) {
+      if (!s_app.offlineMode && cyd_net_is_wifi_connected()) {
+        uint32_t cldTs = 0;
         bool ok = cyd_net_cloud_save(
           s_app.config, s_app.engine,
-          s_app.recipesCrafted, s_app.jobsCompleted, s_app.spellsCast, s_app.treatsSent
+          s_app.recipesCrafted, s_app.jobsCompleted, s_app.spellsCast, s_app.treatsSent,
+          &cldTs
         );
-        cyd_lvgl_show_banner(ok ? "Lokal & Cloud gespeichert!" : "Lokal gespeichert (Cloud Err)", 2500);
+        s_app.cloudSyncOk = ok;
+        if (ok) {
+          s_app.lastCloudSaveMs = now;
+          if (cldTs > 0) {
+            s_app.lastCloudSaveEpoch = cldTs;
+            cyd_storage_save_cloud_ts(cldTs);
+          }
+        }
+        cyd_lvgl_show_banner(
+          ok ? (LANG_DE ? "Lokal & Cloud gespeichert!" : "Saved Flash & Cloud!")
+             : (LANG_DE ? "Lokal gespeichert (Cloud Err)" : "Saved Flash (Cloud Err)"),
+          2500
+        );
       } else {
-        cyd_lvgl_show_banner("Lokal im Flash gespeichert!", 2500);
+        cyd_lvgl_show_banner(LANG_DE ? "Lokal im Flash gespeichert!" : "Saved to local Flash!", 2500);
       }
+      s_app.dirtyUi = true;
     }
 
     // Manual Cloud Restore triggered via Status tab
     if (s_app.triggerCloudLoadRequested) {
       s_app.triggerCloudLoadRequested = false;
-      if (!s_app.offlineMode &&
+      char restoredTrainer[24] = "";
+      uint32_t cldTs = 0;
+      if (!s_app.offlineMode && cyd_net_is_wifi_connected() &&
           cyd_net_cloud_load(
             s_app.config, s_app.engine,
-            s_app.recipesCrafted, s_app.jobsCompleted, s_app.spellsCast, s_app.treatsSent)) {
+            s_app.recipesCrafted, s_app.jobsCompleted, s_app.spellsCast, s_app.treatsSent,
+            restoredTrainer, sizeof(restoredTrainer), &cldTs)) {
+        if (strlen(restoredTrainer) > 0) {
+          strncpy(s_app.config.trainerName, restoredTrainer, sizeof(s_app.config.trainerName) - 1);
+          s_app.config.trainerName[sizeof(s_app.config.trainerName) - 1] = '\0';
+        }
+        strncpy(s_app.config.biome, s_app.engine.biome, sizeof(s_app.config.biome) - 1);
+        s_app.config.biome[sizeof(s_app.config.biome) - 1] = '\0';
+        cyd_storage_save_config(s_app.config);
         cyd_storage_save_pet(s_app.engine, s_app.recipesCrafted, s_app.jobsCompleted, s_app.spellsCast, s_app.treatsSent);
+        if (cldTs > 0) {
+          s_app.lastCloudSaveEpoch = cldTs;
+          cyd_storage_save_cloud_ts(cldTs);
+        }
+        s_app.cloudSyncOk = true;
+        s_app.lastCloudSaveMs = now;
+        cyd_net_sync_php_server(s_app.config, s_app.engine, s_app.friendPet);
         cyd_sound_level_up();
-        cyd_lvgl_show_banner("Cloud-Stand geladen!", 2800);
+        cyd_lvgl_show_banner(LANG_DE ? "Cloud-Stand geladen!" : "Cloud backup loaded!", 2800);
       } else {
         cyd_sound_warning();
-        cyd_lvgl_show_banner("Cloud-Stand nicht gefunden!", 2500);
+        cyd_lvgl_show_banner(LANG_DE ? "Cloud-Stand nicht gefunden!" : "No cloud backup found!", 2500);
       }
       s_app.dirtyUi = true;
     }
@@ -360,13 +429,32 @@ extern "C" void app_main(void) {
       cyd_net_check_ota(s_app.config, s_app.engine, on_ota_progress, otaMsg, sizeof(otaMsg));
     }
 
-    // Periodic NVS autosave (2 min)
+    // Periodic NVS + Cloud autosave (2 min)
     if ((now - lastSaveMs) >= 120000U) {
       lastSaveMs = now;
       cyd_storage_save_pet(s_app.engine, s_app.recipesCrafted, s_app.jobsCompleted, s_app.spellsCast, s_app.treatsSent);
+      if (!s_app.offlineMode && cyd_net_is_wifi_connected()) {
+        uint32_t cldTs = 0;
+        if (cyd_net_cloud_save(
+              s_app.config, s_app.engine,
+              s_app.recipesCrafted, s_app.jobsCompleted, s_app.spellsCast, s_app.treatsSent,
+              &cldTs)) {
+          s_app.cloudSyncOk = true;
+          s_app.lastCloudSaveMs = now;
+          if (cldTs > 0) {
+            s_app.lastCloudSaveEpoch = cldTs;
+            cyd_storage_save_cloud_ts(cldTs);
+          }
+          if (s_app.activeModal == TAB_STATUS) {
+            cyd_lvgl_open_modal(TAB_STATUS);
+          }
+        } else {
+          s_app.cloudSyncOk = false;
+        }
+      }
     }
 
-    // Speech balloon & banner timeouts
+    // Speech balloon, banner & co-op aurora timeouts
     if (s_app.friendPet.balloonUntilMs > 0 && now >= s_app.friendPet.balloonUntilMs) {
       s_app.friendPet.balloonUntilMs = 0;
       s_app.friendPet.speechBalloon[0] = '\0';
@@ -376,6 +464,26 @@ extern "C" void app_main(void) {
       s_app.bannerUntilMs = 0;
       s_app.bannerMsg[0] = '\0';
       s_app.dirtyUi = true;
+    }
+    if (s_app.dualCastUntilMs > 0 && now > s_app.dualCastUntilMs) {
+      s_app.dualCastUntilMs = 0;
+      s_app.dirtyUi = true;
+    }
+    if (s_app.friendDualCastUntilMs > 0 && now > s_app.friendDualCastUntilMs) {
+      s_app.friendDualCastUntilMs = 0;
+      s_app.dirtyUi = true;
+    }
+    if (s_app.auroraUntilMs > 0) {
+      if (now >= s_app.auroraUntilMs) {
+        s_app.auroraUntilMs = 0;
+        cyd_display_set_led(false, true, false); // Back to Green online LED
+        s_app.dirtyUi = true;
+      } else {
+        // Shimmer LED cyan <-> gold while aurora active
+        bool alt = ((now / 350U) % 2U) == 0;
+        cyd_display_set_led(alt, true, !alt);
+        s_app.dirtyUi = true;
+      }
     }
 
     if (s_app.dirtyUi) {

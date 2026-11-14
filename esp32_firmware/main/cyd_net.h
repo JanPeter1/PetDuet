@@ -56,7 +56,8 @@ bool cyd_net_cloud_save(
   uint16_t recipesCrafted = 0,
   uint16_t jobsCompleted = 0,
   uint16_t spellsCast = 0,
-  uint16_t treatsSent = 0
+  uint16_t treatsSent = 0,
+  uint32_t* outUpdatedAt = nullptr
 );
 bool cyd_net_cloud_load(
   const CydConfig& cfg,
@@ -64,7 +65,10 @@ bool cyd_net_cloud_load(
   uint16_t& recipesCrafted,
   uint16_t& jobsCompleted,
   uint16_t& spellsCast,
-  uint16_t& treatsSent
+  uint16_t& treatsSent,
+  char* outTrainerName = nullptr,
+  size_t trainerNameLen = 0,
+  uint32_t* outUpdatedAt = nullptr
 );
 
 // Validates shop purchase against php_server/shop.php when online.

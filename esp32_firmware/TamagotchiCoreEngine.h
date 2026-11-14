@@ -29,6 +29,7 @@
     #include "esp_random.h"
   #endif
 #endif
+#include <cstdio>
 
 static inline int engineMin(int a, int b) { return (a < b) ? a : b; }
 static inline int engineMax(int a, int b) { return (a > b) ? a : b; }
@@ -435,6 +436,7 @@ public:
 
   char name[16]     = "Leafkin";
   char biome[12]    = "grassland";
+  char season[10]   = "spring";
   char phase[10]    = "Egg";
   uint8_t level     = 1;
   uint16_t xp       = 0;
@@ -1541,6 +1543,15 @@ public:
     if (std::strcmp(itemId, "mat_kelp") == 0) {
       return addInventoryItem("mat_kelp", "Lagoon Kelp", "Lagunentang", 1, qty);
     }
+    if (std::strcmp(itemId, "acc_flower") == 0) {
+      return addInventoryItem("acc_flower", "Blossom Crown", "Bluetenkrone", 3, qty);
+    }
+    if (std::strcmp(itemId, "acc_wizard") == 0) {
+      return addInventoryItem("acc_wizard", "Starry Wizard Cowl", "Sternen-Zauberkappe", 3, qty);
+    }
+    if (std::strcmp(itemId, "acc_tophat") == 0) {
+      return addInventoryItem("acc_tophat", "Fancy Top Hat", "Vornehmer Zylinder", 3, qty);
+    }
     return false;
   }
 
@@ -1976,6 +1987,365 @@ public:
     stats.hunger = (uint8_t)engineMin((int)rules.maxStatValue, (int)stats.hunger + (int)rules.treatHungerGain);
     stats.happiness = (uint8_t)engineMin((int)rules.maxStatValue, (int)stats.happiness + (int)rules.treatHappinessGain);
     if (onEvent) onEvent("TREAT_RECEIVED", nullptr);
+  }
+
+  // --------------------------------------------------------------------------
+  // Cloud Save & Restore (Zero-Heap JSON Serialization & Deserialization)
+  // --------------------------------------------------------------------------
+  static bool isValidBiome(const char* b) {
+    if (!b) return false;
+    return std::strcmp(b, "grassland") == 0 || std::strcmp(b, "desert") == 0 ||
+           std::strcmp(b, "water") == 0 || std::strcmp(b, "forest") == 0;
+  }
+
+  static bool isValidSeason(const char* s) {
+    if (!s) return false;
+    return std::strcmp(s, "spring") == 0 || std::strcmp(s, "summer") == 0 ||
+           std::strcmp(s, "autumn") == 0 || std::strcmp(s, "winter") == 0;
+  }
+
+  static bool isValidPhase(const char* p) {
+    if (!p) return false;
+    return std::strcmp(p, "Egg") == 0 || std::strcmp(p, "Baby") == 0 ||
+           std::strcmp(p, "Youth") == 0 || std::strcmp(p, "Adult") == 0 ||
+           std::strcmp(p, "Elder") == 0;
+  }
+
+  void clampAllStats() {
+    uint8_t maxV = (rules.maxStatValue >= 50) ? rules.maxStatValue : 100;
+    uint8_t maxM = getEffectiveMaxMana();
+    stats.health    = (uint8_t)engineClamp((int)stats.health, 0, (int)maxV);
+    stats.hunger    = (uint8_t)engineClamp((int)stats.hunger, 0, (int)maxV);
+    stats.energy    = (uint8_t)engineClamp((int)stats.energy, 0, (int)maxV);
+    stats.hygiene   = (uint8_t)engineClamp((int)stats.hygiene, 0, (int)maxV);
+    stats.happiness = (uint8_t)engineClamp((int)stats.happiness, 0, (int)maxV);
+    stats.mana      = (uint8_t)engineClamp((int)stats.mana, 0, (int)maxM);
+  }
+
+  bool restoreMissionProgress(const char* id, uint8_t currentCount, bool completed, bool claimed) {
+    if (!id || std::strlen(id) == 0) return false;
+    for (uint8_t i = 0; i < missionCount; i++) {
+      if (std::strcmp(missions[i].id, id) == 0) {
+        uint8_t cap = (missions[i].targetCount > 0) ? missions[i].targetCount : 1;
+        missions[i].currentCount = (uint8_t)engineClamp((int)currentCount, 0, (int)cap);
+        missions[i].completed = completed || (missions[i].currentCount >= cap);
+        missions[i].claimed = claimed && missions[i].completed;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static void appendJsonRaw(char* buf, size_t maxLen, size_t& pos, const char* str) {
+    if (!buf || !str || pos + 1 >= maxLen) return;
+    while (*str && pos + 1 < maxLen) {
+      buf[pos++] = *str++;
+    }
+    buf[pos] = '\0';
+  }
+
+  static void appendJsonEscapedStr(char* buf, size_t maxLen, size_t& pos, const char* str) {
+    appendJsonRaw(buf, maxLen, pos, "\"");
+    if (str) {
+      while (*str && pos + 2 < maxLen) {
+        char c = *str++;
+        if (c == '"' || c == '\\') {
+          if (pos + 3 >= maxLen) break;
+          buf[pos++] = '\\';
+          buf[pos++] = c;
+        } else if ((unsigned char)c >= 0x20) {
+          buf[pos++] = c;
+        }
+      }
+    }
+    appendJsonRaw(buf, maxLen, pos, "\"");
+  }
+
+  size_t serializeCloudSaveJson(
+    char* outBuf,
+    size_t maxLen,
+    const char* deviceId,
+    const char* trainerName,
+    uint16_t recipesCrafted = 0,
+    uint16_t jobsCompleted = 0,
+    uint16_t spellsCast = 0,
+    uint16_t treatsSent = 0,
+    const char* fwVersion = "2.1.4"
+  ) const {
+    if (!outBuf || maxLen < 64) return 0;
+    size_t pos = 0;
+    outBuf[0] = '\0';
+    char tmp[192];
+
+    appendJsonRaw(outBuf, maxLen, pos, "{\"deviceId\":");
+    appendJsonEscapedStr(outBuf, maxLen, pos, deviceId ? deviceId : "CYD-DEV1");
+    appendJsonRaw(outBuf, maxLen, pos, ",\"petData\":{\"name\":");
+    appendJsonEscapedStr(outBuf, maxLen, pos, name);
+    appendJsonRaw(outBuf, maxLen, pos, ",\"trainerName\":");
+    appendJsonEscapedStr(outBuf, maxLen, pos, trainerName ? trainerName : "PixelTrainer");
+    appendJsonRaw(outBuf, maxLen, pos, ",\"biome\":");
+    appendJsonEscapedStr(outBuf, maxLen, pos, biome);
+    appendJsonRaw(outBuf, maxLen, pos, ",\"season\":");
+    appendJsonEscapedStr(outBuf, maxLen, pos, season);
+    appendJsonRaw(outBuf, maxLen, pos, ",\"phase\":");
+    appendJsonEscapedStr(outBuf, maxLen, pos, phase);
+
+    std::snprintf(tmp, sizeof(tmp),
+      ",\"level\":%u,\"xp\":%u,\"xpNext\":%u,\"coins\":%u,"
+      "\"eggWarmth\":%u,\"satietyTicks\":%u,\"isSick\":%s,"
+      "\"streakDays\":%u,\"streakClaimed\":%s,"
+      "\"recipesCraftedCount\":%u,\"jobsCompletedCount\":%u,"
+      "\"spellsCastCount\":%u,\"treatsSentCount\":%u",
+      (unsigned)level, (unsigned)xp, (unsigned)xpNext, (unsigned)coins,
+      (unsigned)eggWarmth, (unsigned)satietyTicks, isSick ? "true" : "false",
+      (unsigned)consecutiveLoginDays, streakClaimedToday ? "true" : "false",
+      (unsigned)recipesCrafted, (unsigned)jobsCompleted,
+      (unsigned)spellsCast, (unsigned)treatsSent);
+    appendJsonRaw(outBuf, maxLen, pos, tmp);
+
+    appendJsonRaw(outBuf, maxLen, pos, ",\"fwVersion\":");
+    appendJsonEscapedStr(outBuf, maxLen, pos, fwVersion ? fwVersion : "");
+    appendJsonRaw(outBuf, maxLen, pos, ",\"rulesVersion\":");
+    appendJsonEscapedStr(outBuf, maxLen, pos, rules.version);
+
+    std::snprintf(tmp, sizeof(tmp),
+      ",\"stats\":{\"health\":%u,\"hunger\":%u,\"energy\":%u,"
+      "\"hygiene\":%u,\"happiness\":%u,\"mana\":%u}",
+      (unsigned)stats.health, (unsigned)stats.hunger, (unsigned)stats.energy,
+      (unsigned)stats.hygiene, (unsigned)stats.happiness, (unsigned)stats.mana);
+    appendJsonRaw(outBuf, maxLen, pos, tmp);
+
+    std::snprintf(tmp, sizeof(tmp),
+      ",\"counters\":{\"recipesCrafted\":%u,\"jobsCompleted\":%u,"
+      "\"spellsCast\":%u,\"treatsSent\":%u}",
+      (unsigned)recipesCrafted, (unsigned)jobsCompleted,
+      (unsigned)spellsCast, (unsigned)treatsSent);
+    appendJsonRaw(outBuf, maxLen, pos, tmp);
+
+    std::snprintf(tmp, sizeof(tmp),
+      ",\"dailyMissions\":{\"consecutiveLoginDays\":%u,\"streakClaimed\":%s,\"missions\":[",
+      (unsigned)consecutiveLoginDays, streakClaimedToday ? "true" : "false");
+    appendJsonRaw(outBuf, maxLen, pos, tmp);
+    for (uint8_t i = 0; i < missionCount; i++) {
+      if (i > 0) appendJsonRaw(outBuf, maxLen, pos, ",");
+      appendJsonRaw(outBuf, maxLen, pos, "{\"id\":");
+      appendJsonEscapedStr(outBuf, maxLen, pos, missions[i].id);
+      std::snprintf(tmp, sizeof(tmp),
+        ",\"currentCount\":%u,\"completed\":%s,\"claimed\":%s}",
+        (unsigned)missions[i].currentCount,
+        missions[i].completed ? "true" : "false",
+        missions[i].claimed ? "true" : "false");
+      appendJsonRaw(outBuf, maxLen, pos, tmp);
+    }
+    appendJsonRaw(outBuf, maxLen, pos, "]}");
+
+    appendJsonRaw(outBuf, maxLen, pos, ",\"inventory\":[");
+    for (uint8_t i = 0; i < inventoryCount; i++) {
+      if (i > 0) appendJsonRaw(outBuf, maxLen, pos, ",");
+      appendJsonRaw(outBuf, maxLen, pos, "{\"id\":");
+      appendJsonEscapedStr(outBuf, maxLen, pos, inventory[i].id);
+      std::snprintf(tmp, sizeof(tmp), ",\"qty\":%u,\"quantity\":%u}",
+        (unsigned)inventory[i].quantity, (unsigned)inventory[i].quantity);
+      appendJsonRaw(outBuf, maxLen, pos, tmp);
+    }
+    appendJsonRaw(outBuf, maxLen, pos, "]}}");
+    return (pos + 1 < maxLen) ? pos : 0;
+  }
+
+  bool parseCloudPetObject(
+    EngineJsonCursor& c,
+    uint16_t& recipesCrafted,
+    uint16_t& jobsCompleted,
+    uint16_t& spellsCast,
+    uint16_t& treatsSent,
+    char* outTrainerName,
+    size_t trainerNameLen
+  ) {
+    bool parsedAny = false;
+    c.eachObjectEntry([&](const char* pk, EngineJsonCursor& pfc) {
+      double dv = 0;
+      bool bv = false;
+      char sbuf[32] = "";
+      if (std::strcmp(pk, "name") == 0 && pfc.readString(sbuf, sizeof(sbuf))) {
+        if (std::strlen(sbuf) > 0) {
+          copyStr(name, sizeof(name), sbuf);
+          parsedAny = true;
+        }
+      } else if (std::strcmp(pk, "trainerName") == 0 && pfc.readString(sbuf, sizeof(sbuf))) {
+        if (outTrainerName && trainerNameLen > 0 && std::strlen(sbuf) > 0) {
+          copyStr(outTrainerName, trainerNameLen, sbuf);
+        }
+      } else if (std::strcmp(pk, "biome") == 0 && pfc.readString(sbuf, sizeof(sbuf))) {
+        if (isValidBiome(sbuf)) copyStr(biome, sizeof(biome), sbuf);
+        parsedAny = true;
+      } else if (std::strcmp(pk, "season") == 0 && pfc.readString(sbuf, sizeof(sbuf))) {
+        if (isValidSeason(sbuf)) copyStr(season, sizeof(season), sbuf);
+      } else if (std::strcmp(pk, "phase") == 0 && pfc.readString(sbuf, sizeof(sbuf))) {
+        if (isValidPhase(sbuf)) copyStr(phase, sizeof(phase), sbuf);
+        parsedAny = true;
+      } else if (std::strcmp(pk, "level") == 0 && pfc.readDouble(dv)) {
+        level = (uint8_t)engineClamp((int)dv, 1, 255);
+        parsedAny = true;
+      } else if (std::strcmp(pk, "xp") == 0 && pfc.readDouble(dv)) {
+        xp = (uint16_t)engineClamp((int)dv, 0, 65000);
+      } else if (std::strcmp(pk, "xpNext") == 0 && pfc.readDouble(dv)) {
+        if (dv >= 50) xpNext = (uint16_t)engineClamp((int)dv, 50, 65000);
+      } else if (std::strcmp(pk, "coins") == 0 && pfc.readDouble(dv)) {
+        coins = (uint16_t)engineClamp((int)dv, 0, 65000);
+      } else if (std::strcmp(pk, "eggWarmth") == 0 && pfc.readDouble(dv)) {
+        eggWarmth = (uint8_t)engineClamp((int)dv, 0, 100);
+      } else if (std::strcmp(pk, "satietyTicks") == 0 && pfc.readDouble(dv)) {
+        satietyTicks = (uint8_t)engineClamp((int)dv, 0, 255);
+      } else if (std::strcmp(pk, "isSick") == 0 && pfc.readBool(bv)) {
+        isSick = bv;
+      } else if (std::strcmp(pk, "streakDays") == 0 && pfc.readDouble(dv)) {
+        if (dv >= 1) consecutiveLoginDays = (uint16_t)engineClamp((int)dv, 1, 9999);
+      } else if (std::strcmp(pk, "streakClaimed") == 0 && pfc.readBool(bv)) {
+        streakClaimedToday = bv;
+      } else if (std::strcmp(pk, "recipesCraftedCount") == 0 && pfc.readDouble(dv)) {
+        recipesCrafted = (uint16_t)engineMax(0, (int)dv);
+      } else if (std::strcmp(pk, "jobsCompletedCount") == 0 && pfc.readDouble(dv)) {
+        jobsCompleted = (uint16_t)engineMax(0, (int)dv);
+      } else if (std::strcmp(pk, "spellsCastCount") == 0 && pfc.readDouble(dv)) {
+        spellsCast = (uint16_t)engineMax(0, (int)dv);
+      } else if (std::strcmp(pk, "treatsSentCount") == 0 && pfc.readDouble(dv)) {
+        treatsSent = (uint16_t)engineMax(0, (int)dv);
+      } else if (std::strcmp(pk, "stats") == 0) {
+        parsedAny = true;
+        pfc.eachObjectEntry([&](const char* sk, EngineJsonCursor& sfc) {
+          double sd = 0;
+          if (!sfc.readDouble(sd)) return;
+          int v = engineClamp((int)sd, 0, 150);
+          if (std::strcmp(sk, "health") == 0) stats.health = (uint8_t)v;
+          else if (std::strcmp(sk, "hunger") == 0) stats.hunger = (uint8_t)v;
+          else if (std::strcmp(sk, "energy") == 0) stats.energy = (uint8_t)v;
+          else if (std::strcmp(sk, "hygiene") == 0) stats.hygiene = (uint8_t)v;
+          else if (std::strcmp(sk, "happiness") == 0) stats.happiness = (uint8_t)v;
+          else if (std::strcmp(sk, "mana") == 0) stats.mana = (uint8_t)v;
+        });
+      } else if (std::strcmp(pk, "counters") == 0) {
+        pfc.eachObjectEntry([&](const char* ck, EngineJsonCursor& cfc) {
+          double cd = 0;
+          if (!cfc.readDouble(cd)) return;
+          uint16_t val = (uint16_t)engineMax(0, (int)cd);
+          if (std::strcmp(ck, "recipesCrafted") == 0) recipesCrafted = val;
+          else if (std::strcmp(ck, "jobsCompleted") == 0) jobsCompleted = val;
+          else if (std::strcmp(ck, "spellsCast") == 0) spellsCast = val;
+          else if (std::strcmp(ck, "treatsSent") == 0) treatsSent = val;
+        });
+      } else if (std::strcmp(pk, "dailyMissions") == 0) {
+        pfc.eachObjectEntry([&](const char* dk, EngineJsonCursor& dfc) {
+          double dd = 0;
+          bool db = false;
+          if (std::strcmp(dk, "consecutiveLoginDays") == 0 && dfc.readDouble(dd)) {
+            if (dd >= 1) consecutiveLoginDays = (uint16_t)engineClamp((int)dd, 1, 9999);
+          } else if (std::strcmp(dk, "streakClaimed") == 0 && dfc.readBool(db)) {
+            streakClaimedToday = db;
+          } else if (std::strcmp(dk, "missions") == 0) {
+            dfc.eachArrayElement([&](int /*idx*/, EngineJsonCursor& mc) {
+              char mid[20] = "";
+              uint8_t cnt = 0;
+              bool comp = false;
+              bool clm = false;
+              mc.eachObjectEntry([&](const char* mk, EngineJsonCursor& mfc) {
+                double md = 0;
+                bool mb = false;
+                if (std::strcmp(mk, "id") == 0) mfc.readString(mid, sizeof(mid));
+                else if (std::strcmp(mk, "currentCount") == 0 && mfc.readDouble(md)) cnt = (uint8_t)engineClamp((int)md, 0, 255);
+                else if (std::strcmp(mk, "completed") == 0 && mfc.readBool(mb)) comp = mb;
+                else if (std::strcmp(mk, "claimed") == 0 && mfc.readBool(mb)) clm = mb;
+              });
+              restoreMissionProgress(mid, cnt, comp, clm);
+            });
+          }
+        });
+      } else if (std::strcmp(pk, "inventory") == 0) {
+        inventoryCount = 0;
+        pfc.eachArrayElement([&](int /*idx*/, EngineJsonCursor& ic) {
+          char iid[20] = "";
+          char iname[24] = "";
+          char inameDe[24] = "";
+          uint8_t icat = 255;
+          uint8_t iqty = 0;
+          ic.eachObjectEntry([&](const char* ik, EngineJsonCursor& ifc) {
+            double idv = 0;
+            char tmpS[24] = "";
+            if (std::strcmp(ik, "id") == 0) ifc.readString(iid, sizeof(iid));
+            else if (std::strcmp(ik, "name") == 0) ifc.readString(iname, sizeof(iname));
+            else if (std::strcmp(ik, "name_de") == 0) ifc.readString(inameDe, sizeof(inameDe));
+            else if (std::strcmp(ik, "type") == 0 && ifc.readString(tmpS, sizeof(tmpS))) icat = parseCategoryStr(tmpS);
+            else if ((std::strcmp(ik, "qty") == 0 || std::strcmp(ik, "quantity") == 0) && ifc.readDouble(idv)) {
+              if (idv > 0) iqty = (uint8_t)engineClamp((int)idv, 1, 99);
+            }
+          });
+          if (std::strlen(iid) > 0 && iqty > 0) {
+            if (!addKnownItemById(iid, iqty) && std::strlen(iname) > 0) {
+              uint8_t cat = (icat <= 3) ? icat : 1;
+              addInventoryItem(iid, iname, std::strlen(inameDe) > 0 ? inameDe : iname, cat, iqty);
+            }
+          }
+        });
+      }
+    });
+    if (parsedAny) {
+      clampAllStats();
+      checkEvolution();
+    }
+    return parsedAny;
+  }
+
+  bool parseCloudRestoreJson(
+    const char* jsonText,
+    uint16_t& recipesCrafted,
+    uint16_t& jobsCompleted,
+    uint16_t& spellsCast,
+    uint16_t& treatsSent,
+    char* outTrainerName = nullptr,
+    size_t trainerNameLen = 0,
+    uint32_t* outUpdatedAt = nullptr
+  ) {
+    if (!jsonText) return false;
+    EngineJsonCursor cur{ jsonText };
+    cur.skipWs();
+    if (*cur.p != '{') return false;
+
+    if (outUpdatedAt) *outUpdatedAt = 0;
+    bool loadedPet = false;
+
+    cur.eachObjectEntry([&](const char* key, EngineJsonCursor& c) {
+      double dv = 0;
+      if (std::strcmp(key, "updatedAt") == 0 && c.readDouble(dv)) {
+        if (outUpdatedAt) {
+          // Support both Unix seconds (PHP) and JS ms timestamps (Node server)
+          uint32_t ts = (dv > 20000000000.0) ? (uint32_t)(dv / 1000.0) : (uint32_t)dv;
+          *outUpdatedAt = ts;
+        }
+      } else if (std::strcmp(key, "petData") == 0) {
+        if (parseCloudPetObject(c, recipesCrafted, jobsCompleted, spellsCast, treatsSent, outTrainerName, trainerNameLen)) {
+          loadedPet = true;
+        }
+      } else if (std::strcmp(key, "save") == 0) {
+        // Express /api/cloud_save/:deviceId wraps record inside { status, save: { deviceId, petData, updatedAt } }
+        c.eachObjectEntry([&](const char* sk, EngineJsonCursor& sc) {
+          double sdv = 0;
+          if (std::strcmp(sk, "updatedAt") == 0 && sc.readDouble(sdv)) {
+            if (outUpdatedAt) {
+              uint32_t ts = (sdv > 20000000000.0) ? (uint32_t)(sdv / 1000.0) : (uint32_t)sdv;
+              *outUpdatedAt = ts;
+            }
+          } else if (std::strcmp(sk, "petData") == 0) {
+            if (parseCloudPetObject(sc, recipesCrafted, jobsCompleted, spellsCast, treatsSent, outTrainerName, trainerNameLen)) {
+              loadedPet = true;
+            }
+          }
+        });
+      }
+    });
+
+    if (loadedPet && onEvent) {
+      onEvent("CLOUD_RESTORED", nullptr);
+    }
+    return loadedPet;
   }
 };
 

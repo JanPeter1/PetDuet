@@ -96,13 +96,67 @@ void cyd_storage_save_config(const CydConfig& cfg) {
   }
 }
 
+struct NvsInvRecord {
+  char id[20];
+  char name[24];
+  char name_de[24];
+  uint8_t category;
+  uint8_t quantity;
+};
+
+struct NvsMissionRecord {
+  char id[20];
+  uint8_t currentCount;
+  uint8_t flags; // bit0=completed, bit1=claimed
+};
+
+bool cyd_storage_has_pet_save(void) {
+  nvs_handle_t h;
+  if (nvs_open(NVS_NS, NVS_READONLY, &h) != ESP_OK) return false;
+  uint8_t savedFlag = 0;
+  bool exists = (nvs_get_u8(h, "pet_saved", &savedFlag) == ESP_OK && savedFlag == 1);
+  if (!exists) {
+    size_t dummy = 0;
+    if (nvs_get_str(h, "pet_phase", NULL, &dummy) == ESP_OK) exists = true;
+  }
+  nvs_close(h);
+  return exists;
+}
+
+uint32_t cyd_storage_load_cloud_ts(void) {
+  nvs_handle_t h;
+  if (nvs_open(NVS_NS, NVS_READONLY, &h) != ESP_OK) return 0;
+  uint32_t ts = 0;
+  nvs_get_u32(h, "cld_ts", &ts);
+  nvs_close(h);
+  return ts;
+}
+
+void cyd_storage_save_cloud_ts(uint32_t epochSec) {
+  nvs_handle_t h;
+  if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
+  nvs_set_u32(h, "cld_ts", epochSec);
+  nvs_commit(h);
+  nvs_close(h);
+}
+
 void cyd_storage_load_pet(TamagotchiCoreEngine& engine, uint16_t& recipesCrafted, uint16_t& jobsCompleted, uint16_t& spellsCast, uint16_t& treatsSent) {
   nvs_handle_t h;
   if (nvs_open(NVS_NS, NVS_READONLY, &h) != ESP_OK) return;
 
   uint8_t u8 = 0;
   uint16_t u16 = 0;
-  size_t len = sizeof(engine.phase);
+  size_t len = sizeof(engine.name);
+  char tmpName[16] = "";
+  if (nvs_get_str(h, "pet_name", tmpName, &len) == ESP_OK && strlen(tmpName) > 0) {
+    TamagotchiCoreEngine::copyStr(engine.name, sizeof(engine.name), tmpName);
+  }
+  len = sizeof(engine.season);
+  char tmpSeason[10] = "";
+  if (nvs_get_str(h, "pet_season", tmpSeason, &len) == ESP_OK && TamagotchiCoreEngine::isValidSeason(tmpSeason)) {
+    TamagotchiCoreEngine::copyStr(engine.season, sizeof(engine.season), tmpSeason);
+  }
+  len = sizeof(engine.phase);
   nvs_get_str(h, "pet_phase", engine.phase, &len);
   if (nvs_get_u8(h, "pet_lv", &u8) == ESP_OK && u8 >= 1) engine.level = u8;
   if (nvs_get_u16(h, "pet_xp", &u16) == ESP_OK) engine.xp = u16;
@@ -125,25 +179,53 @@ void cyd_storage_load_pet(TamagotchiCoreEngine& engine, uint16_t& recipesCrafted
   if (nvs_get_u16(h, "stk_days", &u16) == ESP_OK && u16 >= 1) engine.consecutiveLoginDays = u16;
   if (nvs_get_u8(h, "stk_clm", &u8) == ESP_OK) engine.streakClaimedToday = (u8 != 0);
 
-  // Restore core food & material counts
-  uint8_t qty = 0;
-  if (nvs_get_u8(h, "inv_apple", &qty) == ESP_OK) {
-    engine.inventoryCount = 0;
-    if (qty > 0) engine.addKnownItemById("food_apple", qty);
-    if (nvs_get_u8(h, "inv_snack", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("food_snack", qty);
-    if (nvs_get_u8(h, "inv_salad", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("food_herb_salad", qty);
-    if (nvs_get_u8(h, "inv_pie", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("food_berry_pie", qty);
-    if (nvs_get_u8(h, "inv_jerky", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("food_sun_jerky", qty);
-    if (nvs_get_u8(h, "inv_stew", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("food_kelp_stew", qty);
-    if (nvs_get_u8(h, "inv_ambrosia", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("food_ambrosia", qty);
-    if (nvs_get_u8(h, "inv_salve", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("item_salve", qty);
-    if (nvs_get_u8(h, "inv_elixir", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("item_energy_elixir", qty);
-    if (nvs_get_u8(h, "inv_herb", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("mat_herb", qty);
-    if (nvs_get_u8(h, "inv_mush", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("mat_mushroom", qty);
-    if (nvs_get_u8(h, "inv_meat", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("mat_meat", qty);
-    if (nvs_get_u8(h, "inv_salt", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("mat_sunstone", qty);
-    if (nvs_get_u8(h, "inv_kelp", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("mat_kelp", qty);
+  // Restore daily mission progress blob if available
+  NvsMissionRecord misBuf[6];
+  size_t misBytes = sizeof(misBuf);
+  if (nvs_get_blob(h, "mis_v1", misBuf, &misBytes) == ESP_OK && misBytes >= sizeof(NvsMissionRecord)) {
+    size_t count = misBytes / sizeof(NvsMissionRecord);
+    for (size_t i = 0; i < count && i < 6; i++) {
+      engine.restoreMissionProgress(misBuf[i].id, misBuf[i].currentCount,
+                                    (misBuf[i].flags & 1) != 0, (misBuf[i].flags & 2) != 0);
+    }
   }
+
+  // Restore full inventory blob (v1), falling back to legacy inv_* keys
+  NvsInvRecord invBuf[TamagotchiCoreEngine::MAX_INVENTORY_SLOTS];
+  size_t invBytes = sizeof(invBuf);
+  esp_err_t invBlobErr = nvs_get_blob(h, "inv_v1", invBuf, &invBytes);
+  if (invBlobErr == ESP_OK) {
+    engine.inventoryCount = 0;
+    size_t count = invBytes / sizeof(NvsInvRecord);
+    for (size_t i = 0; i < count && i < TamagotchiCoreEngine::MAX_INVENTORY_SLOTS; i++) {
+      if (invBuf[i].quantity > 0 && strlen(invBuf[i].id) > 0) {
+        if (!engine.addKnownItemById(invBuf[i].id, invBuf[i].quantity)) {
+          engine.addInventoryItem(invBuf[i].id, invBuf[i].name, invBuf[i].name_de,
+                                  invBuf[i].category, invBuf[i].quantity);
+        }
+      }
+    }
+  } else {
+    uint8_t qty = 0;
+    if (nvs_get_u8(h, "inv_apple", &qty) == ESP_OK) {
+      engine.inventoryCount = 0;
+      if (qty > 0) engine.addKnownItemById("food_apple", qty);
+      if (nvs_get_u8(h, "inv_snack", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("food_snack", qty);
+      if (nvs_get_u8(h, "inv_salad", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("food_herb_salad", qty);
+      if (nvs_get_u8(h, "inv_pie", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("food_berry_pie", qty);
+      if (nvs_get_u8(h, "inv_jerky", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("food_sun_jerky", qty);
+      if (nvs_get_u8(h, "inv_stew", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("food_kelp_stew", qty);
+      if (nvs_get_u8(h, "inv_ambrosia", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("food_ambrosia", qty);
+      if (nvs_get_u8(h, "inv_salve", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("item_salve", qty);
+      if (nvs_get_u8(h, "inv_elixir", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("item_energy_elixir", qty);
+      if (nvs_get_u8(h, "inv_herb", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("mat_herb", qty);
+      if (nvs_get_u8(h, "inv_mush", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("mat_mushroom", qty);
+      if (nvs_get_u8(h, "inv_meat", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("mat_meat", qty);
+      if (nvs_get_u8(h, "inv_salt", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("mat_sunstone", qty);
+      if (nvs_get_u8(h, "inv_kelp", &qty) == ESP_OK && qty > 0) engine.addKnownItemById("mat_kelp", qty);
+    }
+  }
+  engine.clampAllStats();
   nvs_close(h);
 }
 
@@ -151,6 +233,9 @@ void cyd_storage_save_pet(const TamagotchiCoreEngine& engine, uint16_t recipesCr
   nvs_handle_t h;
   if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
 
+  nvs_set_u8(h, "pet_saved", 1);
+  nvs_set_str(h, "pet_name", engine.name);
+  nvs_set_str(h, "pet_season", engine.season);
   nvs_set_str(h, "pet_phase", engine.phase);
   nvs_set_u8(h, "pet_lv", engine.level);
   nvs_set_u16(h, "pet_xp", engine.xp);
@@ -173,20 +258,33 @@ void cyd_storage_save_pet(const TamagotchiCoreEngine& engine, uint16_t recipesCr
   nvs_set_u16(h, "stk_days", engine.consecutiveLoginDays);
   nvs_set_u8(h, "stk_clm", engine.streakClaimedToday ? 1 : 0);
 
-  nvs_set_u8(h, "inv_apple", engine.getItemQuantity("food_apple"));
-  nvs_set_u8(h, "inv_snack", engine.getItemQuantity("food_snack"));
-  nvs_set_u8(h, "inv_salad", engine.getItemQuantity("food_herb_salad"));
-  nvs_set_u8(h, "inv_pie", engine.getItemQuantity("food_berry_pie"));
-  nvs_set_u8(h, "inv_jerky", engine.getItemQuantity("food_sun_jerky"));
-  nvs_set_u8(h, "inv_stew", engine.getItemQuantity("food_kelp_stew"));
-  nvs_set_u8(h, "inv_ambrosia", engine.getItemQuantity("food_ambrosia"));
-  nvs_set_u8(h, "inv_salve", engine.getItemQuantity("item_salve"));
-  nvs_set_u8(h, "inv_elixir", engine.getItemQuantity("item_energy_elixir"));
-  nvs_set_u8(h, "inv_herb", engine.getItemQuantity("mat_herb"));
-  nvs_set_u8(h, "inv_mush", engine.getItemQuantity("mat_mushroom"));
-  nvs_set_u8(h, "inv_meat", engine.getItemQuantity("mat_meat"));
-  nvs_set_u8(h, "inv_salt", engine.getItemQuantity("mat_sunstone"));
-  nvs_set_u8(h, "inv_kelp", engine.getItemQuantity("mat_kelp"));
+  // Store mission progress blob
+  NvsMissionRecord misBuf[6];
+  memset(misBuf, 0, sizeof(misBuf));
+  uint8_t mCount = (engine.missionCount <= 6) ? engine.missionCount : 6;
+  for (uint8_t i = 0; i < mCount; i++) {
+    TamagotchiCoreEngine::copyStr(misBuf[i].id, sizeof(misBuf[i].id), engine.missions[i].id);
+    misBuf[i].currentCount = engine.missions[i].currentCount;
+    misBuf[i].flags = (engine.missions[i].completed ? 1 : 0) | (engine.missions[i].claimed ? 2 : 0);
+  }
+  if (mCount > 0) {
+    nvs_set_blob(h, "mis_v1", misBuf, mCount * sizeof(NvsMissionRecord));
+  }
+
+  // Store full inventory blob (up to MAX_INVENTORY_SLOTS)
+  NvsInvRecord invBuf[TamagotchiCoreEngine::MAX_INVENTORY_SLOTS];
+  memset(invBuf, 0, sizeof(invBuf));
+  uint8_t invCount = (engine.inventoryCount <= TamagotchiCoreEngine::MAX_INVENTORY_SLOTS)
+                       ? engine.inventoryCount
+                       : TamagotchiCoreEngine::MAX_INVENTORY_SLOTS;
+  for (uint8_t i = 0; i < invCount; i++) {
+    TamagotchiCoreEngine::copyStr(invBuf[i].id, sizeof(invBuf[i].id), engine.inventory[i].id);
+    TamagotchiCoreEngine::copyStr(invBuf[i].name, sizeof(invBuf[i].name), engine.inventory[i].name);
+    TamagotchiCoreEngine::copyStr(invBuf[i].name_de, sizeof(invBuf[i].name_de), engine.inventory[i].name_de);
+    invBuf[i].category = engine.inventory[i].category;
+    invBuf[i].quantity = engine.inventory[i].quantity;
+  }
+  nvs_set_blob(h, "inv_v1", invBuf, invCount * sizeof(NvsInvRecord));
 
   nvs_commit(h);
   nvs_close(h);

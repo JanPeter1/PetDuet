@@ -31,6 +31,33 @@
     );
     background-size: 100% 3px, 6px 100%;
   }
+  .cyd-aurora {
+    background: linear-gradient(
+      125deg,
+      rgba(16, 185, 129, 0.35),
+      rgba(6, 182, 212, 0.42),
+      rgba(168, 85, 247, 0.45),
+      rgba(245, 158, 11, 0.38),
+      rgba(34, 211, 238, 0.42)
+    );
+    background-size: 260% 260%;
+    animation: auroraShift 2.2s ease-in-out infinite alternate;
+  }
+}
+
+@keyframes auroraShift {
+  0% {
+    background-position: 0% 40%;
+    filter: hue-rotate(0deg);
+  }
+  50% {
+    background-position: 100% 60%;
+    filter: hue-rotate(25deg);
+  }
+  100% {
+    background-position: 20% 80%;
+    filter: hue-rotate(-20deg);
+  }
 }
 
 /* Custom scrollbars for retro menus */

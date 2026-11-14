@@ -27,6 +27,11 @@ interface DualDeviceViewProps {
   onDev1BiomeChange: (biome: BiomeType) => void;
   onDev2BiomeChange: (biome: BiomeType) => void;
   onSeasonChange: (season: SeasonType) => void;
+  coopCastWindow?: { initiator: 'DEV1' | 'DEV2'; expiresAt: number } | null;
+  coopRemainingSec?: number;
+  isAuroraActive?: boolean;
+  incomingTradeCountDev1?: number;
+  incomingTradeCountDev2?: number;
 }
 
 export const DualDeviceView: React.FC<DualDeviceViewProps> = ({
@@ -50,9 +55,24 @@ export const DualDeviceView: React.FC<DualDeviceViewProps> = ({
   onDev1BiomeChange,
   onDev2BiomeChange,
   onSeasonChange,
+  coopCastWindow = null,
+  coopRemainingSec = 0,
+  isAuroraActive = false,
+  incomingTradeCountDev1 = 0,
+  incomingTradeCountDev2 = 0,
 }) => {
   const t = translations[language] || translations.de;
   const currentSeason = SEASONS[device1Pet.season] || SEASONS.spring;
+  const dev1CoopRole: 'initiator' | 'partner_ready' | null = coopCastWindow
+    ? coopCastWindow.initiator === 'DEV1'
+      ? 'initiator'
+      : 'partner_ready'
+    : null;
+  const dev2CoopRole: 'initiator' | 'partner_ready' | null = coopCastWindow
+    ? coopCastWindow.initiator === 'DEV2'
+      ? 'initiator'
+      : 'partner_ready'
+    : null;
 
   return (
     <div className="space-y-6 font-sans-clean">
@@ -195,6 +215,10 @@ export const DualDeviceView: React.FC<DualDeviceViewProps> = ({
               connectionType="direct_socket"
               activeNotification={notificationDev1}
               friendChatBalloon={chatBalloonDev1}
+              isAuroraActive={isAuroraActive}
+              coopWaitingRole={dev1CoopRole}
+              coopRemainingSec={coopRemainingSec}
+              pendingIncomingTradesCount={incomingTradeCountDev1}
             />
           </CYDDeviceFrame>
         </div>
@@ -236,6 +260,16 @@ export const DualDeviceView: React.FC<DualDeviceViewProps> = ({
           <div className="text-[10px] text-slate-400 text-center font-mono leading-tight">
             {t.directSocketDesc}
           </div>
+
+          {isAuroraActive ? (
+            <div className="px-2.5 py-1 rounded-full bg-gradient-to-r from-cyan-500/30 via-purple-500/30 to-amber-500/30 border border-cyan-400 text-[10px] font-bold text-amber-300 animate-pulse text-center">
+              ✨ ASTRAL HARMONY
+            </div>
+          ) : coopCastWindow && coopRemainingSec > 0 ? (
+            <div className="px-2.5 py-1 rounded-full bg-fuchsia-950/90 border border-fuchsia-400 text-[10px] font-mono font-bold text-cyan-200 animate-pulse text-center">
+              🌟 CO-OP SYNC: {coopRemainingSec}s
+            </div>
+          ) : null}
         </div>
 
         {/* ======================================================== */}
@@ -276,6 +310,10 @@ export const DualDeviceView: React.FC<DualDeviceViewProps> = ({
               connectionType="direct_socket"
               activeNotification={notificationDev2}
               friendChatBalloon={chatBalloonDev2}
+              isAuroraActive={isAuroraActive}
+              coopWaitingRole={dev2CoopRole}
+              coopRemainingSec={coopRemainingSec}
+              pendingIncomingTradesCount={incomingTradeCountDev2}
             />
           </CYDDeviceFrame>
         </div>

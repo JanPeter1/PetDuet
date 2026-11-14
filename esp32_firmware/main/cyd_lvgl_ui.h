@@ -64,6 +64,7 @@ struct AppRuntimeState {
 
   uint32_t dualCastUntilMs;       // Local device pressed MGC+ waiting up to 10s
   uint32_t friendDualCastUntilMs; // Partner device pressed MGC+ within last 10s
+  uint32_t auroraUntilMs;         // Full-stage Aurora glow on Dual Astral Harmony completion
 
   uint16_t recipesCrafted;
   uint16_t jobsCompleted;
@@ -71,6 +72,9 @@ struct AppRuntimeState {
   uint16_t treatsSent;
 
   bool offlineMode;
+  bool cloudSyncOk;
+  uint32_t lastCloudSaveEpoch;
+  uint32_t lastCloudSaveMs;
   bool apCancelRequested;
   bool retryPortalRequested;
   bool triggerOtaRequested;

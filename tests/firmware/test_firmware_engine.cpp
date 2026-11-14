@@ -411,6 +411,111 @@ static void testJsonRuleParser() {
   }
 }
 
+static void testCloudSaveAndRestore() {
+  TamagotchiCoreEngine src;
+  std::strcpy(src.name, "AquaFin");
+  std::strcpy(src.biome, "water");
+  std::strcpy(src.season, "winter");
+  std::strcpy(src.phase, "Adult");
+  src.level = 9;
+  src.xp = 240;
+  src.xpNext = 420;
+  src.coins = 785;
+  src.eggWarmth = 100;
+  src.satietyTicks = 6;
+  src.isSick = true;
+  src.consecutiveLoginDays = 5;
+  src.streakClaimedToday = true;
+  src.stats.health = 82;
+  src.stats.hunger = 64;
+  src.stats.energy = 55;
+  src.stats.hygiene = 91;
+  src.stats.happiness = 77;
+  src.stats.mana = 112; // Valid for water biome (100 + 20)
+  src.restoreMissionProgress("feed_3", 2, false, false);
+  src.restoreMissionProgress("bath_1", 1, true, true);
+  src.addKnownItemById("acc_wizard", 1);
+  src.addKnownItemById("food_berry_pie", 3);
+
+  static char jsonBuf[4096];
+  size_t len = src.serializeCloudSaveJson(
+    jsonBuf, sizeof(jsonBuf),
+    "CYD-DEV1", "Elena",
+    7, 4, 12, 9, "2.1.4"
+  );
+  CHECK(len > 100);
+
+  // Restore into a completely fresh engine instance
+  TamagotchiCoreEngine dst;
+  dst.onEvent = testEventCallback;
+  g_eventCount = 0;
+  uint16_t rcp = 0, job = 0, spl = 0, trt = 0;
+  char trainerOut[24] = "";
+  uint32_t tsOut = 0;
+  CHECK(dst.parseCloudRestoreJson(jsonBuf, rcp, job, spl, trt, trainerOut, sizeof(trainerOut), &tsOut));
+  CHECK(std::strcmp(g_lastEvent, "CLOUD_RESTORED") == 0);
+  CHECK(std::strcmp(dst.name, "AquaFin") == 0);
+  CHECK(std::strcmp(trainerOut, "Elena") == 0);
+  CHECK(std::strcmp(dst.biome, "water") == 0);
+  CHECK(std::strcmp(dst.season, "winter") == 0);
+  CHECK(std::strcmp(dst.phase, "Adult") == 0);
+  CHECK(dst.level == 9);
+  CHECK(dst.xp == 240);
+  CHECK(dst.xpNext == 420);
+  CHECK(dst.coins == 785);
+  CHECK(dst.satietyTicks == 6);
+  CHECK(dst.isSick);
+  CHECK(dst.consecutiveLoginDays == 5);
+  CHECK(dst.streakClaimedToday);
+  CHECK(dst.stats.health == 82);
+  CHECK(dst.stats.mana == 112);
+  CHECK(rcp == 7 && job == 4 && spl == 12 && trt == 9);
+  CHECK(dst.missions[0].currentCount == 2 && !dst.missions[0].completed);
+  CHECK(dst.missions[2].completed && dst.missions[2].claimed);
+  CHECK(dst.getItemQuantity("acc_wizard") == 1);
+  CHECK(dst.getItemQuantity("food_berry_pie") == 3);
+
+  // Web simulator / Express format with nested `save`, `quantity` key, and stat clamping
+  const char* webPayload =
+    "{"
+    "  \"status\": \"success\","
+    "  \"save\": {"
+    "    \"deviceId\": \"CYD-DEV2\","
+    "    \"updatedAt\": 1700000000123,"
+    "    \"petData\": {"
+    "      \"name\": \"Sunscale\","
+    "      \"trainerName\": \"Marcus\","
+    "      \"biome\": \"invalid_biome\","
+    "      \"season\": \"autumn\","
+    "      \"phase\": \"Baby\","
+    "      \"level\": 4,"
+    "      \"xp\": 80,"
+    "      \"coins\": 210,"
+    "      \"recipesCraftedCount\": 11,"
+    "      \"stats\": { \"health\": 999, \"hunger\": -5, \"energy\": 70, \"hygiene\": 80, \"happiness\": 90, \"mana\": 50 },"
+    "      \"inventory\": ["
+    "        { \"id\": \"food_apple\", \"name\": \"Crisp Apple\", \"type\": \"food\", \"quantity\": 5 },"
+    "        { \"id\": \"acc_tophat\", \"name\": \"Fancy Top Hat\", \"type\": \"accessory\", \"quantity\": 1 }"
+    "      ]"
+    "    }"
+    "  }"
+    "}";
+  TamagotchiCoreEngine webDst;
+  std::strcpy(webDst.biome, "desert");
+  CHECK(webDst.parseCloudRestoreJson(webPayload, rcp, job, spl, trt, trainerOut, sizeof(trainerOut), &tsOut));
+  CHECK(tsOut == 1700000000U);
+  CHECK(std::strcmp(webDst.name, "Sunscale") == 0);
+  CHECK(std::strcmp(trainerOut, "Marcus") == 0);
+  CHECK(std::strcmp(webDst.biome, "desert") == 0); // Invalid biome ignored
+  CHECK(std::strcmp(webDst.season, "autumn") == 0);
+  CHECK(std::strcmp(webDst.phase, "Youth") == 0); // checkEvolution aligns Lv.4 >= 3 -> Youth
+  CHECK(webDst.stats.health == 100);
+  CHECK(webDst.stats.hunger == 0);
+  CHECK(rcp == 11);
+  CHECK(webDst.getItemQuantity("food_apple") == 5);
+  CHECK(webDst.getItemQuantity("acc_tophat") == 1);
+}
+
 int main() {
   testStartingStateAndInventory();
   testFeedingSatietyAndSickness();
@@ -418,6 +523,7 @@ int main() {
   testCookingMissionsStreakAndShop();
   testEggEvolutionTreatAndConfig();
   testJsonRuleParser();
+  testCloudSaveAndRestore();
 
   std::printf("[Firmware Unit Tests] Executed: %d assertions | Failed: %d\n",
               g_testsRun, g_testsFailed);

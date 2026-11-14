@@ -97,8 +97,14 @@ static void sanitize_lvgl_text(const char* src, char* dst, size_t maxLen) {
   #define L_TAB_JOBS   "Berufe"
   #define L_TAB_MAGIC  "Magie"
   #define L_TAB_QUEST  "Quest"
-  #define L_CLOSE      "X"
-  #define L_BAG_EMPTY  "Leer! Shop/Job nutzen"
+  #define L_CLOSE            "X"
+  #define L_BAG_EMPTY        "Leer! Shop/Job nutzen"
+  #define L_BTN_CLOUD_SAVE   "In Flash & Cloud speichern"
+  #define L_BTN_CLOUD_LOAD   "Stand aus Cloud laden"
+  #define L_CLD_OFFLINE      "Cloud: Offline-Modus"
+  #define L_CLD_SYNCED       "Cloud: Synchron (vor %lus)"
+  #define L_CLD_SAVED_NVS    "Cloud: Backup # %lu bereit"
+  #define L_CLD_NONE         "Cloud: Noch kein Backup"
 #else
   #define TXT_FEED       "FEED"
   #define TXT_PLAY       "PLAY"
@@ -131,8 +137,14 @@ static void sanitize_lvgl_text(const char* src, char* dst, size_t maxLen) {
   #define L_TAB_JOBS   "Jobs"
   #define L_TAB_MAGIC  "Magic"
   #define L_TAB_QUEST  "Quest"
-  #define L_CLOSE      "X"
-  #define L_BAG_EMPTY  "Empty! Try Shop/Jobs"
+  #define L_CLOSE            "X"
+  #define L_BAG_EMPTY        "Empty! Try Shop/Jobs"
+  #define L_BTN_CLOUD_SAVE   "Save Flash & Cloud"
+  #define L_BTN_CLOUD_LOAD   "Restore from Cloud"
+  #define L_CLD_OFFLINE      "Cloud: Offline mode"
+  #define L_CLD_SYNCED       "Cloud: Synced (%lus ago)"
+  #define L_CLD_SAVED_NVS    "Cloud: Backup #%lu ready"
+  #define L_CLD_NONE         "Cloud: No backup yet"
 #endif
 
 // ============================================================================
@@ -586,6 +598,7 @@ static void on_right_btn_clicked(lv_event_t* e) {
           // Both devices pressed MGC+ within 10s -> Dual Astral Harmony!
           s_app->friendDualCastUntilMs = 0;
           s_app->dualCastUntilMs = 0;
+          s_app->auroraUntilMs = now + 4000U;
           strncpy(pkt.type, "MAGIC_SYNC", sizeof(pkt.type) - 1);
           strncpy(pkt.text, "Astral Harmony!", sizeof(pkt.text) - 1);
           cyd_net_send_packet_ex(s_app->config, s_app->friendPet, pkt);
@@ -815,6 +828,7 @@ static void on_magic_action_cb(lv_event_t* e) {
         if (s_app->friendDualCastUntilMs > 0 && now <= s_app->friendDualCastUntilMs) {
           s_app->friendDualCastUntilMs = 0;
           s_app->dualCastUntilMs = 0;
+          s_app->auroraUntilMs = now + 4000U;
           cyd_sound_level_up();
           cyd_lvgl_show_banner("ASTRALE HARMONIE AKTIV!", 3000);
         } else {
@@ -1449,8 +1463,23 @@ void cyd_lvgl_refresh_main_screen(void) {
   BiomeTheme myBiome = getBiomeTheme(eng.biome);
   BiomeTheme frBiome = getBiomeTheme(fr.biome);
 
+  uint32_t nowMs = cyd_millis();
+  bool auroraOn = (s_app->auroraUntilMs > nowMs);
+  bool coopReady = (s_app->friendDualCastUntilMs > nowMs);
+  bool coopWait = (s_app->dualCastUntilMs > nowMs);
+
   lv_obj_set_style_bg_color(s_left_stage, rgb565_to_lv(myBiome.bgColor), 0);
   lv_obj_set_style_bg_color(s_right_stage, rgb565_to_lv(frBiome.bgColor), 0);
+  if (auroraOn) {
+    uint32_t glowCol = (((nowMs / 350U) % 2U) == 0) ? 0x22D3EE : 0xFACC15;
+    lv_obj_set_style_border_width(s_left_stage, 2, 0);
+    lv_obj_set_style_border_color(s_left_stage, lv_color_hex(glowCol), 0);
+    lv_obj_set_style_border_width(s_right_stage, 2, 0);
+    lv_obj_set_style_border_color(s_right_stage, lv_color_hex(glowCol), 0);
+  } else {
+    lv_obj_set_style_border_width(s_left_stage, 0, 0);
+    lv_obj_set_style_border_width(s_right_stage, 0, 0);
+  }
   lv_obj_set_style_bg_color(s_dot_btn, lv_color_hex(fr.isOnline ? 0x22C55E : 0xEF4444), 0);
 
   lv_label_set_text(s_my_name_lbl, eng.name);
@@ -1461,6 +1490,15 @@ void cyd_lvgl_refresh_main_screen(void) {
   if (eng.isSick) {
     lv_label_set_text(s_my_badge_lbl, TXT_SICK_BADGE);
     lv_obj_set_style_text_color(s_my_badge_lbl, lv_color_hex(0xEF4444), 0);
+  } else if (auroraOn) {
+    lv_label_set_text(s_my_badge_lbl, "AURORA!");
+    lv_obj_set_style_text_color(s_my_badge_lbl, lv_color_hex(0x22D3EE), 0);
+  } else if (coopReady) {
+    lv_label_set_text_fmt(s_my_badge_lbl, "MGC!%lus", (unsigned long)((s_app->friendDualCastUntilMs - nowMs + 999U) / 1000U));
+    lv_obj_set_style_text_color(s_my_badge_lbl, lv_color_hex(0xF472B6), 0);
+  } else if (coopWait) {
+    lv_label_set_text_fmt(s_my_badge_lbl, "SYNC:%lus", (unsigned long)((s_app->dualCastUntilMs - nowMs + 999U) / 1000U));
+    lv_obj_set_style_text_color(s_my_badge_lbl, lv_color_hex(0xFACC15), 0);
   } else if (eng.satietyTicks > 0) {
     lv_label_set_text_fmt(s_my_badge_lbl, "SATT:%uT", eng.satietyTicks);
     lv_obj_set_style_text_color(s_my_badge_lbl, lv_color_hex(0x4ADE80), 0);
@@ -1486,7 +1524,7 @@ void cyd_lvgl_refresh_main_screen(void) {
     drawPixelEgg(myCanv, PET_CANVAS_W / 2, PET_CANVAS_H / 2 - 2, myBiome.petColor, eng.eggWarmth, eng.biome);
     lv_obj_clear_flag(s_my_egg_lbl, LV_OBJ_FLAG_HIDDEN);
   } else {
-    drawPixelPet(myCanv, PET_CANVAS_W / 2, PET_CANVAS_H / 2, eng.biome, eng.phase, false);
+    drawPixelPet(myCanv, PET_CANVAS_W / 2, PET_CANVAS_H / 2, eng.biome, eng.phase, auroraOn);
     lv_obj_add_flag(s_my_egg_lbl, LV_OBJ_FLAG_HIDDEN);
   }
   lv_obj_invalidate(s_my_canvas);
@@ -1628,22 +1666,34 @@ void cyd_lvgl_open_modal(SubModalTab tab) {
     const char* rulesVer = (strlen(eng.rules.version) > 0) ? eng.rules.version : RULES_VERSION;
     char petSafeName[20];
     sanitize_lvgl_text(eng.name, petSafeName, sizeof(petSafeName));
+    char cloudTxt[48];
+    if (s_app->offlineMode) {
+      snprintf(cloudTxt, sizeof(cloudTxt), L_CLD_OFFLINE);
+    } else if (s_app->cloudSyncOk && s_app->lastCloudSaveMs > 0) {
+      uint32_t agoSec = (cyd_millis() - s_app->lastCloudSaveMs) / 1000U;
+      snprintf(cloudTxt, sizeof(cloudTxt), L_CLD_SYNCED, (unsigned long)agoSec);
+    } else if (s_app->lastCloudSaveEpoch > 0) {
+      snprintf(cloudTxt, sizeof(cloudTxt), L_CLD_SAVED_NVS, (unsigned long)s_app->lastCloudSaveEpoch);
+    } else {
+      snprintf(cloudTxt, sizeof(cloudTxt), L_CLD_NONE);
+    }
+
     lv_obj_t* lbl = lv_label_create(body);
     lv_label_set_text_fmt(lbl,
       "%s (Lv.%u %s) | $%u | Link:%s\n"
       "HP:%u%% Hunger:%u%% Energie:%u%%\n"
       "Saub:%u%% Freude:%u%% Mana:%u/%u\n"
-      "Satt-Schutz: %uT | Zustand: %s\n%s\nRules: v%s | FW: v%s",
+      "Satt-Schutz: %uT | Zustand: %s\n%s\n%s\nRules: v%s | FW: v%s",
       petSafeName, (unsigned)eng.level, eng.phase, (unsigned)eng.coins, linkLbl,
       (unsigned)eng.stats.health, (unsigned)eng.stats.hunger, (unsigned)eng.stats.energy,
       (unsigned)eng.stats.hygiene, (unsigned)eng.stats.happiness, (unsigned)eng.stats.mana,
       (unsigned)eng.getEffectiveMaxMana(),
-      (unsigned)eng.satietyTicks, eng.isSick ? "KRANK!" : "Gesund", jobTxt, rulesVer, FIRMWARE_VERSION);
+      (unsigned)eng.satietyTicks, eng.isSick ? "KRANK!" : "Gesund", jobTxt, cloudTxt, rulesVer, FIRMWARE_VERSION);
     lv_obj_set_style_text_color(lbl, lv_color_hex(0xE2E8F0), 0);
 
-    add_modal_btn(body, "In Flash & Cloud speichern", 0x0369A1, on_save_cloud_cb, 0);
+    add_modal_btn(body, L_BTN_CLOUD_SAVE, 0x0369A1, on_save_cloud_cb, 0);
     if (!s_app->offlineMode) {
-      add_modal_btn(body, "Stand aus Cloud laden", 0x1E40AF, on_load_cloud_cb, 0);
+      add_modal_btn(body, L_BTN_CLOUD_LOAD, 0x1E40AF, on_load_cloud_cb, 0);
     }
   } else if (tab == TAB_BAG) {
     for (uint8_t i = 0; i < eng.inventoryCount; i++) {

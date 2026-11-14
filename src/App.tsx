@@ -132,8 +132,18 @@ export default function App() {
     label: string;
   } | null>(null);
 
-  // Pending Trade Offers
+  // Pending Trade Offers & Perspective ('DEV1' | 'DEV2')
   const [tradeOffers, setTradeOffers] = useState<TradeOffer[]>([]);
+  const [tradePerspective, setTradePerspective] = useState<'DEV1' | 'DEV2'>('DEV1');
+
+  // Co-op Dual-Cast 10s Window & Full-Screen Aurora State
+  const [coopCastWindow, setCoopCastWindow] = useState<{
+    initiator: 'DEV1' | 'DEV2';
+    expiresAt: number;
+  } | null>(null);
+  const [coopRemainingSec, setCoopRemainingSec] = useState<number>(0);
+  const [isAuroraActive, setIsAuroraActive] = useState<boolean>(false);
+  const auroraTimerRef = useRef<number | null>(null);
 
   // Auto-save to LocalStorage
   useEffect(() => {
@@ -307,6 +317,26 @@ export default function App() {
     return () => clearInterval(jobTimer);
   }, [dev1Pet.activeJob?.startedAt, dev1Pet.activeJob?.jobId, language]);
 
+  // Co-op Dual-Cast 10s Countdown Ticker
+  useEffect(() => {
+    if (!coopCastWindow) {
+      setCoopRemainingSec(0);
+      return;
+    }
+    const updateRemaining = () => {
+      const remMs = coopCastWindow.expiresAt - Date.now();
+      if (remMs <= 0) {
+        setCoopCastWindow(null);
+        setCoopRemainingSec(0);
+      } else {
+        setCoopRemainingSec(Math.ceil(remMs / 1000));
+      }
+    };
+    updateRemaining();
+    const timerId = window.setInterval(updateRemaining, 250);
+    return () => clearInterval(timerId);
+  }, [coopCastWindow]);
+
   // Notifications Helpers with Auto-Dismiss
   const triggerNotificationDev1 = (msg: string) => {
     setNotifDev1(msg);
@@ -343,38 +373,88 @@ export default function App() {
     isOnline: true,
   };
 
-  // Helper to add XP & check level up
-  const addXPDev1 = (amount: number) => {
-    setDev1Pet((prev) => {
-      let currentXP = prev.xp + amount;
-      let currentLevel = prev.level;
-      let nextReq = prev.xpNext;
-      let leveledUp = false;
+  // Pure Inventory Helpers (immutable, quantity-stacked)
+  const stackAddItem = (inventory: InventoryItem[], item: InventoryItem, qty = 1): InventoryItem[] => {
+    const next = inventory.map((i) => ({ ...i }));
+    const idx = next.findIndex((i) => i.id === item.id);
+    if (idx >= 0) {
+      next[idx].quantity += qty;
+    } else {
+      next.push({ ...item, quantity: qty });
+    }
+    return next;
+  };
 
-      while (currentXP >= nextReq) {
-        currentXP -= nextReq;
-        currentLevel += 1;
-        nextReq = getXPForNextLevel(currentLevel);
-        leveledUp = true;
-      }
+  const deductInventoryItem = (
+    pet: PetState,
+    itemId: string,
+    qty = 1
+  ): { inventory: InventoryItem[]; equipped: PetState['equipped']; removed: boolean } => {
+    const target = pet.inventory.find((i) => i.id === itemId && i.quantity >= qty);
+    if (!target) return { inventory: pet.inventory, equipped: pet.equipped, removed: false };
 
-      const newPhase = checkEvolution(currentLevel, prev.phase);
+    let remainingAfter = 0;
+    const nextInv = pet.inventory
+      .map((i) => {
+        if (i.id === itemId) {
+          remainingAfter = i.quantity - qty;
+          return { ...i, quantity: remainingAfter };
+        }
+        return i;
+      })
+      .filter((i) => i.quantity > 0);
 
-      if (leveledUp) {
-        cydAudio.levelUp();
-        confetti({ particleCount: 80, spread: 60, origin: { y: 0.6 } });
-        triggerNotificationDev1(`LEVEL UP! Now Lv.${currentLevel} 🌟`);
-        setLedDev1('gold');
-        setTimeout(() => setLedDev1('green'), 3000);
-      }
+    const nextEquipped = { ...pet.equipped };
+    if (remainingAfter <= 0) {
+      (Object.keys(nextEquipped) as (keyof PetState['equipped'])[]).forEach((slot) => {
+        if (nextEquipped[slot] === itemId) {
+          delete nextEquipped[slot];
+        }
+      });
+    }
 
-      return {
+    return { inventory: nextInv, equipped: nextEquipped, removed: true };
+  };
+
+  const applyXpToPetState = (prev: PetState, amount: number): { pet: PetState; leveledUp: boolean } => {
+    let currentXP = prev.xp + amount;
+    let currentLevel = prev.level;
+    let nextReq = prev.xpNext;
+    let leveledUp = false;
+
+    while (currentXP >= nextReq) {
+      currentXP -= nextReq;
+      currentLevel += 1;
+      nextReq = getXPForNextLevel(currentLevel);
+      leveledUp = true;
+    }
+
+    return {
+      leveledUp,
+      pet: {
         ...prev,
         level: currentLevel,
         xp: currentXP,
         xpNext: nextReq,
-        phase: newPhase,
-      };
+        phase: checkEvolution(currentLevel, prev.phase),
+      },
+    };
+  };
+
+  // Helper to add XP & check level up
+  const addXPDev1 = (amount: number) => {
+    setDev1Pet((prev) => {
+      const { pet: updated, leveledUp } = applyXpToPetState(prev, amount);
+
+      if (leveledUp) {
+        cydAudio.levelUp();
+        confetti({ particleCount: 80, spread: 60, origin: { y: 0.6 } });
+        triggerNotificationDev1(`LEVEL UP! Now Lv.${updated.level} 🌟`);
+        setLedDev1('gold');
+        setTimeout(() => setLedDev1('green'), 3000);
+      }
+
+      return updated;
     });
   };
 
@@ -658,41 +738,7 @@ export default function App() {
         break;
 
       case 'cast_magic': {
-        if (dev1Pet.stats.mana < 25) {
-          cydAudio.warning();
-          triggerNotificationDev1(language === 'de' ? '25 Mana erforderlich! ⚡' : 'Need 25 Mana to cast! ⚡');
-          return;
-        }
-        cydAudio.magicCast();
-        setActivePacket({ from: 'DEV1', type: 'MAGIC', label: '✨ BLESSING' });
-        setDev1Pet((prev) => ({
-          ...prev,
-          stats: { ...prev.stats, mana: prev.stats.mana - 25 },
-          spellsCastCount: prev.spellsCastCount + 1,
-        }));
-        triggerNotificationDev1(t.notifMagicSent);
-        recordMissionAction('cast_spell', 1);
-
-        setTimeout(() => {
-          setActivePacket(null);
-          setLedDev1('gold');
-          setLedDev2('gold');
-          confetti({ particleCount: 50, spread: 60 });
-          triggerNotificationDev2(t.notifMagicReceived);
-          setDev2Pet((prev) => ({
-            ...prev,
-            stats: {
-              ...prev.stats,
-              health: Math.min(100, prev.stats.health + 30),
-              happiness: Math.min(100, prev.stats.happiness + 25),
-            },
-          }));
-          addXPDev1(40);
-          setTimeout(() => {
-            setLedDev1('green');
-            setLedDev2('green');
-          }, 2500);
-        }, 700);
+        handleCoopCast('DEV1');
         break;
       }
 
@@ -719,6 +765,7 @@ export default function App() {
       }
 
       case 'open_trade':
+        setTradePerspective('DEV1');
         setActiveModal('trade');
         break;
 
@@ -785,12 +832,7 @@ export default function App() {
       }
 
       case 'cast_magic': {
-        cydAudio.magicCast();
-        triggerNotificationDev2('Friend casted Sun Ward! ☀️');
-        setDev1Pet((prev) => ({
-          ...prev,
-          stats: { ...prev.stats, health: Math.min(100, prev.stats.health + 20) },
-        }));
+        handleCoopCast('DEV2');
         break;
       }
 
@@ -804,10 +846,159 @@ export default function App() {
         setActiveModal('rpg');
         break;
 
+      case 'open_trade':
+        setTradePerspective('DEV2');
+        setActiveModal('trade');
+        break;
+
       default:
         cydAudio.click();
         break;
     }
+  };
+
+  // =========================================================================
+  // CO-OP DUAL-CAST HANDLER (10s SYNC WINDOW -> DUAL ASTRAL HARMONY)
+  // =========================================================================
+  const triggerDualAstralHarmony = (casterSide: 'DEV1' | 'DEV2', customManaCost = 25) => {
+    setCoopCastWindow(null);
+    setActivePacket({ from: casterSide, type: 'MAGIC_SYNC', label: '🌟 ASTRAL HARMONY' });
+    setIsAuroraActive(true);
+    if (auroraTimerRef.current) window.clearTimeout(auroraTimerRef.current);
+    auroraTimerRef.current = window.setTimeout(() => {
+      setIsAuroraActive(false);
+    }, 4200);
+
+    cydAudio.levelUp();
+    setTimeout(() => cydAudio.magicCast(), 180);
+    confetti({ particleCount: 110, spread: 85, origin: { y: 0.45 } });
+    setTimeout(() => confetti({ particleCount: 70, spread: 70, origin: { y: 0.55 } }), 320);
+
+    setLedDev1('gold');
+    setLedDev2('cyan');
+    setTimeout(() => {
+      setLedDev1('cyan');
+      setLedDev2('gold');
+    }, 1200);
+    setTimeout(() => {
+      setActivePacket(null);
+      setLedDev1('green');
+      setLedDev2('green');
+    }, 3800);
+
+    // Choose a rare collectible gift or gourmet berry tart for each pet
+    const pickCoopGift = (pet: PetState): InventoryItem => {
+      const unownedRare = CATALOG_ITEMS.find(
+        (c) => (c.rarity === 'rare' || c.rarity === 'legendary') && !pet.inventory.some((i) => i.id === c.id)
+      );
+      return unownedRare || FOOD_CATALOG.food_berry_pie;
+    };
+
+    const gift1 = pickCoopGift(dev1Pet);
+    const gift2 = pickCoopGift(dev2Pet);
+
+    setDev1Pet((prev) => {
+      const manaSpent = casterSide === 'DEV1' ? Math.max(0, prev.stats.mana - customManaCost) : prev.stats.mana;
+      const buffed: PetState = {
+        ...prev,
+        isSick: false,
+        spellsCastCount: casterSide === 'DEV1' ? prev.spellsCastCount + 1 : prev.spellsCastCount,
+        inventory: stackAddItem(prev.inventory, gift1, 1),
+        stats: {
+          ...prev.stats,
+          mana: manaSpent,
+          health: Math.min(100, prev.stats.health + 50),
+          happiness: Math.min(100, prev.stats.happiness + 40),
+        },
+      };
+      return applyXpToPetState(buffed, 100).pet;
+    });
+
+    setDev2Pet((prev) => {
+      const manaSpent = casterSide === 'DEV2' ? Math.max(0, prev.stats.mana - customManaCost) : prev.stats.mana;
+      const buffed: PetState = {
+        ...prev,
+        isSick: false,
+        spellsCastCount: casterSide === 'DEV2' ? prev.spellsCastCount + 1 : prev.spellsCastCount,
+        inventory: stackAddItem(prev.inventory, gift2, 1),
+        stats: {
+          ...prev.stats,
+          mana: manaSpent,
+          health: Math.min(100, prev.stats.health + 50),
+          happiness: Math.min(100, prev.stats.happiness + 40),
+        },
+      };
+      return applyXpToPetState(buffed, 100).pet;
+    });
+
+    recordMissionAction('cast_spell', 1);
+    const gift1Name = language === 'de' ? (gift1.name_de || gift1.name) : gift1.name;
+    const gift2Name = language === 'de' ? (gift2.name_de || gift2.name) : gift2.name;
+    triggerNotificationDev1(`${t.coopHarmonyTriggered} (${gift1.icon} ${gift1Name})`);
+    triggerNotificationDev2(`${t.coopHarmonyTriggered} (${gift2.icon} ${gift2Name})`);
+  };
+
+  const handleCoopCast = (device: 'DEV1' | 'DEV2', customManaCost = 25) => {
+    const casterPet = device === 'DEV1' ? dev1Pet : dev2Pet;
+    const setCasterPet = device === 'DEV1' ? setDev1Pet : setDev2Pet;
+    const setPartnerPet = device === 'DEV1' ? setDev2Pet : setDev1Pet;
+    const notifyCaster = device === 'DEV1' ? triggerNotificationDev1 : triggerNotificationDev2;
+    const notifyPartner = device === 'DEV1' ? triggerNotificationDev2 : triggerNotificationDev1;
+    const setCasterLed = device === 'DEV1' ? setLedDev1 : setLedDev2;
+    const setPartnerLed = device === 'DEV1' ? setLedDev2 : setLedDev1;
+
+    if (casterPet.stats.mana < customManaCost) {
+      cydAudio.warning();
+      notifyCaster(t.coopNeedMana);
+      return;
+    }
+
+    const now = Date.now();
+    // Case B: Partner already opened the 10s sync window -> Unleash Dual Astral Harmony!
+    if (coopCastWindow && coopCastWindow.initiator !== device && now <= coopCastWindow.expiresAt) {
+      triggerDualAstralHarmony(device, customManaCost);
+      return;
+    }
+
+    // Case A: Open / refresh 10s Dual-Cast window + send immediate Friend Blessing wave
+    cydAudio.magicCast();
+    setCoopCastWindow({ initiator: device, expiresAt: now + 10000 });
+    setActivePacket({ from: device, type: 'MAGIC_SYNC', label: '✨ MGC+ SYNC' });
+
+    setCasterPet((prev) => {
+      const updated: PetState = {
+        ...prev,
+        stats: { ...prev.stats, mana: Math.max(0, prev.stats.mana - customManaCost) },
+        spellsCastCount: prev.spellsCastCount + 1,
+      };
+      return device === 'DEV2' ? applyXpToPetState(updated, 35).pet : updated;
+    });
+    if (device === 'DEV1') {
+      addXPDev1(35);
+      recordMissionAction('cast_spell', 1);
+    }
+
+    setCasterLed('gold');
+    notifyCaster(t.coopSyncWaiting);
+
+    setTimeout(() => {
+      setActivePacket(null);
+      setPartnerLed('cyan');
+      confetti({ particleCount: 40, spread: 50 });
+      setPartnerPet((prev) => ({
+        ...prev,
+        stats: {
+          ...prev.stats,
+          health: Math.min(100, prev.stats.health + 25),
+          happiness: Math.min(100, prev.stats.happiness + 20),
+        },
+      }));
+      notifyPartner(t.coopPartnerWaiting);
+      setTimeout(() => {
+        setCasterLed('green');
+        setPartnerLed('green');
+      }, 2200);
+    }, 550);
   };
 
   // Recipe Cooking Handler
@@ -871,14 +1062,19 @@ export default function App() {
     );
   };
 
-  // Magic Spell Handler
+  // Magic Spell Handler (Integrates target === 'both' Dual Astral Harmony with 10s Co-op Window)
   const handleCastSpell = (spell: MagicSpell) => {
+    if (spell.target === 'both') {
+      handleCoopCast('DEV1', spell.manaCost);
+      return;
+    }
+
     setDev1Pet((prev) => {
       const stats = { ...prev.stats, mana: Math.max(0, prev.stats.mana - spell.manaCost) };
       let nextSatiety = prev.satietyTicks || 0;
       let nextSick = prev.isSick;
 
-      if (spell.target === 'self' || spell.target === 'both') {
+      if (spell.target === 'self') {
         stats.health = Math.min(100, stats.health + (spell.healthGain ?? (spell.curesSickness ? 10 : 25)));
         if (spell.hungerGain) {
           stats.hunger = Math.min(100, stats.hunger + spell.hungerGain);
@@ -905,7 +1101,7 @@ export default function App() {
 
     const spellTitle = language === 'de' ? (spell.name_de || spell.name) : spell.name;
 
-    if (spell.target === 'friend' || spell.target === 'both') {
+    if (spell.target === 'friend') {
       setActivePacket({ from: 'DEV1', type: 'MAGIC', label: '✨ MAGIC' });
       setTimeout(() => {
         setActivePacket(null);
@@ -1060,65 +1256,182 @@ export default function App() {
     });
   };
 
-  // Trading Handlers
-  const handleSendTradeOffer = (offeredItem: InventoryItem, requestedItemName: string) => {
+  // Bidirectional Escrow Trading Handlers
+  const handleSendTradeOffer = (
+    fromSide: 'DEV1' | 'DEV2',
+    offeredItem: InventoryItem,
+    requestedItemName: string,
+    requestedItemId?: string
+  ) => {
+    const senderPet = fromSide === 'DEV1' ? dev1Pet : dev2Pet;
+    const receiverPet = fromSide === 'DEV1' ? dev2Pet : dev1Pet;
+    const setSenderPet = fromSide === 'DEV1' ? setDev1Pet : setDev2Pet;
+    const notifySender = fromSide === 'DEV1' ? triggerNotificationDev1 : triggerNotificationDev2;
+    const notifyReceiver = fromSide === 'DEV1' ? triggerNotificationDev2 : triggerNotificationDev1;
+
+    // Verify & lock offered item in escrow immediately
+    const { inventory: lockedInv, equipped: updatedEquipped, removed } = deductInventoryItem(
+      senderPet,
+      offeredItem.id,
+      1
+    );
+    if (!removed) {
+      cydAudio.warning();
+      notifySender(t.tradeEmptyBag);
+      return;
+    }
+
+    setSenderPet((prev) => ({
+      ...prev,
+      inventory: lockedInv,
+      equipped: updatedEquipped,
+    }));
+
     const offer: TradeOffer = {
-      id: `trade-${Date.now()}`,
-      fromDeviceId: dev1Pet.deviceId,
-      fromPetName: dev1Pet.name,
-      toDeviceId: dev2Pet.deviceId,
-      offeredItem,
+      id: `trade-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      fromDeviceId: senderPet.deviceId,
+      fromPetName: senderPet.name,
+      toDeviceId: receiverPet.deviceId,
+      offeredItem: { ...offeredItem, quantity: 1 },
+      requestedItemId: requestedItemId || '',
       requestedItemName,
       status: 'pending',
       timestamp: Date.now(),
     };
 
-    setActivePacket({ from: 'DEV1', type: 'TRADE', label: '🎁 TRADE' });
-    triggerNotificationDev1('Transmitting trade proposal...');
+    setActivePacket({ from: fromSide, type: 'TRADE_OFFER', label: '🎁 TRADE OFFER' });
+    notifySender(t.tradeEscrowedMsg);
 
+    const itemName = language === 'de' ? (offeredItem.name_de || offeredItem.name) : offeredItem.name;
     setTimeout(() => {
       setActivePacket(null);
       cydAudio.tradeBell();
       setTradeOffers((prev) => [...prev, offer]);
-      triggerNotificationDev2(`Trade Offer: ${offeredItem.name}! 🎁`);
-    }, 700);
+      notifyReceiver(`${senderPet.name}: ${itemName} 🎁`);
+    }, 550);
   };
 
   const handleAcceptTrade = (offer: TradeOffer) => {
-    cydAudio.tradeBell();
-    confetti({ particleCount: 100, spread: 70 });
+    const fromSide: 'DEV1' | 'DEV2' = offer.fromDeviceId === dev1Pet.deviceId ? 'DEV1' : 'DEV2';
+    const receiverSide: 'DEV1' | 'DEV2' = fromSide === 'DEV1' ? 'DEV2' : 'DEV1';
+    const senderPet = fromSide === 'DEV1' ? dev1Pet : dev2Pet;
+    const receiverPet = receiverSide === 'DEV1' ? dev1Pet : dev2Pet;
+    const setSenderPet = fromSide === 'DEV1' ? setDev1Pet : setDev2Pet;
+    const setReceiverPet = receiverSide === 'DEV1' ? setDev1Pet : setDev2Pet;
+    const notifySender = fromSide === 'DEV1' ? triggerNotificationDev1 : triggerNotificationDev2;
+    const notifyReceiver = receiverSide === 'DEV1' ? triggerNotificationDev1 : triggerNotificationDev2;
 
-    // Find requested item in catalog or friend bag
-    const requestedItem =
-      CATALOG_ITEMS.find((c) => c.name === offer.requestedItemName) ||
-      CATALOG_ITEMS[0];
+    // Validate receiver owns requested item (unless Free Gift)
+    let matchedRequestItem: InventoryItem | undefined;
+    if (offer.requestedItemId) {
+      matchedRequestItem = receiverPet.inventory.find(
+        (i) => i.id === offer.requestedItemId && i.quantity > 0
+      );
+      if (!matchedRequestItem) {
+        cydAudio.warning();
+        notifyReceiver(t.tradeMissingRequested);
+        return;
+      }
+    }
 
-    // Transfer items
-    setDev1Pet((prev) => {
-      // Remove offered item
-      const inv = prev.inventory
-        .map((i) => (i.id === offer.offeredItem.id ? { ...i, quantity: i.quantity - 1 } : i))
-        .filter((i) => i.quantity > 0);
-      // Add requested item
-      inv.push({ ...requestedItem, quantity: 1 });
-      return { ...prev, inventory: inv };
-    });
+    // Atomic escrow swap execution
+    if (matchedRequestItem) {
+      const { inventory: recAfterDeduct, equipped: recEquippedAfter } = deductInventoryItem(
+        receiverPet,
+        matchedRequestItem.id,
+        1
+      );
+      const recFinalInv = stackAddItem(recAfterDeduct, offer.offeredItem, 1);
 
-    setDev2Pet((prev) => {
-      const inv = [...prev.inventory];
-      inv.push({ ...offer.offeredItem, quantity: 1 });
-      return { ...prev, inventory: inv };
-    });
+      setReceiverPet((prev) => {
+        const updated: PetState = {
+          ...prev,
+          inventory: recFinalInv,
+          equipped: recEquippedAfter,
+        };
+        return applyXpToPetState(updated, 35).pet;
+      });
+
+      setSenderPet((prev) => {
+        const updated: PetState = {
+          ...prev,
+          inventory: stackAddItem(prev.inventory, matchedRequestItem!, 1),
+        };
+        return applyXpToPetState(updated, 35).pet;
+      });
+    } else {
+      // Free gift escrow release: receiver keeps offered item, sender earns friendship XP
+      setReceiverPet((prev) => {
+        const updated: PetState = {
+          ...prev,
+          inventory: stackAddItem(prev.inventory, offer.offeredItem, 1),
+        };
+        return applyXpToPetState(updated, 35).pet;
+      });
+
+      setSenderPet((prev) => applyXpToPetState(prev, 35).pet);
+    }
 
     setTradeOffers((prev) => prev.filter((o) => o.id !== offer.id));
-    triggerNotificationDev1(`Trade Completed! Received ${requestedItem.name} 🤝`);
-    triggerNotificationDev2(`Trade Completed! Received ${offer.offeredItem.name} 🤝`);
+    cydAudio.tradeBell();
+    confetti({ particleCount: 95, spread: 70 });
+    setActivePacket({ from: receiverSide, type: 'TRADE_RESPONSE', label: '🤝 SWAP OK' });
+    setLedDev1('gold');
+    setLedDev2('gold');
+    setTimeout(() => {
+      setActivePacket(null);
+      setLedDev1('green');
+      setLedDev2('green');
+    }, 2400);
+
+    const offName = language === 'de' ? (offer.offeredItem.name_de || offer.offeredItem.name) : offer.offeredItem.name;
+    const reqName = matchedRequestItem
+      ? language === 'de'
+        ? (matchedRequestItem.name_de || matchedRequestItem.name)
+        : matchedRequestItem.name
+      : offer.requestedItemName;
+
+    notifyReceiver(`${t.notifTradeAccepted} (+${offer.offeredItem.icon} ${offName}, +35 XP)`);
+    notifySender(
+      matchedRequestItem
+        ? `${t.notifTradeAccepted} (+${matchedRequestItem.icon} ${reqName}, +35 XP)`
+        : `${t.notifTradeAccepted} (+35 XP)`
+    );
+    void senderPet;
   };
 
   const handleDeclineTrade = (offer: TradeOffer) => {
+    const fromSide: 'DEV1' | 'DEV2' = offer.fromDeviceId === dev1Pet.deviceId ? 'DEV1' : 'DEV2';
+    const setSenderPet = fromSide === 'DEV1' ? setDev1Pet : setDev2Pet;
+    const notifySender = fromSide === 'DEV1' ? triggerNotificationDev1 : triggerNotificationDev2;
+    const notifyReceiver = fromSide === 'DEV1' ? triggerNotificationDev2 : triggerNotificationDev1;
+
+    // Refund escrowed item back to proposer's bag
+    setSenderPet((prev) => ({
+      ...prev,
+      inventory: stackAddItem(prev.inventory, offer.offeredItem, 1),
+    }));
+
     cydAudio.back();
     setTradeOffers((prev) => prev.filter((o) => o.id !== offer.id));
-    triggerNotificationDev1('Trade offer was declined.');
+    notifyReceiver(t.notifTradeDeclined);
+    notifySender(t.tradeCancelledMsg);
+  };
+
+  const handleCancelTrade = (offer: TradeOffer) => {
+    const fromSide: 'DEV1' | 'DEV2' = offer.fromDeviceId === dev1Pet.deviceId ? 'DEV1' : 'DEV2';
+    const setSenderPet = fromSide === 'DEV1' ? setDev1Pet : setDev2Pet;
+    const notifySender = fromSide === 'DEV1' ? triggerNotificationDev1 : triggerNotificationDev2;
+
+    // Refund escrowed item back to sender
+    setSenderPet((prev) => ({
+      ...prev,
+      inventory: stackAddItem(prev.inventory, offer.offeredItem, 1),
+    }));
+
+    cydAudio.back();
+    setTradeOffers((prev) => prev.filter((o) => o.id !== offer.id));
+    notifySender(t.tradeCancelledMsg);
   };
 
   // Chat Send Handler
@@ -1362,6 +1675,15 @@ export default function App() {
               setDev2Pet((prev) => ({ ...prev, season }));
               triggerNotificationDev1(`${language === 'de' ? 'Jahreszeit gewechselt zu' : 'Season changed to'} ${SEASONS[season].name}! ${SEASONS[season].icon}`);
             }}
+            coopCastWindow={coopCastWindow}
+            coopRemainingSec={coopRemainingSec}
+            isAuroraActive={isAuroraActive}
+            incomingTradeCountDev1={
+              tradeOffers.filter((o) => o.toDeviceId === dev1Pet.deviceId && o.status === 'pending').length
+            }
+            incomingTradeCountDev2={
+              tradeOffers.filter((o) => o.toDeviceId === dev2Pet.deviceId && o.status === 'pending').length
+            }
           />
         )}
 
@@ -1400,19 +1722,26 @@ export default function App() {
           onBuyShopItem={handleBuyShopItem}
           onClaimMission={handleClaimMission}
           onClaimStreakBonus={handleClaimStreakBonus}
+          coopCastWindow={coopCastWindow}
+          coopRemainingSec={coopRemainingSec}
+          isAuroraActive={isAuroraActive}
+          onTriggerCoopCast={() => handleCoopCast('DEV1')}
         />
       )}
 
       {activeModal === 'trade' && (
         <TradingModal
-          myPet={dev1Pet}
-          friendPet={dev1FriendSummary}
+          dev1Pet={dev1Pet}
+          dev2Pet={dev2Pet}
+          activePerspective={tradePerspective}
+          onChangePerspective={setTradePerspective}
           pendingOffers={tradeOffers}
           language={language}
           onClose={() => setActiveModal(null)}
           onSendTradeOffer={handleSendTradeOffer}
           onAcceptTrade={handleAcceptTrade}
           onDeclineTrade={handleDeclineTrade}
+          onCancelTrade={handleCancelTrade}
         />
       )}
 

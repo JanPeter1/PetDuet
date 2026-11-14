@@ -558,8 +558,38 @@ bool cyd_net_sync_php_server(const CydConfig& cfg, const TamagotchiCoreEngine& e
   return true;
 }
 
+static void format_server_url(const char* baseUrl, const char* path, char* outUrl, size_t maxLen) {
+  if (!outUrl || maxLen == 0) return;
+  outUrl[0] = '\0';
+  if (!baseUrl) return;
+  size_t bLen = strlen(baseUrl);
+  while (bLen > 0 && baseUrl[bLen - 1] == '/') {
+    bLen--;
+  }
+  snprintf(outUrl, maxLen, "%.*s%s", (int)bLen, baseUrl, path ? path : "");
+}
+
+static void url_encode_component(const char* src, char* dst, size_t maxLen) {
+  if (!dst || maxLen == 0) return;
+  static const char HEX[] = "0123456789ABCDEF";
+  size_t pos = 0;
+  while (src && *src && pos + 1 < maxLen) {
+    unsigned char c = (unsigned char)*src++;
+    if (isalnum(c) || c == '-' || c == '_' || c == '.') {
+      dst[pos++] = (char)c;
+    } else if (pos + 4 <= maxLen) {
+      dst[pos++] = '%';
+      dst[pos++] = HEX[(c >> 4) & 0x0F];
+      dst[pos++] = HEX[c & 0x0F];
+    } else {
+      break;
+    }
+  }
+  dst[pos] = '\0';
+}
+
 // ============================================================================
-// FULL CLOUD SAVE & RESTORE (cloud_save.php)
+// FULL CLOUD SAVE & RESTORE (cloud_save.php / /api/cloud_save)
 // ============================================================================
 bool cyd_net_cloud_save(
   const CydConfig& cfg,
@@ -567,60 +597,43 @@ bool cyd_net_cloud_save(
   uint16_t recipesCrafted,
   uint16_t jobsCompleted,
   uint16_t spellsCast,
-  uint16_t treatsSent
+  uint16_t treatsSent,
+  uint32_t* outUpdatedAt
 ) {
-  if (!s_wifi_connected) return false;
-  cJSON* doc = cJSON_CreateObject();
-  cJSON_AddStringToObject(doc, "deviceId", cfg.deviceId);
-  cJSON* pet = cJSON_CreateObject();
-  cJSON_AddStringToObject(pet, "name", engine.name);
-  cJSON_AddStringToObject(pet, "trainerName", cfg.trainerName);
-  cJSON_AddStringToObject(pet, "biome", engine.biome);
-  cJSON_AddStringToObject(pet, "phase", engine.phase);
-  cJSON_AddNumberToObject(pet, "level", engine.level);
-  cJSON_AddNumberToObject(pet, "xp", engine.xp);
-  cJSON_AddNumberToObject(pet, "xpNext", engine.xpNext);
-  cJSON_AddNumberToObject(pet, "coins", engine.coins);
-  cJSON_AddNumberToObject(pet, "eggWarmth", engine.eggWarmth);
-  cJSON_AddNumberToObject(pet, "satietyTicks", engine.satietyTicks);
-  cJSON_AddBoolToObject(pet, "isSick", engine.isSick);
-  cJSON_AddNumberToObject(pet, "streakDays", engine.consecutiveLoginDays);
-  cJSON_AddBoolToObject(pet, "streakClaimed", engine.streakClaimedToday);
-
-  cJSON* st = cJSON_CreateObject();
-  cJSON_AddNumberToObject(st, "health", engine.stats.health);
-  cJSON_AddNumberToObject(st, "hunger", engine.stats.hunger);
-  cJSON_AddNumberToObject(st, "energy", engine.stats.energy);
-  cJSON_AddNumberToObject(st, "hygiene", engine.stats.hygiene);
-  cJSON_AddNumberToObject(st, "happiness", engine.stats.happiness);
-  cJSON_AddNumberToObject(st, "mana", engine.stats.mana);
-  cJSON_AddItemToObject(pet, "stats", st);
-
-  cJSON* cnt = cJSON_CreateObject();
-  cJSON_AddNumberToObject(cnt, "recipesCrafted", recipesCrafted);
-  cJSON_AddNumberToObject(cnt, "jobsCompleted", jobsCompleted);
-  cJSON_AddNumberToObject(cnt, "spellsCast", spellsCast);
-  cJSON_AddNumberToObject(cnt, "treatsSent", treatsSent);
-  cJSON_AddItemToObject(pet, "counters", cnt);
-
-  cJSON* inv = cJSON_CreateArray();
-  for (uint8_t i = 0; i < engine.inventoryCount; i++) {
-    cJSON* slot = cJSON_CreateObject();
-    cJSON_AddStringToObject(slot, "id", engine.inventory[i].id);
-    cJSON_AddNumberToObject(slot, "qty", engine.inventory[i].quantity);
-    cJSON_AddItemToArray(inv, slot);
-  }
-  cJSON_AddItemToObject(pet, "inventory", inv);
-  cJSON_AddItemToObject(doc, "petData", pet);
-
-  char* body = cJSON_PrintUnformatted(doc);
-  cJSON_Delete(doc);
+  if (!s_wifi_connected || strlen(cfg.serverUrl) == 0 || strlen(cfg.deviceId) == 0) return false;
+  char* body = (char*)malloc(4096);
   if (!body) return false;
 
-  char url[220];
-  snprintf(url, sizeof(url), "%s" CLOUD_SAVE_ENDPOINT, cfg.serverUrl);
-  int code = http_do_request(url, HTTP_METHOD_POST, body, NULL, 0);
-  cJSON_free(body);
+  size_t len = engine.serializeCloudSaveJson(
+    body, 4096,
+    cfg.deviceId, cfg.trainerName,
+    recipesCrafted, jobsCompleted, spellsCast, treatsSent,
+    FIRMWARE_VERSION
+  );
+  if (len == 0) {
+    free(body);
+    return false;
+  }
+
+  char url[256];
+  format_server_url(cfg.serverUrl, CLOUD_SAVE_ENDPOINT, url, sizeof(url));
+
+  char resp[512];
+  int code = http_do_request(url, HTTP_METHOD_POST, body, resp, sizeof(resp));
+  free(body);
+
+  if (code == 200 && outUpdatedAt) {
+    cJSON* rDoc = cJSON_Parse(resp);
+    if (rDoc) {
+      cJSON* jTs = cJSON_GetObjectItemCaseSensitive(rDoc, "updatedAt");
+      if (cJSON_IsNumber(jTs) && jTs->valuedouble > 0) {
+        double dv = jTs->valuedouble;
+        *outUpdatedAt = (dv > 20000000000.0) ? (uint32_t)(dv / 1000.0) : (uint32_t)dv;
+      }
+      cJSON_Delete(rDoc);
+    }
+  }
+  ESP_LOGI(TAG, "Cloud Save POST %s status=%d", url, code);
   return code == 200;
 }
 
@@ -630,77 +643,38 @@ bool cyd_net_cloud_load(
   uint16_t& recipesCrafted,
   uint16_t& jobsCompleted,
   uint16_t& spellsCast,
-  uint16_t& treatsSent
+  uint16_t& treatsSent,
+  char* outTrainerName,
+  size_t trainerNameLen,
+  uint32_t* outUpdatedAt
 ) {
-  if (!s_wifi_connected) return false;
-  char url[220];
-  snprintf(url, sizeof(url), "%s" CLOUD_SAVE_ENDPOINT "?deviceId=%s", cfg.serverUrl, cfg.deviceId);
-  char* resp = (char*)malloc(2048);
+  if (!s_wifi_connected || strlen(cfg.serverUrl) == 0 || strlen(cfg.deviceId) == 0) return false;
+
+  char encodedDev[72];
+  url_encode_component(cfg.deviceId, encodedDev, sizeof(encodedDev));
+  char path[128];
+  snprintf(path, sizeof(path), CLOUD_SAVE_ENDPOINT "?deviceId=%s", encodedDev);
+  char url[256];
+  format_server_url(cfg.serverUrl, path, url, sizeof(url));
+
+  const size_t RESP_CAP = 12288;
+  char* resp = (char*)malloc(RESP_CAP);
   if (!resp) return false;
 
-  int code = http_do_request(url, HTTP_METHOD_GET, NULL, resp, 2048);
+  int code = http_do_request(url, HTTP_METHOD_GET, NULL, resp, RESP_CAP);
+  ESP_LOGI(TAG, "Cloud Restore GET %s status=%d bytes=%u", url, code, (unsigned)strlen(resp));
   if (code != 200) {
     free(resp);
     return false;
   }
 
-  cJSON* doc = cJSON_Parse(resp);
+  bool ok = engine.parseCloudRestoreJson(
+    resp,
+    recipesCrafted, jobsCompleted, spellsCast, treatsSent,
+    outTrainerName, trainerNameLen, outUpdatedAt
+  );
   free(resp);
-  if (!doc) return false;
-
-  cJSON* pet = cJSON_GetObjectItemCaseSensitive(doc, "petData");
-  if (!cJSON_IsObject(pet)) {
-    cJSON_Delete(doc);
-    return false;
-  }
-
-  cJSON* v = NULL;
-  if ((v = cJSON_GetObjectItemCaseSensitive(pet, "name")) && cJSON_IsString(v)) safe_copy(engine.name, sizeof(engine.name), v->valuestring);
-  if ((v = cJSON_GetObjectItemCaseSensitive(pet, "biome")) && cJSON_IsString(v)) safe_copy(engine.biome, sizeof(engine.biome), v->valuestring);
-  if ((v = cJSON_GetObjectItemCaseSensitive(pet, "phase")) && cJSON_IsString(v)) safe_copy(engine.phase, sizeof(engine.phase), v->valuestring);
-  if ((v = cJSON_GetObjectItemCaseSensitive(pet, "level")) && cJSON_IsNumber(v)) engine.level = (uint8_t)v->valueint;
-  if ((v = cJSON_GetObjectItemCaseSensitive(pet, "xp")) && cJSON_IsNumber(v)) engine.xp = (uint16_t)v->valueint;
-  if ((v = cJSON_GetObjectItemCaseSensitive(pet, "xpNext")) && cJSON_IsNumber(v) && v->valueint >= 50) engine.xpNext = (uint16_t)v->valueint;
-  if ((v = cJSON_GetObjectItemCaseSensitive(pet, "coins")) && cJSON_IsNumber(v)) engine.coins = (uint16_t)v->valueint;
-  if ((v = cJSON_GetObjectItemCaseSensitive(pet, "eggWarmth")) && cJSON_IsNumber(v)) engine.eggWarmth = (uint8_t)v->valueint;
-  if ((v = cJSON_GetObjectItemCaseSensitive(pet, "satietyTicks")) && cJSON_IsNumber(v)) engine.satietyTicks = (uint8_t)v->valueint;
-  if ((v = cJSON_GetObjectItemCaseSensitive(pet, "isSick")) && cJSON_IsBool(v)) engine.isSick = cJSON_IsTrue(v);
-  if ((v = cJSON_GetObjectItemCaseSensitive(pet, "streakDays")) && cJSON_IsNumber(v) && v->valueint >= 1) engine.consecutiveLoginDays = (uint16_t)v->valueint;
-  if ((v = cJSON_GetObjectItemCaseSensitive(pet, "streakClaimed")) && cJSON_IsBool(v)) engine.streakClaimedToday = cJSON_IsTrue(v);
-
-  cJSON* st = cJSON_GetObjectItemCaseSensitive(pet, "stats");
-  if (cJSON_IsObject(st)) {
-    if ((v = cJSON_GetObjectItemCaseSensitive(st, "health")) && cJSON_IsNumber(v)) engine.stats.health = (uint8_t)v->valueint;
-    if ((v = cJSON_GetObjectItemCaseSensitive(st, "hunger")) && cJSON_IsNumber(v)) engine.stats.hunger = (uint8_t)v->valueint;
-    if ((v = cJSON_GetObjectItemCaseSensitive(st, "energy")) && cJSON_IsNumber(v)) engine.stats.energy = (uint8_t)v->valueint;
-    if ((v = cJSON_GetObjectItemCaseSensitive(st, "hygiene")) && cJSON_IsNumber(v)) engine.stats.hygiene = (uint8_t)v->valueint;
-    if ((v = cJSON_GetObjectItemCaseSensitive(st, "happiness")) && cJSON_IsNumber(v)) engine.stats.happiness = (uint8_t)v->valueint;
-    if ((v = cJSON_GetObjectItemCaseSensitive(st, "mana")) && cJSON_IsNumber(v)) engine.stats.mana = (uint8_t)v->valueint;
-  }
-
-  cJSON* cnt = cJSON_GetObjectItemCaseSensitive(pet, "counters");
-  if (cJSON_IsObject(cnt)) {
-    if ((v = cJSON_GetObjectItemCaseSensitive(cnt, "recipesCrafted")) && cJSON_IsNumber(v)) recipesCrafted = (uint16_t)v->valueint;
-    if ((v = cJSON_GetObjectItemCaseSensitive(cnt, "jobsCompleted")) && cJSON_IsNumber(v)) jobsCompleted = (uint16_t)v->valueint;
-    if ((v = cJSON_GetObjectItemCaseSensitive(cnt, "spellsCast")) && cJSON_IsNumber(v)) spellsCast = (uint16_t)v->valueint;
-    if ((v = cJSON_GetObjectItemCaseSensitive(cnt, "treatsSent")) && cJSON_IsNumber(v)) treatsSent = (uint16_t)v->valueint;
-  }
-
-  cJSON* inv = cJSON_GetObjectItemCaseSensitive(pet, "inventory");
-  if (cJSON_IsArray(inv)) {
-    engine.inventoryCount = 0;
-    cJSON* item = NULL;
-    cJSON_ArrayForEach(item, inv) {
-      cJSON* jId = cJSON_GetObjectItemCaseSensitive(item, "id");
-      cJSON* jQty = cJSON_GetObjectItemCaseSensitive(item, "qty");
-      if (cJSON_IsString(jId) && cJSON_IsNumber(jQty) && jQty->valueint > 0) {
-        engine.addKnownItemById(jId->valuestring, (uint8_t)jQty->valueint);
-      }
-    }
-  }
-
-  cJSON_Delete(doc);
-  return true;
+  return ok;
 }
 
 // ============================================================================
