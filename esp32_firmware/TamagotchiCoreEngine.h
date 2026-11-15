@@ -438,23 +438,36 @@ public:
   char biome[12]    = "grassland";
   char season[10]   = "spring";
   char phase[10]    = "Egg";
+  char evoBranch[12] = "Normal"; // "Normal", "Paragon", "Balanced", "Wild"
+  char equippedHead[20] = "";    // "", "acc_flower", "acc_wizard", "acc_tophat"
   uint8_t level     = 1;
   uint16_t xp       = 0;
   uint16_t xpNext   = 100;
   uint16_t coins    = 45;
   uint8_t eggWarmth = 20;
 
-  // Hunger freeze shield & Snack sickness
-  uint8_t satietyTicks = 0;
-  bool isSick          = false;
+  // Hunger freeze shield, Sickness, Waste & Care Mistake state
+  uint8_t satietyTicks      = 0;
+  bool isSick               = false;
+  uint8_t poopCount         = 0;
+  uint8_t careMistakes      = 0;
+  uint8_t consecutiveSnacks = 0;
+  bool isSleeping           = false;
+  bool attentionNeeded      = false;
+  uint16_t attentionTimerSec = 0;
+  uint16_t poopTimerSec      = 0;
+  uint16_t purchasedRecipeMask = 0;
+  uint16_t purchasedSpellMask  = 0;
+  uint32_t lastLoginDay        = 0; // YYYYMMDD (Europe/Berlin)
 
   // Fractional decay accumulators (zero heap)
-  float hungerAcc    = 0.0f;
-  float energyAcc    = 0.0f;
-  float happinessAcc = 0.0f;
-  float starveAcc    = 0.0f;
-  float sickAcc      = 0.0f;
-  float manaAcc      = 0.0f;
+  float hungerAcc      = 0.0f;
+  float energyAcc      = 0.0f;
+  float sleepEnergyAcc = 0.0f;
+  float happinessAcc   = 0.0f;
+  float starveAcc      = 0.0f;
+  float sickAcc        = 0.0f;
+  float manaAcc        = 0.0f;
 
   // Fixed-size inventory array (zero heap allocation)
   EngineInventorySlot inventory[MAX_INVENTORY_SLOTS];
@@ -898,7 +911,146 @@ public:
   uint8_t getEffectiveMaxMana() const {
     const EngineBiomeRule* b = findBiomeRule(biome);
     int cap = (int)rules.maxStatValue + (b ? (int)b->maxManaBonus : 0);
-    return (uint8_t)engineClamp(cap, 50, 150);
+    if (std::strcmp(equippedHead, "acc_wizard") == 0) {
+      cap += 15;
+    }
+    return (uint8_t)engineClamp(cap, 50, 165);
+  }
+
+  uint8_t getXpBonusPct() const {
+    return (std::strcmp(equippedHead, "acc_flower") == 0) ? 5 : 0;
+  }
+
+  uint8_t getJobCoinBonusPct() const {
+    return (std::strcmp(equippedHead, "acc_tophat") == 0) ? 15 : 0;
+  }
+
+  bool equipAccessory(const char* itemId) {
+    if (!itemId || std::strlen(itemId) == 0 || std::strcmp(equippedHead, itemId) == 0) {
+      equippedHead[0] = '\0';
+      clampAllStats();
+      if (onEvent) onEvent("ACCESSORY_CHANGED", nullptr);
+      return true;
+    }
+    int idx = findInventoryIndex(itemId);
+    if (idx < 0 || inventory[idx].category != 3 || inventory[idx].quantity == 0) {
+      return false;
+    }
+    copyStr(equippedHead, sizeof(equippedHead), itemId);
+    if (std::strcmp(itemId, "acc_flower") == 0) {
+      stats.happiness = (uint8_t)engineMin((int)rules.maxStatValue, (int)stats.happiness + 10);
+    } else if (std::strcmp(itemId, "acc_tophat") == 0) {
+      stats.happiness = (uint8_t)engineMin((int)rules.maxStatValue, (int)stats.happiness + 15);
+    }
+    clampAllStats();
+    if (onEvent) onEvent("ACCESSORY_CHANGED", nullptr);
+    return true;
+  }
+
+  bool isRecipePurchased(const char* recipeId) const {
+    if (!recipeId) return false;
+    for (uint8_t i = 0; i < rules.shopRecipeCount && i < 16; i++) {
+      if (std::strcmp(rules.shopRecipes[i].id, recipeId) == 0) {
+        return (purchasedRecipeMask & (uint16_t)(1U << i)) != 0;
+      }
+    }
+    return false;
+  }
+
+  bool isSpellPurchased(const char* spellId) const {
+    if (!spellId) return false;
+    for (uint8_t i = 0; i < rules.shopSpellCount && i < 16; i++) {
+      if (std::strcmp(rules.shopSpells[i].id, spellId) == 0) {
+        return (purchasedSpellMask & (uint16_t)(1U << i)) != 0;
+      }
+    }
+    return false;
+  }
+
+  void setSleeping(bool sleeping) {
+    if (std::strcmp(phase, "Egg") == 0) sleeping = false;
+    isSleeping = sleeping;
+    if (onEvent) onEvent(sleeping ? "SLEEP_START" : "SLEEP_WAKE", nullptr);
+  }
+
+  void toggleSleep() {
+    setSleeping(!isSleeping);
+  }
+
+  void addWaste(uint8_t count = 1) {
+    if (std::strcmp(phase, "Egg") == 0 || count == 0) return;
+    poopCount = (uint8_t)engineMin(4, (int)poopCount + (int)count);
+    stats.hygiene = (uint8_t)engineMax(0, (int)stats.hygiene - 15 * (int)count);
+    attentionNeeded = true;
+    if (onEvent) onEvent("WASTE_EVENT", nullptr);
+  }
+
+  // ISO Calendar Week Season Mapping: W = ISO_Week mod 4 -> 1:spring, 2:summer, 3:autumn, 0:winter
+  bool updateSeasonByIsoWeek(int isoWeek) {
+    if (isoWeek <= 0) return false;
+    const char* target = "winter";
+    int m = isoWeek % 4;
+    if (m == 1) target = "spring";
+    else if (m == 2) target = "summer";
+    else if (m == 3) target = "autumn";
+    if (std::strcmp(season, target) == 0) return false;
+    copyStr(season, sizeof(season), target);
+    if (onEvent) onEvent("SEASON_CHANGED", (void*)season);
+    return true;
+  }
+
+  // Proleptic Gregorian day number (Howard Hinnant algorithm) for zero-heap YYYYMMDD diffs
+  static long civilDaysFromYyyymmdd(uint32_t yyyymmdd) {
+    int y = (int)(yyyymmdd / 10000U);
+    unsigned m = (unsigned)((yyyymmdd / 100U) % 100U);
+    unsigned d = (unsigned)(yyyymmdd % 100U);
+    y -= (m <= 2U) ? 1 : 0;
+    const int era = (y >= 0 ? y : y - 399) / 400;
+    const unsigned yoe = (unsigned)(y - era * 400);
+    const unsigned doy = (153U * (m + (m > 2U ? (unsigned)-3 : 9U)) + 2U) / 5U + d - 1U;
+    const unsigned doe = yoe * 365U + yoe / 4U - yoe / 100U + doy;
+    return (long)era * 146097L + (long)doe - 719468L;
+  }
+
+  static long daysBetweenYyyymmdd(uint32_t fromDay, uint32_t toDay) {
+    return civilDaysFromYyyymmdd(toDay) - civilDaysFromYyyymmdd(fromDay);
+  }
+
+  void resetDailyMissionsForNewDay() {
+    for (uint8_t i = 0; i < missionCount; i++) {
+      if (std::strcmp(missions[i].actionType, "login_streak") == 0) {
+        uint8_t cap = (missions[i].targetCount > 0) ? missions[i].targetCount : 1;
+        missions[i].currentCount = (uint8_t)engineMin((int)consecutiveLoginDays, (int)cap);
+        missions[i].completed = (missions[i].currentCount >= cap);
+        missions[i].claimed = false;
+      } else {
+        missions[i].currentCount = 0;
+        missions[i].completed = false;
+        missions[i].claimed = false;
+      }
+    }
+  }
+
+  bool updateLoginDay(uint32_t yyyymmdd) {
+    if (yyyymmdd < 20000101U || yyyymmdd == lastLoginDay) return false;
+    if (lastLoginDay < 20000101U) {
+      lastLoginDay = yyyymmdd;
+      return false;
+    }
+    long diff = daysBetweenYyyymmdd(lastLoginDay, yyyymmdd);
+    if (diff <= 0) return false;
+    lastLoginDay = yyyymmdd;
+    streakClaimedToday = false;
+    if (diff == 1) {
+      if (consecutiveLoginDays < 9999) consecutiveLoginDays++;
+      resetDailyMissionsForNewDay();
+      if (onEvent) onEvent("NEW_LOGIN_DAY", nullptr);
+    } else {
+      consecutiveLoginDays = 1;
+      resetDailyMissionsForNewDay();
+      if (onEvent) onEvent("STREAK_RESET", nullptr);
+    }
+    return true;
   }
 
   // --------------------------------------------------------------------------
@@ -1589,15 +1741,28 @@ public:
   }
 
   // --------------------------------------------------------------------------
-  // Simulation Loop Tick (Honors Satiety Shield, Biomes & Fractional Decay)
+  // Simulation Loop Tick (Satiety Shield, Biomes, Seasons, Sleep & CM Engine)
   // --------------------------------------------------------------------------
-  void tick() {
+  void tick(uint16_t elapsedSeconds = 0) {
     if (std::strcmp(phase, "Egg") == 0) return;
 
+    uint16_t dtSec = (elapsedSeconds > 0) ? elapsedSeconds : (rules.tickIntervalSeconds > 0 ? rules.tickIntervalSeconds : 6);
     const EngineBiomeRule* b = findBiomeRule(biome);
     float foodMult  = b ? b->foodDecayMult : 1.0f;
     float enerMult  = b ? b->energyDecayMult : 1.0f;
     float happyMult = b ? b->happinessDecayMult : 1.0f;
+
+    // Seasonal modifiers (spec §4)
+    if (std::strcmp(season, "summer") == 0) {
+      if (std::strcmp(biome, "desert") != 0) enerMult *= 1.20f;
+    } else if (std::strcmp(season, "winter") == 0) {
+      foodMult *= 1.15f;
+    }
+
+    if (isSleeping) {
+      foodMult  *= 0.50f;
+      happyMult *= 0.50f;
+    }
 
     if (satietyTicks > 0) {
       satietyTicks--;
@@ -1610,7 +1775,16 @@ public:
       }
     }
 
-    if (stats.energy > 0) {
+    if (isSleeping) {
+      if (stats.energy < rules.maxStatValue) {
+        sleepEnergyAcc += 1.2f;
+        int gain = (int)sleepEnergyAcc;
+        if (gain > 0) {
+          sleepEnergyAcc -= (float)gain;
+          stats.energy = (uint8_t)engineMin((int)rules.maxStatValue, (int)stats.energy + gain);
+        }
+      }
+    } else if (stats.energy > 0) {
       energyAcc += rules.energyDecayFloat * enerMult;
       int drop = (int)energyAcc;
       if (drop > 0) {
@@ -1655,6 +1829,41 @@ public:
         stats.mana = (uint8_t)engineMin((int)maxMana, (int)stats.mana + gain);
       }
     }
+
+    // Periodic waste accumulation (~every 3600s when awake) & uncleaned >20m -> Sickness
+    if (!isSleeping) {
+      poopTimerSec = (uint16_t)engineMin(60000, (int)poopTimerSec + (int)dtSec);
+      if (poopCount == 0 && poopTimerSec >= 3600U) {
+        poopTimerSec = 0;
+        addWaste(1);
+      } else if (poopCount > 0 && poopTimerSec >= 1200U) {
+        if (!isSick) {
+          isSick = true;
+          if (onEvent) onEvent("WASTE_SICKNESS", nullptr);
+        }
+        poopTimerSec = 0;
+      }
+    }
+
+    // Attention Call & Care Mistake Window (15 min default = rules.careMistakeThresholdSec)
+    bool needsCare = (stats.hunger == 0 || stats.happiness == 0 || isSick || poopCount > 0);
+    if (needsCare) {
+      if (!attentionNeeded) {
+        attentionNeeded = true;
+        attentionTimerSec = 0;
+        if (onEvent) onEvent("ATTENTION_CALL", nullptr);
+      }
+      attentionTimerSec = (uint16_t)engineMin(60000, (int)attentionTimerSec + (int)dtSec);
+      if (attentionTimerSec >= rules.careMistakeThresholdSec) {
+        attentionTimerSec = 0;
+        if (careMistakes < 99) careMistakes++;
+        checkEvolution();
+        if (onEvent) onEvent("CARE_MISTAKE", &careMistakes);
+      }
+    } else {
+      attentionNeeded = false;
+      attentionTimerSec = 0;
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -1672,11 +1881,17 @@ public:
       return res;
     }
 
+    isSleeping = false;
     bool rolledSick = false;
     if (copySlot.sickChancePct > 0) {
-      if (engineRandom(0, 100) < (long)copySlot.sickChancePct) {
+      if (consecutiveSnacks < 25) consecutiveSnacks++;
+      if (consecutiveSnacks > 3) {
+        rolledSick = true; // Cavity rule: >3 consecutive snacks without play
+      } else if (engineRandom(0, 100) < (long)copySlot.sickChancePct) {
         rolledSick = true;
       }
+    } else {
+      consecutiveSnacks = 0;
     }
 
     stats.hunger    = (uint8_t)engineMin((int)rules.maxStatValue, (int)stats.hunger + (int)copySlot.hungerGain);
@@ -1691,6 +1906,10 @@ public:
     }
     if (rolledSick) {
       isSick = true;
+    }
+    if (stats.hunger > 0 && !isSick && stats.happiness > 0 && poopCount == 0) {
+      attentionNeeded = false;
+      attentionTimerSec = 0;
     }
 
     addXP(15);
@@ -1719,6 +1938,11 @@ public:
     }
     if (copySlot.cureSickness) {
       isSick = false;
+      consecutiveSnacks = 0;
+      if (stats.hunger > 0 && stats.happiness > 0 && poopCount == 0) {
+        attentionNeeded = false;
+        attentionTimerSec = 0;
+      }
     }
     return true;
   }
@@ -1743,7 +1967,11 @@ public:
       addInventoryItem(outId, r.name, r.name_de, 0, 1,
                        r.hungerGain, r.healthGain, r.happyGain, r.energyGain, r.satietyTicks, 0, false);
     }
-    addXP(r.xpReward);
+    uint16_t xpGain = r.xpReward;
+    if (std::strcmp(season, "autumn") == 0) {
+      xpGain = (uint16_t)((xpGain * 130U) / 100U); // Autumn +30% cooking XP
+    }
+    addXP(xpGain);
     return true;
   }
 
@@ -1765,8 +1993,15 @@ public:
 
     stats.mana -= sp.manaCost;
     if (sp.target == 0 || sp.target == 2) {
-      if (sp.cureSickness) isSick = false;
-      if (sp.cleanPoop) stats.hygiene = rules.maxStatValue;
+      if (sp.cureSickness) {
+        isSick = false;
+        consecutiveSnacks = 0;
+      }
+      if (sp.cleanPoop) {
+        poopCount = 0;
+        poopTimerSec = 0;
+        stats.hygiene = rules.maxStatValue;
+      }
       if (sp.healthGain > 0) {
         stats.health = (uint8_t)engineMin((int)rules.maxStatValue, (int)stats.health + (int)sp.healthGain);
       }
@@ -1778,6 +2013,10 @@ public:
       }
       if (sp.satietyTicks > satietyTicks) {
         satietyTicks = sp.satietyTicks;
+      }
+      if (stats.hunger > 0 && stats.happiness > 0 && !isSick && poopCount == 0) {
+        attentionNeeded = false;
+        attentionTimerSec = 0;
       }
     }
     addXP(sp.xpReward);
@@ -1893,6 +2132,7 @@ public:
       if (std::strcmp(rules.shopRecipes[i].id, recipeId) == 0) {
         if (coins >= rules.shopRecipes[i].cost && level >= rules.shopRecipes[i].minLevel) {
           coins -= rules.shopRecipes[i].cost;
+          if (i < 16) purchasedRecipeMask |= (uint16_t)(1U << i);
           addXP(30);
           if (onEvent) onEvent("SHOP_PURCHASE_RECIPE", (void*)&rules.shopRecipes[i]);
           return true;
@@ -1908,6 +2148,7 @@ public:
       if (std::strcmp(rules.shopSpells[i].id, spellId) == 0) {
         if (coins >= rules.shopSpells[i].cost && level >= rules.shopSpells[i].minLevel) {
           coins -= rules.shopSpells[i].cost;
+          if (i < 16) purchasedSpellMask |= (uint16_t)(1U << i);
           addXP(45);
           if (onEvent) onEvent("SHOP_PURCHASE_SPELL", (void*)&rules.shopSpells[i]);
           return true;
@@ -1922,21 +2163,38 @@ public:
   // Core Interactions
   // --------------------------------------------------------------------------
   void feed(uint8_t amount = 25) {
+    isSleeping = false;
     stats.hunger = (uint8_t)engineMin((int)rules.maxStatValue, (int)stats.hunger + (int)amount);
+    if (stats.hunger > 0 && !isSick && stats.happiness > 0 && poopCount == 0) {
+      attentionNeeded = false;
+      attentionTimerSec = 0;
+    }
     addXP(15);
     recordAction("feed", 1);
   }
 
   void play(uint8_t happy = 20, uint8_t cost = 10) {
+    isSleeping = false;
+    consecutiveSnacks = 0;
     stats.happiness = (uint8_t)engineMin((int)rules.maxStatValue, (int)stats.happiness + (int)happy);
     stats.energy = (uint8_t)engineMax(0, (int)stats.energy - (int)cost);
+    if (stats.hunger > 0 && !isSick && stats.happiness > 0 && poopCount == 0) {
+      attentionNeeded = false;
+      attentionTimerSec = 0;
+    }
     addXP(20);
     recordAction("play", 1);
   }
 
   void clean() {
+    poopCount = 0;
+    poopTimerSec = 0;
     stats.hygiene = rules.maxStatValue;
     stats.happiness = (uint8_t)engineMin((int)rules.maxStatValue, (int)stats.happiness + 10);
+    if (stats.hunger > 0 && !isSick && stats.happiness > 0) {
+      attentionNeeded = false;
+      attentionTimerSec = 0;
+    }
     addXP(10);
     recordAction("bath", 1);
   }
@@ -1944,10 +2202,15 @@ public:
   bool warmEgg(uint8_t amount = 25) {
     if (std::strcmp(phase, "Egg") != 0) return false;
     const EngineBiomeRule* b = findBiomeRule(biome);
-    uint8_t scaled = (b && b->eggHatchSpeed > 1.0f) ? (uint8_t)std::llround((float)amount * b->eggHatchSpeed) : amount;
+    float mult = (b && b->eggHatchSpeed > 1.0f) ? b->eggHatchSpeed : 1.0f;
+    if (std::strcmp(season, "spring") == 0) {
+      mult *= 1.30f; // Spring: eggs warm 30% faster
+    }
+    uint8_t scaled = (mult > 1.0f) ? (uint8_t)std::llround((float)amount * mult) : amount;
     eggWarmth = (uint8_t)engineMin((int)rules.eggWarmthRequired, (int)eggWarmth + (int)scaled);
     if (eggWarmth >= rules.eggWarmthRequired) {
       std::strcpy(phase, "Baby");
+      copyStr(evoBranch, sizeof(evoBranch), "Normal");
       stats.health = rules.maxStatValue;
       stats.hunger = rules.maxStatValue;
       stats.happiness = rules.maxStatValue;
@@ -1958,7 +2221,11 @@ public:
   }
 
   void addXP(uint16_t amount) {
-    xp += amount;
+    uint8_t bonusPct = getXpBonusPct();
+    uint16_t effectiveXp = (bonusPct > 0)
+      ? (uint16_t)engineMax((int)amount, (int)(((uint32_t)amount * (100U + bonusPct) + 50U) / 100U))
+      : amount;
+    xp += effectiveXp;
     bool leveled = false;
     while (xp >= xpNext) {
       xp -= xpNext;
@@ -1976,11 +2243,22 @@ public:
   }
 
   void checkEvolution() {
-    if (std::strcmp(phase, "Egg") == 0) return;
+    if (std::strcmp(phase, "Egg") == 0) {
+      copyStr(evoBranch, sizeof(evoBranch), "Normal");
+      return;
+    }
     if (level >= rules.elderMinLevel) std::strcpy(phase, "Elder");
     else if (level >= rules.adultMinLevel) std::strcpy(phase, "Adult");
     else if (level >= rules.youthMinLevel) std::strcpy(phase, "Youth");
     else std::strcpy(phase, "Baby");
+
+    if (std::strcmp(phase, "Adult") == 0 || std::strcmp(phase, "Elder") == 0) {
+      if (careMistakes <= 1) copyStr(evoBranch, sizeof(evoBranch), "Paragon");
+      else if (careMistakes <= 4) copyStr(evoBranch, sizeof(evoBranch), "Balanced");
+      else copyStr(evoBranch, sizeof(evoBranch), "Wild");
+    } else {
+      copyStr(evoBranch, sizeof(evoBranch), "Normal");
+    }
   }
 
   void receiveRemoteTreat() {
@@ -2009,6 +2287,12 @@ public:
     return std::strcmp(p, "Egg") == 0 || std::strcmp(p, "Baby") == 0 ||
            std::strcmp(p, "Youth") == 0 || std::strcmp(p, "Adult") == 0 ||
            std::strcmp(p, "Elder") == 0;
+  }
+
+  static bool isValidEvoBranch(const char* br) {
+    if (!br) return false;
+    return std::strcmp(br, "Normal") == 0 || std::strcmp(br, "Paragon") == 0 ||
+           std::strcmp(br, "Balanced") == 0 || std::strcmp(br, "Wild") == 0;
   }
 
   void clampAllStats() {
@@ -2089,19 +2373,31 @@ public:
     appendJsonEscapedStr(outBuf, maxLen, pos, season);
     appendJsonRaw(outBuf, maxLen, pos, ",\"phase\":");
     appendJsonEscapedStr(outBuf, maxLen, pos, phase);
+    appendJsonRaw(outBuf, maxLen, pos, ",\"evoBranch\":");
+    appendJsonEscapedStr(outBuf, maxLen, pos, evoBranch);
+    appendJsonRaw(outBuf, maxLen, pos, ",\"equippedHead\":");
+    appendJsonEscapedStr(outBuf, maxLen, pos, equippedHead);
 
     std::snprintf(tmp, sizeof(tmp),
       ",\"level\":%u,\"xp\":%u,\"xpNext\":%u,\"coins\":%u,"
       "\"eggWarmth\":%u,\"satietyTicks\":%u,\"isSick\":%s,"
+      "\"poopCount\":%u,\"careMistakes\":%u,\"isSleeping\":%s,"
+      "\"lastLoginDay\":%lu,\"purchasedRecipeMask\":%u,\"purchasedSpellMask\":%u,"
       "\"streakDays\":%u,\"streakClaimed\":%s,"
       "\"recipesCraftedCount\":%u,\"jobsCompletedCount\":%u,"
       "\"spellsCastCount\":%u,\"treatsSentCount\":%u",
       (unsigned)level, (unsigned)xp, (unsigned)xpNext, (unsigned)coins,
       (unsigned)eggWarmth, (unsigned)satietyTicks, isSick ? "true" : "false",
+      (unsigned)poopCount, (unsigned)careMistakes, isSleeping ? "true" : "false",
+      (unsigned long)lastLoginDay, (unsigned)purchasedRecipeMask, (unsigned)purchasedSpellMask,
       (unsigned)consecutiveLoginDays, streakClaimedToday ? "true" : "false",
       (unsigned)recipesCrafted, (unsigned)jobsCompleted,
       (unsigned)spellsCast, (unsigned)treatsSent);
     appendJsonRaw(outBuf, maxLen, pos, tmp);
+
+    appendJsonRaw(outBuf, maxLen, pos, ",\"equipped\":{\"head\":");
+    appendJsonEscapedStr(outBuf, maxLen, pos, equippedHead);
+    appendJsonRaw(outBuf, maxLen, pos, "}");
 
     appendJsonRaw(outBuf, maxLen, pos, ",\"fwVersion\":");
     appendJsonEscapedStr(outBuf, maxLen, pos, fwVersion ? fwVersion : "");
@@ -2183,6 +2479,17 @@ public:
       } else if (std::strcmp(pk, "phase") == 0 && pfc.readString(sbuf, sizeof(sbuf))) {
         if (isValidPhase(sbuf)) copyStr(phase, sizeof(phase), sbuf);
         parsedAny = true;
+      } else if (std::strcmp(pk, "evoBranch") == 0 && pfc.readString(sbuf, sizeof(sbuf))) {
+        if (isValidEvoBranch(sbuf)) copyStr(evoBranch, sizeof(evoBranch), sbuf);
+      } else if (std::strcmp(pk, "equippedHead") == 0 && pfc.readString(sbuf, sizeof(sbuf))) {
+        copyStr(equippedHead, sizeof(equippedHead), sbuf);
+      } else if (std::strcmp(pk, "equipped") == 0) {
+        pfc.eachObjectEntry([&](const char* ek, EngineJsonCursor& efc) {
+          char eb[24] = "";
+          if (std::strcmp(ek, "head") == 0 && efc.readString(eb, sizeof(eb))) {
+            copyStr(equippedHead, sizeof(equippedHead), eb);
+          }
+        });
       } else if (std::strcmp(pk, "level") == 0 && pfc.readDouble(dv)) {
         level = (uint8_t)engineClamp((int)dv, 1, 255);
         parsedAny = true;
@@ -2198,6 +2505,18 @@ public:
         satietyTicks = (uint8_t)engineClamp((int)dv, 0, 255);
       } else if (std::strcmp(pk, "isSick") == 0 && pfc.readBool(bv)) {
         isSick = bv;
+      } else if (std::strcmp(pk, "poopCount") == 0 && pfc.readDouble(dv)) {
+        poopCount = (uint8_t)engineClamp((int)dv, 0, 4);
+      } else if (std::strcmp(pk, "careMistakes") == 0 && pfc.readDouble(dv)) {
+        careMistakes = (uint8_t)engineClamp((int)dv, 0, 99);
+      } else if (std::strcmp(pk, "isSleeping") == 0 && pfc.readBool(bv)) {
+        isSleeping = bv;
+      } else if (std::strcmp(pk, "lastLoginDay") == 0 && pfc.readDouble(dv)) {
+        if (dv >= 0) lastLoginDay = (uint32_t)dv;
+      } else if (std::strcmp(pk, "purchasedRecipeMask") == 0 && pfc.readDouble(dv)) {
+        purchasedRecipeMask = (uint16_t)engineMax(0, (int)dv);
+      } else if (std::strcmp(pk, "purchasedSpellMask") == 0 && pfc.readDouble(dv)) {
+        purchasedSpellMask = (uint16_t)engineMax(0, (int)dv);
       } else if (std::strcmp(pk, "streakDays") == 0 && pfc.readDouble(dv)) {
         if (dv >= 1) consecutiveLoginDays = (uint16_t)engineClamp((int)dv, 1, 9999);
       } else if (std::strcmp(pk, "streakClaimed") == 0 && pfc.readBool(bv)) {

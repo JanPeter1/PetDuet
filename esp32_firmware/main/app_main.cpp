@@ -18,6 +18,37 @@ static const char* TAG = "PETDUET_MAIN";
 static CydDisplay s_display;
 static AppRuntimeState s_app = {};
 
+static void sync_calendar_and_streak(bool notifyUser) {
+  int isoWeek = 0;
+  uint32_t yyyymmdd = 0;
+  int hour = 0;
+  if (!cyd_net_get_berlin_time(&isoWeek, &yyyymmdd, &hour)) {
+    return;
+  }
+  bool changed = false;
+  if (isoWeek > 0 && s_app.engine.updateSeasonByIsoWeek(isoWeek)) {
+    changed = true;
+    if (notifyUser) {
+      cyd_lvgl_show_banner(LANG_DE ? "Neue Jahreszeit aktiv!" : "Season updated!", 2600);
+    }
+  }
+  if (yyyymmdd >= 20000101U && s_app.engine.updateLoginDay(yyyymmdd)) {
+    changed = true;
+    if (notifyUser) {
+      char msg[56];
+      snprintf(msg, sizeof(msg),
+               LANG_DE ? "Neuer Tag! Streak Tag %u!" : "New Day! Streak Day %u!",
+               (unsigned)s_app.engine.consecutiveLoginDays);
+      cyd_sound_level_up();
+      cyd_lvgl_show_banner(msg, 3000);
+    }
+  }
+  if (changed) {
+    cyd_storage_save_pet(s_app.engine, s_app.recipesCrafted, s_app.jobsCompleted, s_app.spellsCast, s_app.treatsSent);
+    s_app.dirtyUi = true;
+  }
+}
+
 static void on_ota_progress(const char* stage, int percent) {
   cyd_lvgl_show_ota_progress(stage, percent);
 }
@@ -35,7 +66,7 @@ static void handle_net_packet(const NetPacket& pkt, const char* viaMode) {
   if (strcmp(pkt.type, "TREAT") == 0) {
     cyd_sound_treat_received();
     s_app.engine.receiveRemoteTreat();
-    cyd_lvgl_show_banner("Freund hat Snack gesendet!", 3000);
+    cyd_lvgl_show_banner(LANG_DE ? "Freund hat Snack gesendet!" : "Friend sent a Treat!", 3000);
   } else if (strcmp(pkt.type, "CHAT") == 0) {
     cyd_sound_treat_received();
     if (strlen(pkt.text) > 0) {
@@ -47,7 +78,7 @@ static void handle_net_packet(const NetPacket& pkt, const char* viaMode) {
     cyd_sound_treat_received();
     s_app.engine.stats.health = (uint8_t)engineMin(100, s_app.engine.stats.health + 30);
     s_app.engine.stats.happiness = (uint8_t)engineMin(100, s_app.engine.stats.happiness + 25);
-    cyd_lvgl_show_banner("Freund-Segen erhalten!", 3000);
+    cyd_lvgl_show_banner(LANG_DE ? "Freund-Segen erhalten!" : "Friend Blessing received!", 3000);
   } else if (strcmp(pkt.type, "MAGIC_SYNC") == 0) {
     uint32_t now = cyd_millis();
     if (s_app.dualCastUntilMs > 0 && now <= s_app.dualCastUntilMs) {
@@ -58,22 +89,22 @@ static void handle_net_packet(const NetPacket& pkt, const char* viaMode) {
       s_app.engine.stats.happiness = (uint8_t)engineMin(100, s_app.engine.stats.happiness + 40);
       s_app.engine.addXP(100);
       s_app.engine.addKnownItemById("food_berry_pie", 1);
-      cyd_display_set_led(false, true, true); // Cyan Aurora flash
+      cyd_set_rgb(false, true, true); // Cyan Aurora flash
       cyd_sound_level_up();
-      cyd_lvgl_show_banner("ASTRALE HARMONIE! +100XP +Tarte!", 3500);
+      cyd_lvgl_show_banner(LANG_DE ? "ASTRALE HARMONIE! +100XP +Tarte!" : "ASTRAL HARMONY! +100XP +Tart!", 3500);
     } else {
       s_app.friendDualCastUntilMs = now + 10000U;
       cyd_sound_treat_received();
-      cyd_lvgl_show_banner("Freund ruft Harmonie! Jetzt MGC+!", 3500);
+      cyd_lvgl_show_banner(LANG_DE ? "Freund ruft Harmonie! Jetzt MGC+!" : "Friend calls Harmony! Press MGC+!", 3500);
     }
   } else if (strcmp(pkt.type, "QUEST") == 0) {
     cyd_sound_treat_received();
     s_app.engine.coins += 20;
     s_app.engine.addXP(25);
-    cyd_lvgl_show_banner("Koop-Quest vom Freund! +20$", 3000);
+    cyd_lvgl_show_banner(LANG_DE ? "Koop-Quest vom Freund! +20$" : "Co-op Quest from Friend! +20$", 3000);
   } else if (strcmp(pkt.type, "TRADE") == 0) {
     cyd_sound_treat_received();
-    cyd_lvgl_show_banner("Tausch-Angebot erhalten!", 3000);
+    cyd_lvgl_show_banner(LANG_DE ? "Tausch-Angebot erhalten!" : "Trade offer received!", 3000);
   } else if (strcmp(pkt.type, "TRADE_OFFER") == 0) {
     s_app.incomingTrade.active = true;
     const char* fromSrc = strlen(pkt.from) > 0 ? pkt.from : s_app.friendPet.deviceId;
@@ -88,11 +119,11 @@ static void handle_net_packet(const NetPacket& pkt, const char* viaMode) {
     s_app.incomingTrade.offeredName[sizeof(s_app.incomingTrade.offeredName) - 1] = '\0';
     strncpy(s_app.incomingTrade.requestedId, pkt.requestedId, sizeof(s_app.incomingTrade.requestedId) - 1);
     s_app.incomingTrade.requestedId[sizeof(s_app.incomingTrade.requestedId) - 1] = '\0';
-    const char* reqName = strlen(pkt.requestedName) > 0 ? pkt.requestedName : "Geschenk";
+    const char* reqName = strlen(pkt.requestedName) > 0 ? pkt.requestedName : (LANG_DE ? "Geschenk" : "Gift");
     strncpy(s_app.incomingTrade.requestedName, reqName, sizeof(s_app.incomingTrade.requestedName) - 1);
     s_app.incomingTrade.requestedName[sizeof(s_app.incomingTrade.requestedName) - 1] = '\0';
     cyd_sound_treat_received();
-    cyd_lvgl_show_banner("Tausch-Angebot! TRADE druecken!", 3500);
+    cyd_lvgl_show_banner(LANG_DE ? "Tausch-Angebot! TAUSCH druecken!" : "Trade offer! Press TRADE!", 3500);
     if (s_app.activeModal == TAB_TRADE) {
       cyd_lvgl_open_modal(TAB_TRADE);
     }
@@ -106,7 +137,7 @@ static void handle_net_packet(const NetPacket& pkt, const char* viaMode) {
       s_app.engine.addXP(35);
       memset(&s_app.outgoingTrade, 0, sizeof(s_app.outgoingTrade));
       cyd_sound_level_up();
-      cyd_lvgl_show_banner("Tausch erfolgreich! +35XP", 3200);
+      cyd_lvgl_show_banner(LANG_DE ? "Tausch erfolgreich! +35XP" : "Trade complete! +35XP", 3200);
       if (s_app.activeModal == TAB_TRADE) {
         cyd_lvgl_open_modal(TAB_TRADE);
       }
@@ -117,14 +148,14 @@ static void handle_net_packet(const NetPacket& pkt, const char* viaMode) {
       s_app.engine.addKnownItemById(s_app.outgoingTrade.offeredId, 1);
       memset(&s_app.outgoingTrade, 0, sizeof(s_app.outgoingTrade));
       cyd_sound_warning();
-      cyd_lvgl_show_banner("Tausch abgelehnt (zurueck)", 3000);
+      cyd_lvgl_show_banner(LANG_DE ? "Tausch abgelehnt (zurueck)" : "Trade declined (returned)", 3000);
       if (s_app.activeModal == TAB_TRADE) {
         cyd_lvgl_open_modal(TAB_TRADE);
       }
     } else if (s_app.incomingTrade.active &&
                (strlen(pkt.tradeId) == 0 || strcmp(pkt.tradeId, s_app.incomingTrade.tradeId) == 0)) {
       memset(&s_app.incomingTrade, 0, sizeof(s_app.incomingTrade));
-      cyd_lvgl_show_banner("Tausch abgebrochen.", 2500);
+      cyd_lvgl_show_banner(LANG_DE ? "Tausch abgebrochen." : "Trade cancelled.", 2500);
       if (s_app.activeModal == TAB_TRADE) {
         cyd_lvgl_open_modal(TAB_TRADE);
       }
@@ -157,13 +188,13 @@ static void enter_ap_portal_loop(void) {
   strcpy(s_app.friendPet.linkMode, "OFF");
   cyd_set_rgb(true, false, false);
   cyd_lvgl_show_main_screen();
-  cyd_lvgl_show_banner("Offline Modus aktiv", 2500);
+  cyd_lvgl_show_banner(LANG_DE ? "Offline Modus aktiv" : "Offline Mode active", 2500);
 }
 
 extern "C" void app_main(void) {
   ESP_LOGI(TAG, "PetDuet CYD Booting (ESP-IDF + LVGL v8)...");
 
-  // 1. Hardware init (LED, Buzzer, Backlight, SPI Display, SPI Touch)
+  // 1. Hardware init (LED, Buzzer, Backlight, SPI Display, SPI Touch, ADC LDR)
   cyd_hw_init();
   cyd_set_rgb(true, true, false); // Yellow boot indicator
   cyd_play_tone(880, 60);
@@ -194,6 +225,7 @@ extern "C" void app_main(void) {
     cyd_storage_load_pet(s_app.engine, s_app.recipesCrafted, s_app.jobsCompleted, s_app.spellsCast, s_app.treatsSent);
   }
   s_app.lastCloudSaveEpoch = cyd_storage_load_cloud_ts();
+  s_app.ambientLdr = cyd_read_ldr();
   cyd_lvgl_set_app_state(&s_app);
 
   // Validate current A/B OTA partition after successful init
@@ -207,6 +239,7 @@ extern "C" void app_main(void) {
     cyd_lvgl_show_boot_screen(s_app.config.wifiSsid);
     char ipBuf[20] = "";
     if (cyd_net_connect_sta(s_app.config, ipBuf, sizeof(ipBuf))) {
+      cyd_net_init_sntp();
       cyd_net_start_p2p_server(SOCKET_PORT);
       cyd_set_rgb(false, true, false);
       cyd_sound_level_up();
@@ -257,6 +290,7 @@ extern "C" void app_main(void) {
           }
         }
         cyd_net_sync_php_server(s_app.config, s_app.engine, s_app.friendPet);
+        sync_calendar_and_streak(false);
         char otaMsg[48] = "";
         cyd_net_check_ota(s_app.config, s_app.engine, on_ota_progress, otaMsg, sizeof(otaMsg));
         cyd_lvgl_show_main_screen();
@@ -274,12 +308,16 @@ extern "C" void app_main(void) {
   }
 
   // 4. Main Real-Time Loop
-  uint32_t lastTickMs  = cyd_millis();
-  uint32_t lastRelayMs = cyd_millis();
-  uint32_t lastSyncMs  = cyd_millis();
-  uint32_t lastOtaMs   = cyd_millis();
-  uint32_t lastSaveMs  = cyd_millis();
-  uint32_t lastJobUiMs = cyd_millis();
+  uint32_t lastTickMs       = cyd_millis();
+  uint32_t lastRelayMs      = cyd_millis();
+  uint32_t lastSyncMs       = cyd_millis();
+  uint32_t lastOtaMs        = cyd_millis();
+  uint32_t lastSaveMs       = cyd_millis();
+  uint32_t lastJobUiMs      = cyd_millis();
+  uint32_t lastClockMs      = cyd_millis();
+  uint32_t lastLdrMs        = cyd_millis();
+  uint32_t lastAlertSoundMs = 0;
+  bool     wasAlertActive   = false;
 
   while (true) {
     uint32_t now = cyd_millis();
@@ -314,12 +352,18 @@ extern "C" void app_main(void) {
             s_app.engine.addKnownItemById(job.foodRewardId, job.foodRewardQty);
           }
         }
+        uint8_t coinBonusPct = s_app.engine.getJobCoinBonusPct();
+        if (coinBonusPct > 0) {
+          cGain = (uint16_t)(((uint32_t)cGain * (100U + coinBonusPct) + 50U) / 100U);
+        }
         s_app.engine.coins += cGain;
         s_app.engine.addXP(xGain);
         s_app.jobsCompleted++;
         cyd_sound_level_up();
         char bMsg[48];
-        snprintf(bMsg, sizeof(bMsg), "Beruf fertig! +%u$ +%uXP", (unsigned)cGain, (unsigned)xGain);
+        snprintf(bMsg, sizeof(bMsg),
+                 LANG_DE ? "Beruf fertig! +%u$ +%uXP" : "Job complete! +%u$ +%uXP",
+                 (unsigned)cGain, (unsigned)xGain);
         cyd_lvgl_show_banner(bMsg, 3200);
         if (s_app.activeModal == TAB_JOBS) {
           cyd_lvgl_open_modal(TAB_JOBS);
@@ -334,11 +378,29 @@ extern "C" void app_main(void) {
       }
     }
 
-    // Core 6-second stat tick (Decoupled C++ Engine)
+    // Core 6-second stat tick (Decoupled C++ Engine, pass elapsed seconds for poop & care-mistake timers)
     if ((now - lastTickMs) >= PET_TICK_INTERVAL_MS) {
       lastTickMs = now;
-      s_app.engine.tick();
+      s_app.engine.tick((uint16_t)(PET_TICK_INTERVAL_MS / 1000U));
       s_app.dirtyUi = true;
+    }
+
+    // Periodic SNTP calendar week (Season) & midnight Login Streak check (30s)
+    if (!s_app.offlineMode && (now - lastClockMs) >= 30000U) {
+      lastClockMs = now;
+      sync_calendar_and_streak(true);
+    }
+
+    // Periodic LDR ambient light sampling (5s)
+    if ((now - lastLdrMs) >= 5000U) {
+      lastLdrMs = now;
+      uint16_t newLdr = cyd_read_ldr();
+      int diffLdr = (int)newLdr - (int)s_app.ambientLdr;
+      if (diffLdr < 0) diffLdr = -diffLdr;
+      s_app.ambientLdr = newLdr;
+      if (s_app.activeModal == TAB_STATUS && diffLdr > 150) {
+        cyd_lvgl_open_modal(TAB_STATUS);
+      }
     }
 
     // Manual OTA check triggered via UI dot
@@ -476,14 +538,26 @@ extern "C" void app_main(void) {
     if (s_app.auroraUntilMs > 0) {
       if (now >= s_app.auroraUntilMs) {
         s_app.auroraUntilMs = 0;
-        cyd_display_set_led(false, true, false); // Back to Green online LED
+        cyd_set_rgb(!s_app.offlineMode ? false : true, !s_app.offlineMode, false);
         s_app.dirtyUi = true;
       } else {
         // Shimmer LED cyan <-> gold while aurora active
         bool alt = ((now / 350U) % 2U) == 0;
-        cyd_display_set_led(alt, true, !alt);
+        cyd_set_rgb(alt, true, !alt);
         s_app.dirtyUi = true;
       }
+    } else if (s_app.engine.attentionNeeded && !s_app.engine.isSleeping) {
+      // Attention Call: blink Red/Yellow LED + periodic piezo warning beep (max 1x per 60s)
+      bool blinkYellow = ((now / 500U) % 2U) == 0;
+      cyd_set_rgb(true, blinkYellow, false);
+      if (!wasAlertActive || (now - lastAlertSoundMs) >= 60000U) {
+        lastAlertSoundMs = now;
+        cyd_sound_warning();
+      }
+      wasAlertActive = true;
+    } else if (wasAlertActive) {
+      wasAlertActive = false;
+      cyd_set_rgb(s_app.offlineMode, !s_app.offlineMode, false);
     }
 
     if (s_app.dirtyUi) {

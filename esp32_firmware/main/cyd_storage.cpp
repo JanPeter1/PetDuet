@@ -171,6 +171,23 @@ void cyd_storage_load_pet(TamagotchiCoreEngine& engine, uint16_t& recipesCrafted
   if (nvs_get_u8(h, "pet_mp", &u8) == ESP_OK) engine.stats.mana = u8;
   if (nvs_get_u8(h, "pet_satiety", &u8) == ESP_OK) engine.satietyTicks = u8;
   if (nvs_get_u8(h, "pet_sick", &u8) == ESP_OK) engine.isSick = (u8 != 0);
+  if (nvs_get_u8(h, "pet_poop", &u8) == ESP_OK) engine.poopCount = (u8 <= 4) ? u8 : 4;
+  if (nvs_get_u8(h, "pet_cm", &u8) == ESP_OK) engine.careMistakes = (u8 <= 99) ? u8 : 99;
+  if (nvs_get_u8(h, "pet_sleep", &u8) == ESP_OK) engine.isSleeping = (u8 != 0);
+  len = sizeof(engine.evoBranch);
+  char tmpBranch[12] = "";
+  if (nvs_get_str(h, "pet_branch", tmpBranch, &len) == ESP_OK && TamagotchiCoreEngine::isValidEvoBranch(tmpBranch)) {
+    TamagotchiCoreEngine::copyStr(engine.evoBranch, sizeof(engine.evoBranch), tmpBranch);
+  }
+  len = sizeof(engine.equippedHead);
+  char tmpHead[20] = "";
+  if (nvs_get_str(h, "pet_head", tmpHead, &len) == ESP_OK) {
+    TamagotchiCoreEngine::copyStr(engine.equippedHead, sizeof(engine.equippedHead), tmpHead);
+  }
+  uint32_t u32 = 0;
+  if (nvs_get_u32(h, "stk_day", &u32) == ESP_OK) engine.lastLoginDay = u32;
+  if (nvs_get_u16(h, "shp_rcp", &u16) == ESP_OK) engine.purchasedRecipeMask = u16;
+  if (nvs_get_u16(h, "shp_spl", &u16) == ESP_OK) engine.purchasedSpellMask = u16;
 
   nvs_get_u16(h, "cnt_rcp", &recipesCrafted);
   nvs_get_u16(h, "cnt_job", &jobsCompleted);
@@ -250,6 +267,14 @@ void cyd_storage_save_pet(const TamagotchiCoreEngine& engine, uint16_t recipesCr
   nvs_set_u8(h, "pet_mp", engine.stats.mana);
   nvs_set_u8(h, "pet_satiety", engine.satietyTicks);
   nvs_set_u8(h, "pet_sick", engine.isSick ? 1 : 0);
+  nvs_set_u8(h, "pet_poop", engine.poopCount);
+  nvs_set_u8(h, "pet_cm", engine.careMistakes);
+  nvs_set_u8(h, "pet_sleep", engine.isSleeping ? 1 : 0);
+  nvs_set_str(h, "pet_branch", engine.evoBranch);
+  nvs_set_str(h, "pet_head", engine.equippedHead);
+  nvs_set_u32(h, "stk_day", engine.lastLoginDay);
+  nvs_set_u16(h, "shp_rcp", engine.purchasedRecipeMask);
+  nvs_set_u16(h, "shp_spl", engine.purchasedSpellMask);
 
   nvs_set_u16(h, "cnt_rcp", recipesCrafted);
   nvs_set_u16(h, "cnt_job", jobsCompleted);

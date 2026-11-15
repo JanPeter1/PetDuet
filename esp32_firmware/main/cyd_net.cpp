@@ -11,6 +11,7 @@
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_ota_ops.h"
+#include "esp_sntp.h"
 #include "esp_system.h"
 #include "esp_wifi.h"
 #include "mbedtls/sha256.h"
@@ -31,6 +32,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 static const char* TAG = "CYD_NET";
 
@@ -188,6 +190,57 @@ void cyd_net_stop_all(void) {
   s_wifi_connected = false;
   esp_wifi_disconnect();
   esp_wifi_stop();
+}
+
+static bool s_sntp_started = false;
+
+void cyd_net_init_sntp(void) {
+  setenv("TZ", "CET-1CEST,M3.5.0,M10.5.0/3", 1);
+  tzset();
+  if (s_sntp_started) return;
+  s_sntp_started = true;
+  esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
+  esp_sntp_setservername(0, "pool.ntp.org");
+  esp_sntp_init();
+  ESP_LOGI(TAG, "SNTP initialized (pool.ntp.org, Europe/Berlin TZ)");
+}
+
+static bool is_leap_year(int year) {
+  return (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+}
+
+bool cyd_net_get_berlin_time(int* outIsoWeek, uint32_t* outYyyymmdd, int* outHour) {
+  time_t now = 0;
+  time(&now);
+  if (now < 1704067200) { // Before 2024-01-01 -> SNTP not yet synced
+    return false;
+  }
+  struct tm tmInfo = {};
+  localtime_r(&now, &tmInfo);
+  int year = tmInfo.tm_year + 1900;
+  int month = tmInfo.tm_mon + 1;
+  int day = tmInfo.tm_mday;
+
+  if (outYyyymmdd) {
+    *outYyyymmdd = (uint32_t)(year * 10000 + month * 100 + day);
+  }
+  if (outHour) {
+    *outHour = tmInfo.tm_hour;
+  }
+  if (outIsoWeek) {
+    int wday = (tmInfo.tm_wday == 0) ? 7 : tmInfo.tm_wday; // 1=Mon..7=Sun
+    int thursYday = tmInfo.tm_yday + (4 - wday);
+    int daysInYear = is_leap_year(year) ? 366 : 365;
+    if (thursYday < 0) {
+      int prevDays = is_leap_year(year - 1) ? 366 : 365;
+      *outIsoWeek = ((thursYday + prevDays) / 7) + 1;
+    } else if (thursYday >= daysInYear) {
+      *outIsoWeek = 1;
+    } else {
+      *outIsoWeek = (thursYday / 7) + 1;
+    }
+  }
+  return true;
 }
 
 // ============================================================================

@@ -92,6 +92,10 @@ void cyd_net_send_packet(const CydConfig& cfg, FriendState& friendPet, const cha
 
 void cyd_net_report_ota(const CydConfig& cfg, const char* event, const char* detail);
 
+// SNTP Time Sync (pool.ntp.org, Europe/Berlin)
+void cyd_net_init_sntp(void);
+bool cyd_net_get_berlin_time(int* outIsoWeek, uint32_t* outYyyymmdd, int* outHour);
+
 // Returns: 1 = updated/reloading, 0 = no update, -1 = error
 int cyd_net_check_ota(
   const CydConfig& cfg,

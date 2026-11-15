@@ -11,6 +11,7 @@ extern "C" {
 void cyd_hw_init(void);
 void cyd_set_rgb(bool r, bool g, bool b);
 bool cyd_boot_button_pressed(void);
+uint16_t cyd_read_ldr(void);
 uint32_t cyd_millis(void);
 void cyd_delay_ms(uint32_t ms);
 

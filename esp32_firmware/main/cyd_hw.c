@@ -3,6 +3,7 @@
 
 #include "driver/gpio.h"
 #include "driver/ledc.h"
+#include "esp_adc/adc_oneshot.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -10,6 +11,9 @@
 #define CYD_BUZZER_MODE LEDC_LOW_SPEED_MODE
 #define CYD_BUZZER_TIMER LEDC_TIMER_0
 #define CYD_BUZZER_CHANNEL LEDC_CHANNEL_0
+#define CYD_LDR_ADC_CHANNEL ADC_CHANNEL_6 // GPIO 34
+
+static adc_oneshot_unit_handle_t s_adc1_handle = NULL;
 
 void cyd_hw_init(void) {
   // RGB Status LEDs (Active LOW: 1 = OFF, 0 = ON)
@@ -44,6 +48,18 @@ void cyd_hw_init(void) {
   };
   gpio_config(&boot_conf);
 
+  // LDR Light Sensor (GPIO 34 -> ADC1 Channel 6)
+  adc_oneshot_unit_init_cfg_t adc_init_cfg = {
+    .unit_id = ADC_UNIT_1,
+  };
+  if (adc_oneshot_new_unit(&adc_init_cfg, &s_adc1_handle) == ESP_OK && s_adc1_handle) {
+    adc_oneshot_chan_cfg_t chan_cfg = {
+      .atten = ADC_ATTEN_DB_12,
+      .bitwidth = ADC_BITWIDTH_12,
+    };
+    adc_oneshot_config_channel(s_adc1_handle, CYD_LDR_ADC_CHANNEL, &chan_cfg);
+  }
+
   // Piezo Buzzer (LEDC PWM on GPIO 26)
   ledc_timer_config_t timer_conf = {
     .speed_mode = CYD_BUZZER_MODE,
@@ -74,6 +90,17 @@ void cyd_set_rgb(bool r, bool g, bool b) {
 
 bool cyd_boot_button_pressed(void) {
   return gpio_get_level(GPIO_NUM_0) == 0;
+}
+
+uint16_t cyd_read_ldr(void) {
+  if (!s_adc1_handle) return 2048;
+  int raw = 2048;
+  if (adc_oneshot_read(s_adc1_handle, CYD_LDR_ADC_CHANNEL, &raw) == ESP_OK) {
+    if (raw < 0) raw = 0;
+    if (raw > 4095) raw = 4095;
+    return (uint16_t)raw;
+  }
+  return 2048;
 }
 
 uint32_t cyd_millis(void) {

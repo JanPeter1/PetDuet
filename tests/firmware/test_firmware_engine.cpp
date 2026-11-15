@@ -434,8 +434,16 @@ static void testCloudSaveAndRestore() {
   src.stats.mana = 112; // Valid for water biome (100 + 20)
   src.restoreMissionProgress("feed_3", 2, false, false);
   src.restoreMissionProgress("bath_1", 1, true, true);
+  src.careMistakes = 3;
+  src.poopCount = 2;
+  src.isSleeping = true;
+  src.lastLoginDay = 20261113U;
   src.addKnownItemById("acc_wizard", 1);
+  src.equipAccessory("acc_wizard");
   src.addKnownItemById("food_berry_pie", 3);
+  src.purchaseRecipe("rcp_berry_pie");
+  src.purchaseSpell("spl_treat_burst");
+  src.checkEvolution(); // careMistakes == 3 -> Balanced
 
   static char jsonBuf[4096];
   size_t len = src.serializeCloudSaveJson(
@@ -459,6 +467,14 @@ static void testCloudSaveAndRestore() {
   CHECK(std::strcmp(dst.biome, "water") == 0);
   CHECK(std::strcmp(dst.season, "winter") == 0);
   CHECK(std::strcmp(dst.phase, "Adult") == 0);
+  CHECK(std::strcmp(dst.evoBranch, "Balanced") == 0);
+  CHECK(std::strcmp(dst.equippedHead, "acc_wizard") == 0);
+  CHECK(dst.careMistakes == 3);
+  CHECK(dst.poopCount == 2);
+  CHECK(dst.isSleeping);
+  CHECK(dst.lastLoginDay == 20261113U);
+  CHECK(dst.isRecipePurchased("rcp_berry_pie"));
+  CHECK(dst.isSpellPurchased("spl_treat_burst"));
   CHECK(dst.level == 9);
   CHECK(dst.xp == 240);
   CHECK(dst.xpNext == 420);
@@ -475,7 +491,7 @@ static void testCloudSaveAndRestore() {
   CHECK(dst.getItemQuantity("acc_wizard") == 1);
   CHECK(dst.getItemQuantity("food_berry_pie") == 3);
 
-  // Web simulator / Express format with nested `save`, `quantity` key, and stat clamping
+  // Web simulator / Express format with nested `save`, `quantity` key, equipped.head, and stat clamping
   const char* webPayload =
     "{"
     "  \"status\": \"success\","
@@ -492,6 +508,7 @@ static void testCloudSaveAndRestore() {
     "      \"xp\": 80,"
     "      \"coins\": 210,"
     "      \"recipesCraftedCount\": 11,"
+    "      \"equipped\": { \"head\": \"acc_tophat\" },"
     "      \"stats\": { \"health\": 999, \"hunger\": -5, \"energy\": 70, \"hygiene\": 80, \"happiness\": 90, \"mana\": 50 },"
     "      \"inventory\": ["
     "        { \"id\": \"food_apple\", \"name\": \"Crisp Apple\", \"type\": \"food\", \"quantity\": 5 },"
@@ -509,11 +526,174 @@ static void testCloudSaveAndRestore() {
   CHECK(std::strcmp(webDst.biome, "desert") == 0); // Invalid biome ignored
   CHECK(std::strcmp(webDst.season, "autumn") == 0);
   CHECK(std::strcmp(webDst.phase, "Youth") == 0); // checkEvolution aligns Lv.4 >= 3 -> Youth
+  CHECK(std::strcmp(webDst.equippedHead, "acc_tophat") == 0);
+  CHECK(webDst.getJobCoinBonusPct() == 15);
   CHECK(webDst.stats.health == 100);
   CHECK(webDst.stats.hunger == 0);
   CHECK(rcp == 11);
   CHECK(webDst.getItemQuantity("food_apple") == 5);
   CHECK(webDst.getItemQuantity("acc_tophat") == 1);
+}
+
+static void testWasteCareMistakesAndBranching() {
+  TamagotchiCoreEngine eng;
+  eng.onEvent = testEventCallback;
+  std::strcpy(eng.phase, "Baby");
+  eng.stats.hunger = 60;
+  eng.stats.happiness = 60;
+  eng.stats.energy = 80;
+  eng.stats.hygiene = 90;
+
+  // 1. 3-Snack Cavity rule (>3 consecutive snacks cause sickness even on safe roll)
+  setMockRandomValue(99);
+  eng.addKnownItemById("food_snack", 5);
+  for (int i = 0; i < 3; i++) {
+    FeedResult r = eng.feedWithItem("food_snack");
+    CHECK(r.success);
+    CHECK(!r.becameSick);
+  }
+  FeedResult r4 = eng.feedWithItem("food_snack");
+  CHECK(r4.success);
+  CHECK(r4.becameSick);
+  CHECK(eng.isSick);
+
+  // Cure & reset streak via play() + healthy food
+  eng.isSick = false;
+  eng.play(10, 5);
+  CHECK(eng.consecutiveSnacks == 0);
+
+  // 2. Waste/Poop accumulation -> 20 min untreated causes sickness; clean() clears waste
+  eng.addWaste(1);
+  CHECK(eng.poopCount == 1);
+  CHECK(eng.stats.hygiene == 75);
+  CHECK(eng.attentionNeeded);
+  eng.tick(1200);
+  CHECK(eng.isSick);
+  eng.clean();
+  CHECK(eng.poopCount == 0);
+
+  // Purify spell also clears poop & cures sickness
+  eng.addWaste(1);
+  eng.isSick = true;
+  eng.stats.mana = 50;
+  CHECK(eng.castSpell(0)); // spl_cleanse
+  CHECK(eng.poopCount == 0);
+  CHECK(!eng.isSick);
+
+  // 3. Attention Call -> Care Mistake escalation & Adult/Elder Branching Evolution
+  eng.stats.hunger = 0;
+  eng.rules.careMistakeThresholdSec = 900;
+  eng.tick(900);
+  CHECK(eng.attentionNeeded);
+  CHECK(eng.careMistakes == 1);
+
+  eng.level = 8;
+  eng.careMistakes = 1;
+  eng.checkEvolution();
+  CHECK(std::strcmp(eng.phase, "Adult") == 0);
+  CHECK(std::strcmp(eng.evoBranch, "Paragon") == 0);
+
+  eng.careMistakes = 3;
+  eng.checkEvolution();
+  CHECK(std::strcmp(eng.evoBranch, "Balanced") == 0);
+
+  eng.careMistakes = 5;
+  eng.checkEvolution();
+  CHECK(std::strcmp(eng.evoBranch, "Wild") == 0);
+}
+
+static void testSleepSeasonsAndStreakRollover() {
+  TamagotchiCoreEngine eng;
+
+  // Egg cannot enter sleep mode
+  eng.setSleeping(true);
+  CHECK(!eng.isSleeping);
+
+  // ISO Calendar Week Season Mapping
+  CHECK(eng.updateSeasonByIsoWeek(1));
+  CHECK(std::strcmp(eng.season, "spring") == 0);
+  CHECK(!eng.warmEgg(25)); // 20 + round(25 * 1.30) = 53 < 100
+  CHECK(!eng.warmEgg(25)); // 53 + 33 = 86 < 100
+  CHECK(eng.warmEgg(25));  // >= 100 -> Hatches to Baby!
+  CHECK(std::strcmp(eng.phase, "Baby") == 0);
+
+  CHECK(eng.updateSeasonByIsoWeek(2));
+  CHECK(std::strcmp(eng.season, "summer") == 0);
+  CHECK(eng.updateSeasonByIsoWeek(3));
+  CHECK(std::strcmp(eng.season, "autumn") == 0);
+  CHECK(eng.updateSeasonByIsoWeek(4));
+  CHECK(std::strcmp(eng.season, "winter") == 0);
+
+  // Autumn cooking gives +30% XP (rcp_salad = 35 -> 45 XP)
+  eng.updateSeasonByIsoWeek(3);
+  eng.xp = 0;
+  CHECK(eng.craftRecipeById("rcp_salad"));
+  CHECK(eng.xp == 45);
+
+  // Sleep mode regenerates +1.2 energy per tick & halves hunger/happy decay
+  eng.stats.energy = 50;
+  eng.stats.hunger = 50;
+  eng.setSleeping(true);
+  CHECK(eng.isSleeping);
+  eng.tick(6);
+  CHECK(eng.stats.energy == 51);
+  eng.tick(6);
+  eng.tick(6);
+  eng.tick(6);
+  eng.tick(6); // 5 ticks * 1.2 = 6.0 energy gained
+  CHECK(eng.stats.energy == 56);
+
+  // Midnight Login Streak Rollover & Daily Mission Reset
+  eng.streakClaimedToday = true;
+  eng.recordAction("bath", 1);
+  CHECK(eng.missions[2].completed);
+  CHECK(!eng.updateLoginDay(20261110U)); // Initial anchor day sets lastLoginDay
+  CHECK(eng.lastLoginDay == 20261110U);
+  CHECK(eng.updateLoginDay(20261111U));  // Next consecutive day increments streak & resets missions
+  CHECK(eng.consecutiveLoginDays == 2);
+  CHECK(!eng.streakClaimedToday);
+  CHECK(eng.missions[2].currentCount == 0 && !eng.missions[2].completed);
+  CHECK(eng.updateLoginDay(20261114U));  // Skipped day resets streak to 1
+  CHECK(eng.consecutiveLoginDays == 1);
+}
+
+static void testAccessoriesAndShopMasks() {
+  TamagotchiCoreEngine eng;
+  eng.coins = 500;
+  eng.level = 5;
+
+  // Equip accessory requires ownership
+  CHECK(!eng.equipAccessory("acc_flower"));
+  CHECK(eng.addKnownItemById("acc_flower", 1));
+  eng.stats.happiness = 50;
+  CHECK(eng.equipAccessory("acc_flower"));
+  CHECK(std::strcmp(eng.equippedHead, "acc_flower") == 0);
+  CHECK(eng.stats.happiness == 60);
+  CHECK(eng.getXpBonusPct() == 5);
+  eng.xp = 0;
+  eng.addXP(100);
+  CHECK(eng.xp == 105); // +5% XP from acc_flower
+
+  // Equipping Wizard Cowl boosts max mana by +15
+  CHECK(eng.addKnownItemById("acc_wizard", 1));
+  CHECK(eng.equipAccessory("acc_wizard"));
+  CHECK(eng.getEffectiveMaxMana() == 115);
+
+  // Equipping Top Hat gives +15% Job Coin multiplier; toggling same ID unequips
+  CHECK(eng.addKnownItemById("acc_tophat", 1));
+  CHECK(eng.equipAccessory("acc_tophat"));
+  CHECK(eng.getJobCoinBonusPct() == 15);
+  CHECK(eng.equipAccessory("acc_tophat"));
+  CHECK(std::strlen(eng.equippedHead) == 0);
+  CHECK(eng.getJobCoinBonusPct() == 0);
+
+  // Shop Recipe & Spell ownership masks
+  CHECK(!eng.isRecipePurchased("rcp_berry_pie"));
+  CHECK(eng.purchaseRecipe("rcp_berry_pie"));
+  CHECK(eng.isRecipePurchased("rcp_berry_pie"));
+  CHECK(!eng.isSpellPurchased("spl_treat_burst"));
+  CHECK(eng.purchaseSpell("spl_treat_burst"));
+  CHECK(eng.isSpellPurchased("spl_treat_burst"));
 }
 
 int main() {
@@ -524,6 +704,9 @@ int main() {
   testEggEvolutionTreatAndConfig();
   testJsonRuleParser();
   testCloudSaveAndRestore();
+  testWasteCareMistakesAndBranching();
+  testSleepSeasonsAndStreakRollover();
+  testAccessoriesAndShopMasks();
 
   std::printf("[Firmware Unit Tests] Executed: %d assertions | Failed: %d\n",
               g_testsRun, g_testsFailed);

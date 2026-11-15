@@ -75,6 +75,7 @@ struct AppRuntimeState {
   bool cloudSyncOk;
   uint32_t lastCloudSaveEpoch;
   uint32_t lastCloudSaveMs;
+  uint16_t ambientLdr;
   bool apCancelRequested;
   bool retryPortalRequested;
   bool triggerOtaRequested;
