@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { PetState, FriendPetSummary, BiomeType } from '../types/pet';
 import { PetPixelSprite } from './PetPixelSprite';
-import { BIOMES, SEASONS } from '../utils/petLogic';
+import { BIOMES, SEASONS, SPELLS } from '../utils/petLogic';
 import { cydAudio } from '../utils/audio';
 
 import { translations, Language } from '../utils/i18n';
@@ -23,6 +23,7 @@ interface CYDScreenProps {
   onSendTreat: () => void;
   onOpenChat: () => void;
   onCastFriendMagic: () => void;
+  onCastSpell?: (spellId: string) => void;
   onStartQuest: () => void;
   onOpenTrade: () => void;
   connectionType?: 'direct_socket' | 'server_relay' | 'disconnected';
@@ -48,6 +49,7 @@ export const CYDScreen: React.FC<CYDScreenProps> = ({
   onSendTreat,
   onOpenChat,
   onCastFriendMagic,
+  onCastSpell,
   onStartQuest,
   onOpenTrade,
   connectionType = 'direct_socket',
@@ -56,8 +58,11 @@ export const CYDScreen: React.FC<CYDScreenProps> = ({
   isActionAnimating = null,
 }) => {
   const [feedMenuOpen, setFeedMenuOpen] = useState(false);
+  const [spellMenuOpen, setSpellMenuOpen] = useState(false);
   const t = translations[language] || translations.en;
   const availableFoods = (myPet.inventory || []).filter((item) => item.type === 'food' && item.quantity > 0);
+  const learnedSpellIds = myPet.learnedSpells || [];
+  const availableSpells = SPELLS.filter((spell) => learnedSpellIds.includes(spell.id));
   const myBiome = BIOMES[myPet.biome] || BIOMES.grassland;
   const friendBiome = BIOMES[friendPet.biome] || BIOMES.desert;
   const seasonInfo = SEASONS[myPet.season] || SEASONS.spring;
@@ -134,14 +139,25 @@ export const CYDScreen: React.FC<CYDScreenProps> = ({
             <span className="mt-0.5 tracking-tighter">{t.btnBath}</span>
           </button>
 
-          {/* RPG / MAGIC */}
+          {/* RPG / MAGIC - Opens Spell Flyout when spells are learned, else RPG Modal */}
           <button
             onClick={() => {
               cydAudio.click();
-              onOpenRPG();
+              if (onCastSpell) {
+                setSpellMenuOpen((prev) => !prev);
+                setFeedMenuOpen(false); // Close feed menu if open
+              } else {
+                onOpenRPG();
+              }
             }}
-            className="w-full h-[40px] bg-purple-950/90 hover:bg-purple-900 active:bg-purple-700 border border-purple-500/80 rounded flex flex-col items-center justify-center text-[7px] text-purple-200 transition-transform active:scale-90"
-            title="RPG Crafting, Jobs & Magic"
+            className={`w-full h-[40px] border rounded flex flex-col items-center justify-center text-[7px] transition-transform active:scale-90 ${
+              spellMenuOpen
+                ? 'bg-purple-700 border-amber-400 text-white shadow-sm shadow-purple-500/40'
+                : 'bg-purple-950/90 hover:bg-purple-900 active:bg-purple-700 border-purple-500/80 text-purple-200'
+            }`}
+            title={onCastSpell
+              ? (language === 'de' ? 'Zaubersprüche auswählen' : 'Select learned spell')
+              : 'RPG Crafting, Jobs & Magic'}
           >
             <span className="text-[12px] leading-none">✨</span>
             <span className="mt-0.5 tracking-tighter">{t.btnRpg}</span>
@@ -531,6 +547,72 @@ export const CYDScreen: React.FC<CYDScreenProps> = ({
             onClick={() => {
               cydAudio.back();
               setFeedMenuOpen(false);
+            }}
+            className="shrink-0 w-[20px] h-[36px] rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 text-[7px] flex items-center justify-center"
+            title="Close"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Horizontal Spell Flyout Bar (Directly to the right of Magic button) */}
+      {spellMenuOpen && (
+        <div className="absolute top-[127px] left-[39px] right-[39px] z-35 bg-slate-950/95 border border-purple-500/80 rounded-lg p-1 shadow-2xl flex items-center gap-1 overflow-x-auto">
+          {availableSpells.length > 0 ? (
+            availableSpells.map((spell) => {
+              const spellName = language === 'de' && spell.name_de ? spell.name_de : spell.name;
+              const canAfford = myPet.stats.mana >= spell.manaCost;
+              const targetIcon = spell.target === 'friend' ? '🤝' : spell.target === 'both' ? '🌟' : '💫';
+              return (
+                <button
+                  key={spell.id}
+                  onClick={() => {
+                    if (!canAfford) {
+                      cydAudio.warning();
+                      return;
+                    }
+                    cydAudio.magicCast();
+                    setSpellMenuOpen(false);
+                    onCastSpell?.(spell.id);
+                  }}
+                  disabled={!canAfford}
+                  title={`${spellName} (${spell.manaCost} MP) - ${spell.effectDescription}${language === 'de' ? (spell.effectDescription_de ? ` / ${spell.effectDescription_de}` : '') : ''}`}
+                  className={`shrink-0 h-[36px] min-w-[48px] px-2 rounded border flex flex-col items-center justify-center transition-transform active:scale-90 ${
+                    !canAfford
+                      ? 'bg-slate-800/90 border-slate-600 text-slate-500 cursor-not-allowed opacity-60'
+                      : 'bg-purple-950/90 hover:bg-purple-900 border-purple-500/80 text-purple-100'
+                  }`}
+                >
+                  <div className="flex items-center gap-0.5 leading-none">
+                    <span className="text-[11px]">{spell.icon}</span>
+                    <span className="text-[6px] font-bold text-amber-300">{targetIcon}</span>
+                  </div>
+                  <div className="text-[5px] leading-none mt-0.5 flex items-center gap-0.5">
+                    <span className="text-cyan-300">{spell.manaCost} MP</span>
+                    {spell.satietyTicks && <span className="text-emerald-300">🛡️{spell.satietyTicks}</span>}
+                    {spell.curesSickness && <span className="text-rose-400">💊</span>}
+                  </div>
+                </button>
+              );
+            })
+          ) : (
+            <button
+              onClick={() => {
+                cydAudio.click();
+                setSpellMenuOpen(false);
+                onOpenRPG?.();
+              }}
+              className="flex-1 h-[36px] px-2 rounded bg-purple-950/90 hover:bg-purple-900 border border-purple-500/80 text-purple-200 text-[6px] flex items-center justify-center gap-1"
+            >
+              <span>📖</span>
+              <span>{language === 'de' ? 'Keine Zauber gelernt! RPG → Magie' : 'No spells learned! RPG → Magic'}</span>
+            </button>
+          )}
+          <button
+            onClick={() => {
+              cydAudio.back();
+              setSpellMenuOpen(false);
             }}
             className="shrink-0 w-[20px] h-[36px] rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 text-[7px] flex items-center justify-center"
             title="Close"

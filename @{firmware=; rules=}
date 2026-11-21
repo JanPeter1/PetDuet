@@ -1,0 +1,22 @@
+{
+    "firmware":  {
+                     "latest_version":  "2.1.3",
+                     "min_supported_version":  "1.0.0",
+                     "download_url":  "ota_download.php?type=firmware",
+                     "binary_filename":  "cyd_tamagotchi.bin",
+                     "file_size":  1055216,
+                     "sha256":  "2EED69F50C696978A8ED9EB4B477FDF07BF117568E131B02122F2C7BD51151DC",
+                     "release_date":  "2026-11-12",
+                     "release_notes_en":  "OTA fix: persistent banner, error feedback, 10s timeout, serial debug",
+                     "release_notes_de":  "OTA fix: persistent banner, error feedback, 10s timeout, serial debug"
+                 },
+    "rules":  {
+                  "latest_version":  "1.0.4",
+                  "download_url":  "ota_download.php?type=rules",
+                  "file_size":  4210,
+                  "sha256":  "3a7b51f089cbde7e62a39281a1795b2d87e0fa0c88344f62e879008bc215018e",
+                  "release_date":  "2026-11-10",
+                  "release_notes_en":  "Updated shop items catalog, daily missions definitions, and dual-pet co-op spell balance.",
+                  "release_notes_de":  "Aktualisierter Shop-Katalog (Items, Rezepte, Zauber), Tagesmissionen und Dual-Pet Koop-Balance."
+              }
+}

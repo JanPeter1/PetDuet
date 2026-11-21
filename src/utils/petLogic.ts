@@ -859,6 +859,7 @@ export function createInitialPet(
     createdAt: Date.now(),
     lastFedAt: Date.now(),
     lastInteractedAt: Date.now(),
+    learnedSpells: [],
   };
 }
 
@@ -930,5 +931,6 @@ export function createInitialFriendPet(
     createdAt: Date.now() - 3600000 * 24,
     lastFedAt: Date.now() - 1800000,
     lastInteractedAt: Date.now() - 600000,
+    learnedSpells: ['spl_cleanse', 'spl_heal'],
   };
 }

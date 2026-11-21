@@ -38,6 +38,7 @@ import { RulesEditorTab } from './components/RulesEditorTab';
 import { TamagotchiCoreEngine } from './engine/TamagotchiCoreEngine';
 import { convertParsedRecipeToRecipe } from './engine/ConfigParser';
 import { translations, Language } from './utils/i18n';
+import { SPELLS } from './utils/petLogic';
 
 export default function App() {
   // Language State: 'de' | 'en' (default to 'de' as requested by user)
@@ -658,6 +659,7 @@ export default function App() {
         break;
 
       case 'cast_magic': {
+        // Legacy co-op magic (Friend Blessing) - kept for backward compatibility
         if (dev1Pet.stats.mana < 25) {
           cydAudio.warning();
           triggerNotificationDev1(language === 'de' ? '25 Mana erforderlich! ⚡' : 'Need 25 Mana to cast! ⚡');
@@ -693,6 +695,111 @@ export default function App() {
             setLedDev2('green');
           }, 2500);
         }, 700);
+        break;
+      }
+
+      case 'cast_spell': {
+        // New spell flyout: cast specific learned spell
+        const spellId = action.split(':')[1];
+        const spell = SPELLS.find((s) => s.id === spellId);
+        if (!spell) {
+          cydAudio.warning();
+          triggerNotificationDev1('Unknown spell!');
+          return;
+        }
+        if (dev1Pet.stats.mana < spell.manaCost) {
+          cydAudio.warning();
+          triggerNotificationDev1(
+            language === 'de'
+              ? `${spell.manaCost} Mana erforderlich! ⚡`
+              : `Need ${spell.manaCost} Mana! ⚡`
+          );
+          return;
+        }
+        // Check if spell is learned
+        if (!dev1Pet.learnedSpells?.includes(spellId)) {
+          cydAudio.warning();
+          triggerNotificationDev1(language === 'de' ? 'Zauber nicht gelernt!' : 'Spell not learned!');
+          return;
+        }
+
+        cydAudio.magicCast();
+        const spellTitle = language === 'de' ? (spell.name_de || spell.name) : spell.name;
+        const spellLabel = spell.target === 'friend' ? '✨ BLESSING' : spell.target === 'both' ? '🌟 HARMONY' : '✨ SPELL';
+        setActivePacket({ from: 'DEV1', type: 'MAGIC', label: spellLabel });
+
+        setDev1Pet((prev) => ({
+          ...prev,
+          stats: { ...prev.stats, mana: Math.max(0, prev.stats.mana - spell.manaCost) },
+          spellsCastCount: prev.spellsCastCount + 1,
+        }));
+
+        // Apply spell effects to self
+        setDev1Pet((prev) => {
+          const stats = { ...prev.stats };
+          let nextSatiety = prev.satietyTicks || 0;
+          let nextSick = prev.isSick;
+
+          if (spell.target === 'self' || spell.target === 'both') {
+            if (spell.healthGain) stats.health = Math.min(100, stats.health + spell.healthGain);
+            if (spell.hungerGain) stats.hunger = Math.min(100, stats.hunger + spell.hungerGain);
+            if (spell.happinessGain) stats.happiness = Math.min(100, stats.happiness + spell.happinessGain);
+            if (spell.energyGain) stats.energy = Math.min(100, stats.energy + spell.energyGain);
+            if (spell.satietyTicks) nextSatiety = Math.max(nextSatiety, spell.satietyTicks);
+            if (spell.curesSickness) {
+              nextSick = false;
+              stats.hygiene = 100;
+            }
+          }
+          return {
+            ...prev,
+            stats,
+            satietyTicks: nextSatiety,
+            isSick: nextSick,
+          };
+        });
+
+        triggerNotificationDev1(
+          spell.curesSickness && dev1Pet.isSick
+            ? `${spellTitle}: ${t.curedSickness}`
+            : language === 'de'
+            ? `${spellTitle} gewirkt! ✨`
+            : `Cast ${spellTitle}! ✨`
+        );
+        recordMissionAction('cast_spell', 1);
+
+        // Apply spell effects to friend (if target is friend or both)
+        if (spell.target === 'friend' || spell.target === 'both') {
+          setTimeout(() => {
+            setActivePacket(null);
+            setLedDev1('gold');
+            setLedDev2('gold');
+            confetti({ particleCount: 50, spread: 60 });
+            const friendSpellTitle = language === 'de' ? (spell.name_de || spell.name) : spell.name;
+            triggerNotificationDev2(
+              language === 'de' ? `${friendSpellTitle} empfangen! ✨` : `Received ${friendSpellTitle}! ✨`
+            );
+            setDev2Pet((p) => ({
+              ...p,
+              stats: {
+                ...p.stats,
+                health: Math.min(100, p.stats.health + (spell.healthGain ?? 30)),
+                happiness: Math.min(100, p.stats.happiness + (spell.happinessGain ?? 20)),
+              },
+            }));
+            addXPDev1(35);
+            setTimeout(() => {
+              setLedDev1('green');
+              setLedDev2('green');
+            }, 2500);
+          }, 600);
+        } else {
+          setTimeout(() => {
+            setActivePacket(null);
+            setLedDev1('green');
+          }, 600);
+        }
+        addXPDev1(35);
         break;
       }
 

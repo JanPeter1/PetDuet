@@ -48,6 +48,7 @@
 #include <FS.h>
 #include <SPIFFS.h>         // SPIFFS for dynamic rules.json storage
 #include <Update.h>         // ESP32 A/B Partition OTA updater
+#include <esp_ota_ops.h>    // For esp_ota_mark_app_valid_cancel_rollback()
 #include <TFT_eSPI.h>
 #include <XPT2046_Touchscreen.h>
 
@@ -90,7 +91,7 @@ bool inAPConfigMode = false;
   #define TXT_PLAY       "SPIEL"
   #define TXT_BATH       "BAD"
   #define TXT_MAGIC      "ZAUB"
-  #define TXT_SAVE       "SPEICH"
+  #define TXT_STATS      "STATS"
   #define TXT_TREAT      "SNACK"
   #define TXT_CHAT       "CHAT"
   #define TXT_MAGIC_PLUS "MGC+"
@@ -124,7 +125,7 @@ bool inAPConfigMode = false;
   #define TXT_PLAY       "PLAY"
   #define TXT_BATH       "BATH"
   #define TXT_MAGIC      "MGC"
-  #define TXT_SAVE       "SAVE"
+  #define TXT_STATS      "STATS"
   #define TXT_TREAT      "TREAT"
   #define TXT_CHAT       "CHAT"
   #define TXT_MAGIC_PLUS "MGC+"
@@ -177,6 +178,9 @@ struct LocalPet {
   uint16_t jobsCompleted = 0;
   uint16_t spellsCast = 0;
   uint16_t treatsSent = 0;
+  // Satiety shield & sickness (matching web sim)
+  uint8_t satietyTicks = 0;
+  bool isSick = false;
 } myPet;
 
 // ----------------------------------------------------------------------------
@@ -208,6 +212,64 @@ char activeBannerMessage[32] = "";
 unsigned long bannerTimeout = 0;
 bool inServerErrorState = false;
 bool firstRender = true;  // Track initial full render
+
+// Flyout Menu State (matching web simulator)
+bool feedMenuOpen = false;
+bool spellMenuOpen = false;
+bool prevFeedMenuOpen = false;
+bool prevSpellMenuOpen = false;
+bool forceFullRender = false;
+uint8_t selectedFoodIndex = 0;
+uint8_t selectedSpellIndex = 0;
+uint8_t availableFoodCount = 0;
+uint8_t availableSpellCount = 0;
+
+// Screen State (matching web simulator RPG modal tabs)
+enum ScreenState { SCREEN_MAIN, SCREEN_STATS, SCREEN_INVENTORY, SCREEN_JOBS, SCREEN_MAGIC, SCREEN_SHOP, SCREEN_MISSIONS };
+ScreenState currentScreen = SCREEN_MAIN;
+uint8_t statsTabIndex = 0;  // 0=Stats, 1=Inventory, 2=Jobs, 3=Magic, 4=Shop, 5=Missions
+const char* statsTabNames[6] = { "Stats", "Inventar", "Jobs", "Magie", "Shop", "Missionen" };
+const char* statsTabNamesDE[6] = { "Status", "Inventar", "Berufe", "Zauber", "Shop", "Missionen" };
+
+// Stats screen scrolling
+int16_t statsScrollY = 0;
+int16_t statsScrollMaxY = 0;
+int16_t lastTouchY = -1;
+bool isScrolling = false;
+
+// Food item indices for feed flyout (mapped to inventory)
+struct FoodItem {
+  char id[20];
+  char name[16];
+  char name_de[16];
+  uint8_t hungerGain;
+  uint8_t healthGain;
+  uint8_t energyGain;
+  uint8_t happinessGain;
+  uint8_t satietyTicks;
+  uint8_t sickChancePct;
+  bool cureSickness;
+  uint8_t quantity;
+  const char* icon;
+};
+FoodItem feedFlyoutItems[8];
+
+// Spell data for spell flyout (matching web simulator SPELLS catalog)
+struct SpellData {
+  char id[20];
+  char name[24];
+  char name_de[24];
+  uint8_t manaCost;
+  char target;  // 's'=self, 'f'=friend, 'b'=both
+  uint8_t healthGain;
+  uint8_t hungerGain;
+  uint8_t happinessGain;
+  uint8_t energyGain;
+  uint8_t satietyTicks;
+  bool curesSickness;
+  const char* icon;
+};
+SpellData spellFlyoutItems[5];
 
 
 // ----------------------------------------------------------------------------
@@ -651,6 +713,13 @@ void setup() {
   tft.drawString("FW: " + String(FIRMWARE_VERSION) + "  |  Rules: " + String(RULES_VERSION), 160, 140, 1);
   tft.drawString("Device: " + String(DEVICE_ID), 160, 155, 1);
 
+  // Show active OTA partition (A/B)
+  const esp_partition_t* running = esp_ota_get_running_partition();
+  String partLabel = running ? String(running->label) : "?";
+  String partSlot = partLabel == "ota_0" ? "A" : (partLabel == "ota_1" ? "B" : partLabel);
+  tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+  tft.drawString("Boot Slot: " + partSlot + " (" + partLabel + ")", 160, 170, 1);
+
   WiFi.mode(WIFI_STA);
   WiFi.begin(cfg_wifi_ssid.c_str(), cfg_wifi_pass.c_str());
 
@@ -679,6 +748,15 @@ void setup() {
     syncWithPHPServer();
     checkForOTAUpdate();
     renderCYDScreen();
+
+    // 8. Prevent OTA rollback - mark this firmware as valid after successful boot
+    // This must be called after successful initialization to prevent bootloader from rolling back
+    esp_err_t otaErr = esp_ota_mark_app_valid_cancel_rollback();
+    if (otaErr == ESP_OK) {
+      Serial.println("[OTA] Rollback cancelled - firmware marked as valid");
+    } else {
+      Serial.printf("[OTA] Warning: Could not cancel rollback: %s\n", esp_err_to_name(otaErr));
+    }
   } else {
     // If WiFi credentials are unconfigured or fail to connect, launch AP Portal automatically!
     Serial.println("\nWiFi connection failed! Starting AP Portal for easy setup...");
@@ -772,18 +850,408 @@ void loop() {
   if (bannerTimeout > 0 && now > bannerTimeout) {
     activeBannerMessage[0] = '\0';
     bannerTimeout = 0;
+    forceFullRender = true;  // Force full render to clear banner area in center partition
     screenNeedsRefresh = true;
   }
 
+  // Detect flyout close -> force full render to clear flyout area
+  if (prevFeedMenuOpen && !feedMenuOpen) {
+    forceFullRender = true;
+  }
+  if (prevSpellMenuOpen && !spellMenuOpen) {
+    forceFullRender = true;
+  }
+  prevFeedMenuOpen = feedMenuOpen;
+  prevSpellMenuOpen = spellMenuOpen;
+
   // 6. Refresh Display if dirty (throttle to max 10 FPS to prevent flicker)
   if (screenNeedsRefresh && (now - lastRenderTime > 100)) {
-    renderCYDScreen(firstRender);
+    bool doFullRender = firstRender || forceFullRender;
+    renderCYDScreen(doFullRender);
     firstRender = false;
+    forceFullRender = false;
     screenNeedsRefresh = false;
     lastRenderTime = now;
   }
 
   delay(15);
+}
+
+// ============================================================================
+// Forward declarations for tab render functions
+// ============================================================================
+int renderStatsTab(int y, int h, BiomeTheme& myBiome, bool measureOnly);
+int renderInventoryTab(int y, int h, BiomeTheme& myBiome, bool measureOnly);
+int renderJobsTab(int y, int h, BiomeTheme& myBiome, bool measureOnly);
+int renderMagicTab(int y, int h, BiomeTheme& myBiome, bool measureOnly);
+int renderShopTab(int y, int h, BiomeTheme& myBiome, bool measureOnly);
+int renderMissionsTab(int y, int h, BiomeTheme& myBiome, bool measureOnly);
+
+// ============================================================================
+// STATS/INVENTORY/JOBS/MAGIC SCREEN (matching web simulator RPG modal)
+// ============================================================================
+void renderStatsScreen(bool fullRender, BiomeTheme& myBiome) {
+  if (fullRender) {
+    // Clear full screen
+    tft.fillScreen(myBiome.bgColor);
+
+    // Top bar with back button and title
+    tft.fillRect(0, 0, 320, 30, 0x4A69);
+    // Back button (left)
+    tft.fillRoundRect(2, 2, 40, 26, 4, 0x78D8);
+    tft.drawRoundRect(2, 2, 40, 26, 4, TFT_WHITE);
+    tft.setTextColor(TFT_WHITE, 0x78D8);
+    tft.setTextDatum(MC_DATUM);
+    tft.drawString("<", 22, 15, 2);
+
+    // Title
+    tft.setTextColor(TFT_WHITE, 0x4A69);
+    tft.setTextDatum(MC_DATUM);
+    tft.drawString(LANG_DE ? statsTabNamesDE[statsTabIndex] : statsTabNames[statsTabIndex], 160, 15, 2);
+
+    // Tab bar (6 tabs, scrollable)
+    int tabY = 32;
+    int tabHeight = 22;
+    int tabWidth = 320 / 3;  // Show 3 tabs at a time
+    int startTab = max(0, (int)statsTabIndex - 1);
+    if (startTab > 3) startTab = 3;
+
+    for (int i = 0; i < 3 && (startTab + i) < 6; i++) {
+      int tabIdx = startTab + i;
+      int tabX = i * tabWidth;
+      uint16_t bgColor = (tabIdx == statsTabIndex) ? 0x78D8 : 0x18E3;
+      uint16_t borderColor = (tabIdx == statsTabIndex) ? TFT_WHITE : 0x4A69;
+      uint16_t textColor = (tabIdx == statsTabIndex) ? TFT_WHITE : TFT_LIGHTGREY;
+
+      tft.fillRect(tabX, tabY, tabWidth, tabHeight, bgColor);
+      tft.drawRect(tabX, tabY, tabWidth, tabHeight, borderColor);
+      tft.setTextColor(textColor, bgColor);
+      tft.setTextDatum(MC_DATUM);
+      const char* tabName = LANG_DE ? statsTabNamesDE[tabIdx] : statsTabNames[tabIdx];
+      tft.drawString(tabName, tabX + tabWidth/2, tabY + tabHeight/2, 1);
+    }
+  }
+
+  // Content area with scrolling
+  int contentY = 56 - statsScrollY;
+  int contentH = 240 - 56;
+  int viewportH = contentH;
+
+  // Clear content area
+  tft.fillRect(0, 56, 320, viewportH, myBiome.bgColor);
+
+  // Calculate content height and max scroll (measure pass)
+  int16_t contentHeight = 0;
+  switch (statsTabIndex) {
+    case 0: contentHeight = renderStatsTab(contentY, contentH, myBiome, true); break;
+    case 1: contentHeight = renderInventoryTab(contentY, contentH, myBiome, true); break;
+    case 2: contentHeight = renderJobsTab(contentY, contentH, myBiome, true); break;
+    case 3: contentHeight = renderMagicTab(contentY, contentH, myBiome, true); break;
+    case 4: contentHeight = renderShopTab(contentY, contentH, myBiome, true); break;
+    case 5: contentHeight = renderMissionsTab(contentY, contentH, myBiome, true); break;
+  }
+  statsScrollMaxY = max(0, contentHeight - viewportH);
+  if (statsScrollY > statsScrollMaxY) statsScrollY = statsScrollMaxY;
+
+  // Adjust contentY for current scroll position
+  contentY = 56 - statsScrollY;
+
+  // Draw pass - render actual content with viewport clipping
+  tft.setViewport(0, 56, 320, viewportH);
+  switch (statsTabIndex) {
+    case 0: renderStatsTab(contentY, contentH, myBiome, false); break;
+    case 1: renderInventoryTab(contentY, contentH, myBiome, false); break;
+    case 2: renderJobsTab(contentY, contentH, myBiome, false); break;
+    case 3: renderMagicTab(contentY, contentH, myBiome, false); break;
+    case 4: renderShopTab(contentY, contentH, myBiome, false); break;
+    case 5: renderMissionsTab(contentY, contentH, myBiome, false); break;
+  }
+  tft.resetViewport();
+
+  // Draw scroll indicator on right edge
+  if (statsScrollMaxY > 0) {
+    int barH = max(10, (viewportH * viewportH) / (contentHeight + viewportH));
+    int barY = 56 + (statsScrollY * (viewportH - barH)) / statsScrollMaxY;
+    tft.fillRect(315, 56, 5, viewportH, 0x18E3);
+    tft.fillRect(315, barY, 5, barH, 0x78D8);
+  }
+}
+
+// ============================================================================
+// Stats Tab: Detailed pet stats
+// ============================================================================
+int renderStatsTab(int y, int h, BiomeTheme& myBiome, bool measureOnly) {
+  int startY = y;
+  tft.setTextDatum(TL_DATUM);
+  int lineH = 18;
+  int x = 10;
+
+  tft.setTextColor(TFT_WHITE, myBiome.bgColor);
+  if (!measureOnly) { tft.drawString("Name: " + String(myPet.name), x, y, 2); y += lineH + 2; }
+  else { y += lineH + 2; }
+  if (!measureOnly) { tft.drawString("Level: " + String(myPet.level) + "  XP: " + String(myPet.xp) + "/" + String(myPet.xpNext), x, y, 1); y += lineH; }
+  else { y += lineH; }
+  if (!measureOnly) { tft.drawString("Phase: " + String(myPet.phase), x, y, 1); y += lineH; }
+  else { y += lineH; }
+  if (!measureOnly) { tft.drawString("Biome: " + String(myPet.biome), x, y, 1); y += lineH + 4; }
+  else { y += lineH + 4; }
+
+  tft.setTextColor(TFT_YELLOW, myBiome.bgColor);
+  if (!measureOnly) { tft.drawString("Coins: $" + String(myPet.coins), x, y, 2); y += lineH + 2; }
+  else { y += lineH + 2; }
+
+  tft.setTextColor(TFT_RED, myBiome.bgColor);
+  if (!measureOnly) { tft.drawString("HP: " + String(myPet.health) + "/100", x, y, 1); y += lineH; }
+  else { y += lineH; }
+  if (!measureOnly) { drawMiniBar(tft, x, y, 200, 10, myPet.health, TFT_RED); y += 14; }
+  else { y += 14; }
+
+  tft.setTextColor(TFT_ORANGE, myBiome.bgColor);
+  if (!measureOnly) { tft.drawString("Hunger: " + String(myPet.hunger) + "/100", x, y, 1); y += lineH; }
+  else { y += lineH; }
+  if (!measureOnly) { drawMiniBar(tft, x, y, 200, 10, myPet.hunger, TFT_ORANGE); y += 14; }
+  else { y += 14; }
+
+  tft.setTextColor(TFT_GREEN, myBiome.bgColor);
+  if (!measureOnly) { tft.drawString("Happiness: " + String(myPet.happiness) + "/100", x, y, 1); y += lineH; }
+  else { y += lineH; }
+  if (!measureOnly) { drawMiniBar(tft, x, y, 200, 10, myPet.happiness, TFT_GREEN); y += 14; }
+  else { y += 14; }
+
+  tft.setTextColor(TFT_CYAN, myBiome.bgColor);
+  if (!measureOnly) { tft.drawString("Energy: " + String(myPet.energy) + "/100", x, y, 1); y += lineH; }
+  else { y += lineH; }
+  if (!measureOnly) { drawMiniBar(tft, x, y, 200, 10, myPet.energy, TFT_CYAN); y += 14; }
+  else { y += 14; }
+
+  tft.setTextColor(COLOR_MANA_PURPLE, myBiome.bgColor);
+  if (!measureOnly) { tft.drawString("Mana: " + String(myPet.mana) + "/100", x, y, 1); y += lineH; }
+  else { y += lineH; }
+  if (!measureOnly) { drawMiniBar(tft, x, y, 200, 10, myPet.mana, COLOR_MANA_PURPLE); y += 14; }
+  else { y += 14; }
+
+  tft.setTextColor(TFT_LIGHTGREY, myBiome.bgColor);
+  if (!measureOnly) { tft.drawString("Hygiene: " + String(myPet.hygiene) + "/100", x, y, 1); y += lineH; }
+  else { y += lineH; }
+  if (!measureOnly) { drawMiniBar(tft, x, y, 200, 10, myPet.hygiene, TFT_LIGHTGREY); y += 14; }
+  else { y += 14; }
+
+  y += 6;
+  tft.setTextColor(TFT_WHITE, myBiome.bgColor);
+  if (!measureOnly) { tft.drawString("Spells Cast: " + String(myPet.spellsCast), x, y, 1); y += lineH; }
+  else { y += lineH; }
+  if (!measureOnly) { tft.drawString("Treats Sent: " + String(myPet.treatsSent), x, y, 1); y += lineH; }
+  else { y += lineH; }
+  if (!measureOnly) { tft.drawString("Login Streak: " + String(engine.consecutiveLoginDays), x, y, 1); y += lineH; }
+  else { y += lineH; }
+
+  return y - startY;
+}
+
+// ============================================================================
+// Inventory Tab: Items owned
+// ============================================================================
+int renderInventoryTab(int y, int h, BiomeTheme& myBiome, bool measureOnly) {
+  int startY = y;
+  tft.setTextDatum(TL_DATUM);
+  int lineH = 18;
+  int x = 10;
+
+  tft.setTextColor(TFT_YELLOW, myBiome.bgColor);
+  if (!measureOnly) { tft.drawString("INVENTAR", x, y, 2); }
+  y += lineH + 4;
+
+  // Food items
+  tft.setTextColor(TFT_ORANGE, myBiome.bgColor);
+  if (!measureOnly) { tft.drawString("Nahrung:", x, y, 1); }
+  y += lineH;
+  for (uint8_t i = 0; i < engine.inventoryCount; i++) {
+    EngineInventorySlot& slot = engine.inventory[i];
+    if (slot.quantity > 0 && (strstr(slot.id, "food_") == slot.id || strstr(slot.id, "item_salve") == slot.id)) {
+      tft.setTextColor(TFT_WHITE, myBiome.bgColor);
+      if (!measureOnly) { tft.drawString("  " + String(slot.name) + " x" + String(slot.quantity), x, y, 1); }
+      y += lineH;
+    }
+  }
+  y += 4;
+
+  // Materials
+  tft.setTextColor(TFT_CYAN, myBiome.bgColor);
+  if (!measureOnly) { tft.drawString("Materialien:", x, y, 1); }
+  y += lineH;
+  for (uint8_t i = 0; i < engine.inventoryCount; i++) {
+    EngineInventorySlot& slot = engine.inventory[i];
+    if (slot.quantity > 0 && strstr(slot.id, "mat_") == slot.id) {
+      tft.setTextColor(TFT_WHITE, myBiome.bgColor);
+      if (!measureOnly) { tft.drawString("  " + String(slot.name) + " x" + String(slot.quantity), x, y, 1); }
+      y += lineH;
+    }
+  }
+  y += 4;
+
+  // Other items
+  tft.setTextColor(0xD9E0, myBiome.bgColor);
+  if (!measureOnly) { tft.drawString("Sonstiges:", x, y, 1); }
+  y += lineH;
+  for (uint8_t i = 0; i < engine.inventoryCount; i++) {
+    EngineInventorySlot& slot = engine.inventory[i];
+    if (slot.quantity > 0 && strstr(slot.id, "food_") != slot.id && strstr(slot.id, "mat_") != slot.id && strstr(slot.id, "item_salve") != slot.id) {
+      tft.setTextColor(TFT_WHITE, myBiome.bgColor);
+      if (!measureOnly) { tft.drawString("  " + String(slot.name) + " x" + String(slot.quantity), x, y, 1); }
+      y += lineH;
+    }
+  }
+
+  return y - startY;
+}
+
+// ============================================================================
+// Jobs Tab: Available jobs
+// ============================================================================
+int renderJobsTab(int y, int h, BiomeTheme& myBiome, bool measureOnly) {
+  int startY = y;
+  tft.setTextDatum(TL_DATUM);
+  int lineH = 18;
+  int x = 10;
+
+  tft.setTextColor(TFT_YELLOW, myBiome.bgColor);
+  if (!measureOnly) { tft.drawString("JOBS / BERUFE", x, y, 2); y += lineH + 4; }
+  else { y += lineH + 4; }
+
+  // Define jobs matching rules.json
+  struct JobInfo { const char* id; const char* name; const char* name_de; uint8_t energy; uint8_t minLvl; };
+  JobInfo jobs[] = {
+    {"job_forage", "Forage", "Sammeln", 20, 1},
+    {"job_mine", "Mining", "Bergbau", 30, 2},
+    {"job_fish", "Fishing", "Angeln", 25, 2},
+    {"job_craft", "Crafting", "Handwerk", 35, 3},
+    {"job_hunt", "Hunting", "Jagen", 40, 4},
+    {"job_explore", "Explore", "Erforschen", 50, 5}
+  };
+
+  for (int i = 0; i < 6; i++) {
+    bool unlocked = myPet.level >= jobs[i].minLvl;
+    bool canAfford = myPet.energy >= jobs[i].energy;
+
+    uint16_t color = unlocked ? (canAfford ? TFT_WHITE : TFT_ORANGE) : TFT_DARKGREY;
+    tft.setTextColor(color, myBiome.bgColor);
+
+    String line = String(jobs[i].name_de) + " (Lvl " + jobs[i].minLvl + ") - " + jobs[i].energy + " EN";
+    if (!unlocked) line = "[" + line + "]";
+    if (!canAfford && unlocked) line += " (!EN)";
+    if (!measureOnly) { tft.drawString(line, x, y, 1); y += lineH; }
+    else { y += lineH; }
+  }
+
+  y += 4;
+  tft.setTextColor(TFT_CYAN, myBiome.bgColor);
+  if (!measureOnly) { tft.drawString("Energie: " + String(myPet.energy) + "/100", x, y, 2); y += 24; }
+  else { y += 24; }
+
+  return y - startY;
+}
+
+// ============================================================================
+// Magic Tab: Learned spells
+// ============================================================================
+int renderMagicTab(int y, int h, BiomeTheme& myBiome, bool measureOnly) {
+  int startY = y;
+  tft.setTextDatum(TL_DATUM);
+  int lineH = 18;
+  int x = 10;
+
+  tft.setTextColor(TFT_YELLOW, myBiome.bgColor);
+  if (!measureOnly) { tft.drawString("MAGIE / ZAUBER", x, y, 2); y += lineH + 4; }
+  else { y += lineH + 4; }
+
+  // Show all spells with level requirement
+  struct SpellInfo { const char* id; const char* name; const char* name_de; uint8_t mana; char target; uint8_t minLvl; };
+  SpellInfo spells[] = {
+    {"spl_cleanse", "Purify", "Lauterung", 15, 's', 1},
+    {"spl_heal", "Vitality Aura", "Vitalitaet", 20, 's', 2},
+    {"spl_treat_burst", "Astral Feast", "Astral-Fest", 25, 's', 3},
+    {"spl_friend_bless", "Friend Blessing", "Freundes-Segen", 30, 'f', 3},
+    {"spl_rain_dance", "Astral Harmony", "Astrale Harm", 45, 'b', 5}
+  };
+
+  for (int i = 0; i < 5; i++) {
+    bool learned = myPet.level >= spells[i].minLvl;
+    bool canAfford = myPet.mana >= spells[i].mana;
+
+    uint16_t color = learned ? (canAfford ? TFT_WHITE : TFT_ORANGE) : TFT_DARKGREY;
+    tft.setTextColor(color, myBiome.bgColor);
+
+    const char* targetStr = spells[i].target == 's' ? "Selbst" : (spells[i].target == 'f' ? "Freund" : "Beide");
+    String line = String(spells[i].name_de) + " - " + spells[i].mana + " MN - " + targetStr;
+    if (!learned) line = "[" + line + " Lvl" + spells[i].minLvl + "]";
+    if (!canAfford && learned) line += " (!MN)";
+    if (!measureOnly) { tft.drawString(line, x, y, 1); y += lineH; }
+    else { y += lineH; }
+  }
+
+  y += 4;
+  tft.setTextColor(COLOR_MANA_PURPLE, myBiome.bgColor);
+  if (!measureOnly) { tft.drawString("Mana: " + String(myPet.mana) + "/100", x, y, 2); y += 24; }
+  else { y += 24; }
+
+  return y - startY;
+}
+
+// ============================================================================
+// Shop Tab
+// ============================================================================
+int renderShopTab(int y, int h, BiomeTheme& myBiome, bool measureOnly) {
+  int startY = y;
+  tft.setTextDatum(TL_DATUM);
+  int lineH = 18;
+  int x = 10;
+
+  tft.setTextColor(TFT_YELLOW, myBiome.bgColor);
+  if (!measureOnly) { tft.drawString("SHOP", x, y, 2); }
+  y += lineH + 4;
+
+  tft.setTextColor(TFT_WHITE, myBiome.bgColor);
+  if (!measureOnly) { tft.drawString("Verwende PHP Server oder", x, y, 1); }
+  y += lineH;
+  if (!measureOnly) { tft.drawString("Web-Simulator fuer Kaufe.", x, y, 1); }
+  y += lineH + 4;
+
+  tft.setTextColor(COLOR_GOLD, myBiome.bgColor);
+  if (!measureOnly) { tft.drawString("Coins: $" + String(myPet.coins), x, y, 2); }
+  y += 24;
+
+  return y - startY;
+}
+
+// ============================================================================
+// Missions Tab
+// ============================================================================
+int renderMissionsTab(int y, int h, BiomeTheme& myBiome, bool measureOnly = false) {
+  int startY = y;
+  tft.setTextDatum(TL_DATUM);
+  int lineH = 18;
+  int x = 10;
+
+  tft.setTextColor(TFT_YELLOW, myBiome.bgColor);
+  if (!measureOnly) { tft.drawString("TAEGLICHE MISSIONEN", x, y, 2); y += lineH + 4; }
+  else { y += lineH + 4; }
+
+  tft.setTextColor(TFT_WHITE, myBiome.bgColor);
+  if (!measureOnly) { tft.drawString("Missionen werden ueber", x, y, 1); y += lineH; }
+  else { y += lineH; }
+  if (!measureOnly) { tft.drawString("PHP Server synchronisiert.", x, y, 1); y += lineH + 4; }
+  else { y += lineH + 4; }
+
+  tft.setTextColor(TFT_GREEN, myBiome.bgColor);
+  if (!measureOnly) { tft.drawString("Streak: " + String(engine.consecutiveLoginDays) + " Tage", x, y, 2); y += 24; }
+  else { y += 24; }
+  if (engine.canClaimStreakBonus()) {
+    tft.setTextColor(TFT_YELLOW, myBiome.bgColor);
+    if (!measureOnly) { tft.drawString("Bonus verfuegbar!", x, y, 1); y += lineH; }
+    else { y += lineH; }
+  }
+
+  return y - startY;
 }
 
 // ============================================================================
@@ -794,7 +1262,18 @@ void renderCYDScreen(bool fullRender) {
   BiomeTheme frBiome = getBiomeTheme(friendPet.biome);
 
   // =========================================================================
-  // FULL RENDER: Static UI (backgrounds, buttons, labels, borders)
+  // STATS/INVENTORY/JOBS/MAGIC SCREEN (overlay - full screen)
+  // =========================================================================
+  if (currentScreen != SCREEN_MAIN) {
+    renderStatsScreen(fullRender, myBiome);
+    // Draw flyouts on top if open (shouldn't happen in stats screen but safe)
+    if (feedMenuOpen) { populateFeedFlyout(); drawFeedFlyout(); }
+    if (spellMenuOpen) { populateSpellFlyout(); drawSpellFlyout(); }
+    return;
+  }
+
+  // =========================================================================
+  // MAIN SCREEN - FULL RENDER: Static UI (backgrounds, buttons, labels, borders)
   // =========================================================================
   if (fullRender) {
     // 1. Clear backgrounds for Left (Your Pet) & Right (Friend Pet)
@@ -814,7 +1293,7 @@ void renderCYDScreen(bool fullRender) {
     drawTouchButton(tft, 2, 50,  34, 44, TXT_PLAY,  0x02F5, TFT_WHITE, 2);
     drawTouchButton(tft, 2, 98,  34, 44, TXT_BATH,  0x047A, TFT_WHITE, 3);
     drawTouchButton(tft, 2, 146, 34, 44, TXT_MAGIC, 0x78D8, TFT_WHITE, 4);
-    drawTouchButton(tft, 2, 194, 34, 44, TXT_SAVE,  0x9300, TFT_WHITE, 5);
+    drawTouchButton(tft, 2, 194, 34, 44, TXT_STATS, 0x047A, TFT_WHITE, 5);  // STATS instead of SAVE
 
     // RIGHT COLUMN: FRIEND INTERACTIONS (X: 282 to 320)
     tft.fillRect(282, 0, 38, 240, COLOR_UI_PANEL);
@@ -828,7 +1307,7 @@ void renderCYDScreen(bool fullRender) {
   }
 
   // =========================================================================
-  // PARTIAL RENDER: Dynamic elements (bars, values, sprites, balloons)
+  // MAIN SCREEN - PARTIAL RENDER: Dynamic elements (bars, values, sprites, balloons)
   // =========================================================================
   // LEFT VIEWPORT: YOUR PET HUD & SPRITE (X: 38 to 160)
   tft.setTextColor(TFT_WHITE, myBiome.bgColor);
@@ -912,6 +1391,18 @@ void renderCYDScreen(bool fullRender) {
     tft.setTextDatum(MC_DATUM);
     tft.drawString(activeBannerMessage, 160, 12, 1);
   }
+
+  // =========================================================================
+  // FLYOUTS: Draw on TOP of everything (highest Z-order)
+  // =========================================================================
+  if (feedMenuOpen) {
+    populateFeedFlyout();
+    drawFeedFlyout();
+  }
+  if (spellMenuOpen) {
+    populateSpellFlyout();
+    drawSpellFlyout();
+  }
 }
 
 // ============================================================================
@@ -920,42 +1411,204 @@ void renderCYDScreen(bool fullRender) {
 void handleTouchPress(uint16_t x, uint16_t y) {
   soundClick();
 
+  // Handle Feed Flyout touches first (overlay on left viewport)
+  if (feedMenuOpen) {
+    // Close button at top-right (284-318, 2-38)
+    if (x >= 284 && x <= 318 && y >= 2 && y <= 38) {
+      feedMenuOpen = false;
+      screenNeedsRefresh = true;
+      return;
+    }
+    // Food items area (40-280, 2-38)
+    if (x >= 40 && x <= 280 && y >= 2 && y <= 38) {
+      int itemWidth = 44;
+      int gap = 4;
+      int startX = 40;
+      for (uint8_t i = 0; i < availableFoodCount; i++) {
+        int itemX = startX + i * (itemWidth + gap);
+        if (x >= itemX && x <= itemX + itemWidth) {
+          selectedFoodIndex = i;
+          FeedResult res = engine.feedWithItem(feedFlyoutItems[i].id);
+          if (res.success) {
+            myPet.hunger = min(100, myPet.hunger + res.hungerGain);
+            if (res.satietyGained > myPet.satietyTicks) myPet.satietyTicks = res.satietyGained;
+            if (res.becameSick) myPet.isSick = true;
+            soundMunch();
+            showBanner(res.becameSick ? "Gefressen aber krank! 🤢" : "Lecker gegessen! 🍖");
+            myPet.xp += 15;
+            engine.recordAction("feed", 1);
+            checkLevelUp();
+          }
+          feedMenuOpen = false;
+          screenNeedsRefresh = true;
+          return;
+        }
+      }
+    }
+    // Tap outside flyout closes it
+    feedMenuOpen = false;
+    screenNeedsRefresh = true;
+    return;
+  }
+
+  // Handle Spell Flyout touches (overlay at y=127-163)
+  if (spellMenuOpen) {
+    // Close button at top-right (284-318, 127-163)
+    if (x >= 284 && x <= 318 && y >= 127 && y <= 163) {
+      spellMenuOpen = false;
+      screenNeedsRefresh = true;
+      return;
+    }
+    // Spell items area (40-280, 127-163)
+    if (x >= 40 && x <= 280 && y >= 127 && y <= 163) {
+      int itemWidth = 48;
+      int gap = 4;
+      int startX = 40;
+      for (uint8_t i = 0; i < availableSpellCount; i++) {
+        int itemX = startX + i * (itemWidth + gap);
+        if (x >= itemX && x <= itemX + itemWidth) {
+          selectedSpellIndex = i;
+          SpellData& spell = spellFlyoutItems[i];
+          if (myPet.mana >= spell.manaCost) {
+            // Cast spell
+            myPet.mana -= spell.manaCost;
+            myPet.spellsCast++;
+            engine.recordAction("magic", 1);
+
+            // Apply effects based on target
+            if (spell.target == 's' || spell.target == 'b') {
+              // Self effects
+              myPet.health = min(100, myPet.health + spell.healthGain);
+              myPet.hunger = min(100, myPet.hunger + spell.hungerGain);
+              myPet.happiness = min(100, myPet.happiness + spell.happinessGain);
+              myPet.energy = min(100, myPet.energy + spell.energyGain);
+              if (spell.satietyTicks > myPet.satietyTicks) myPet.satietyTicks = spell.satietyTicks;
+              if (spell.curesSickness) {
+                myPet.isSick = false;
+                myPet.hygiene = 100;
+              }
+            }
+
+            soundTreatSent(); // Magic sound
+
+            if (spell.target == 'f' || spell.target == 'b') {
+              // Send to friend via socket
+              sendDirectSocketPacket("MAGIC", spell.name);
+              showBanner(String("Zauber: ") + spell.name + " -> Freund! ✨");
+              myPet.xp += 40;
+            } else {
+              showBanner(String("Zauber: ") + spell.name + " gewirkt! ✨");
+              myPet.xp += 30;
+            }
+
+            if (spell.target == 'b') myPet.xp += 15; // Bonus for dual target
+            checkLevelUp();
+          } else {
+            showBanner("Nicht genug Mana! ⚡");
+          }
+          spellMenuOpen = false;
+          screenNeedsRefresh = true;
+          return;
+        }
+      }
+    }
+    // Tap outside flyout closes it
+    spellMenuOpen = false;
+    screenNeedsRefresh = true;
+    return;
+  }
+
+  // =========================================================================
+  // STATS SCREEN TOUCH HANDLING
+  // =========================================================================
+  if (currentScreen != SCREEN_MAIN) {
+    // Back button (top-left: 2-42, 2-28)
+    if (x >= 2 && x <= 42 && y >= 2 && y <= 28) {
+      currentScreen = SCREEN_MAIN;
+      forceFullRender = true;
+      screenNeedsRefresh = true;
+      return;
+    }
+    // Tab bar (y: 32-54, 3 tabs visible at a time)
+    if (y >= 32 && y <= 54) {
+      int tabWidth = 320 / 3;
+      int startTab = max(0, (int)statsTabIndex - 1);
+      if (startTab > 3) startTab = 3;
+
+      for (int i = 0; i < 3 && (startTab + i) < 6; i++) {
+        int tabX = i * tabWidth;
+        if (x >= tabX && x <= tabX + tabWidth) {
+          statsTabIndex = startTab + i;
+          forceFullRender = true;
+          screenNeedsRefresh = true;
+          return;
+        }
+      }
+    }
+    // Content area - handle scrolling
+    if (y >= 56 && y <= 240) {
+      if (lastTouchY == -1) {
+        // Start scroll
+        lastTouchY = y;
+        isScrolling = true;
+      } else if (isScrolling) {
+        // Scroll
+        int16_t delta = lastTouchY - y;
+        statsScrollY = constrain(statsScrollY + delta, 0, statsScrollMaxY);
+        lastTouchY = y;
+        forceFullRender = true;
+        screenNeedsRefresh = true;
+      }
+      return;
+    }
+    // Touch released - end scroll
+    if (isScrolling) {
+      isScrolling = false;
+      lastTouchY = -1;
+    }
+    return;
+  }
+
   // 1. LEFT COLUMN: Your Actions (X: 0 to 38)
   if (x < 38) {
     if (y < 48) {
-      soundMunch();
-      myPet.hunger = min(100, myPet.hunger + 25);
-      myPet.xp += 15;
-      engine.recordAction("feed", 1);
-      showBanner(TXT_BANNER_FED);
+      // FEED button - toggle flyout
+      if (feedMenuOpen) {
+        feedMenuOpen = false;
+      } else {
+        feedMenuOpen = true;
+        spellMenuOpen = false; // Close other flyout
+        populateFeedFlyout();
+      }
     } else if (y < 96) {
+      // PLAY
       myPet.happiness = min(100, myPet.happiness + 20);
       myPet.energy = max(0, myPet.energy - 10);
       myPet.xp += 20;
       engine.recordAction("play", 1);
       showBanner(TXT_BANNER_PLAY);
     } else if (y < 144) {
+      // BATH
       myPet.hygiene = 100;
       myPet.happiness = min(100, myPet.happiness + 10);
       engine.recordAction("bath", 1);
       showBanner(TXT_BANNER_BATH);
     } else if (y < 192) {
-      if (myPet.mana >= 20) {
-        myPet.mana -= 20;
-        myPet.health = min(100, myPet.health + 30);
-        myPet.xp += 30;
-        myPet.spellsCast++;
-        engine.recordAction("magic", 1);
-        soundTreatSent();
-        showBanner(TXT_BANNER_AURA);
+      // MAGIC button - toggle spell flyout
+      if (spellMenuOpen) {
+        spellMenuOpen = false;
       } else {
-        showBanner(TXT_BANNER_NO_MANA20);
+        spellMenuOpen = true;
+        feedMenuOpen = false; // Close other flyout
+        populateSpellFlyout();
       }
     } else {
-      // Long press SAVE or tap: Save to Cloud & trigger OTA check
-      syncWithPHPServer();
-      checkForOTAUpdate();
-      showBanner(TXT_BANNER_SAVED);
+      // STATS button - Open Stats/Inventory/Jobs/Magic screen (like web simulator)
+      currentScreen = SCREEN_STATS;
+      statsTabIndex = 0;
+      feedMenuOpen = false;
+      spellMenuOpen = false;
+      forceFullRender = true;
     }
     checkLevelUp();
     screenNeedsRefresh = true;
@@ -1125,9 +1778,34 @@ void pollDirectSockets() {
         }
       } else if (strcmp(type, "MAGIC") == 0) {
         soundTreatReceived();
-        myPet.health = min(100, myPet.health + 30);
-        myPet.happiness = min(100, myPet.happiness + 25);
-        showBanner("Received Friend Blessing! ✨", 3000);
+        // Handle different spell types from friend
+        if (text && strcmp(text, "Purify") == 0) {
+          myPet.health = min(100, myPet.health + 10);
+          myPet.isSick = false;
+          myPet.hygiene = 100;
+          showBanner("Friend cast Purify on you! 🫧", 3000);
+        } else if (text && strcmp(text, "Vitality Aura") == 0) {
+          myPet.health = min(100, myPet.health + 25);
+          myPet.happiness = min(100, myPet.happiness + 10);
+          showBanner("Friend cast Vitality Aura! 💖", 3000);
+        } else if (text && strcmp(text, "Astral Feast") == 0) {
+          myPet.hunger = min(100, myPet.hunger + 35);
+          myPet.satietyTicks = 3;
+          showBanner("Friend shared Astral Feast! 🍓", 3000);
+        } else if (text && strcmp(text, "Friend Blessing") == 0) {
+          myPet.health = min(100, myPet.health + 30);
+          myPet.happiness = min(100, myPet.happiness + 25);
+          showBanner("Received Friend Blessing! ✨", 3000);
+        } else if (text && strcmp(text, "Astral Harmony") == 0) {
+          myPet.health = min(100, myPet.health + 50);
+          myPet.happiness = min(100, myPet.happiness + 40);
+          showBanner("Astral Harmony received! 🌟", 3000);
+        } else {
+          // Default/legacy
+          myPet.health = min(100, myPet.health + 30);
+          myPet.happiness = min(100, myPet.happiness + 25);
+          showBanner("Received Magic! ✨", 3000);
+        }
       }
       screenNeedsRefresh = true;
     }
@@ -1259,6 +1937,211 @@ void loadRulesFromSPIFFS() {
 
   Serial.printf("[SPIFFS] Loaded rules.json (%d bytes). Updating engine...\n", rulesText.length());
   engine.loadConfigFromText(rulesText);
+}
+
+// ----------------------------------------------------------------------------
+// Flyout Menu Helpers
+// ----------------------------------------------------------------------------
+void populateFeedFlyout() {
+  availableFoodCount = 0;
+  uint8_t foodIndices[8];
+  uint8_t count = engine.getAvailableFoods(foodIndices, 8);
+  for (uint8_t i = 0; i < count && availableFoodCount < 8; i++) {
+    EngineInventorySlot& slot = engine.inventory[foodIndices[i]];
+    if (slot.quantity > 0) {
+      FoodItem& item = feedFlyoutItems[availableFoodCount];
+      strncpy(item.id, slot.id, sizeof(item.id) - 1);
+      strncpy(item.name, slot.name, sizeof(item.name) - 1);
+      strncpy(item.name_de, slot.name_de, sizeof(item.name_de) - 1);
+      item.hungerGain = slot.hungerGain;
+      item.healthGain = slot.healthGain;
+      item.energyGain = slot.energyGain;
+      item.happinessGain = slot.happyGain;
+      item.satietyTicks = slot.satietyTicks;
+      item.sickChancePct = slot.sickChancePct;
+      item.cureSickness = slot.cureSickness;
+      item.quantity = slot.quantity;
+      // Map icons
+      if (strcmp(slot.id, "food_apple") == 0) item.icon = "🍎";
+      else if (strcmp(slot.id, "food_snack") == 0) item.icon = "🥨";
+      else if (strcmp(slot.id, "food_herb_salad") == 0) item.icon = "🥗";
+      else if (strcmp(slot.id, "food_berry_pie") == 0) item.icon = "🥧";
+      else if (strcmp(slot.id, "food_sun_jerky") == 0) item.icon = "🥩";
+      else if (strcmp(slot.id, "food_kelp_stew") == 0) item.icon = "🍲";
+      else if (strcmp(slot.id, "food_ambrosia") == 0) item.icon = "🧁";
+      else if (strcmp(slot.id, "item_salve") == 0) item.icon = "🧴";
+      else item.icon = "🍴";
+      availableFoodCount++;
+    }
+  }
+}
+
+void populateSpellFlyout() {
+  availableSpellCount = 0;
+  // Define all available spells (matching web simulator)
+  SpellData allSpells[5] = {
+    {"spl_cleanse", "Purify", "Lauterung", 15, 's', 10, 0, 0, 0, 0, true, "🫧"},
+    {"spl_heal", "Vitality Aura", "Vitalitaet", 20, 's', 25, 0, 10, 0, 0, false, "💖"},
+    {"spl_treat_burst", "Astral Feast", "Astral-Fest", 25, 's', 0, 35, 0, 0, 3, false, "🍓"},
+    {"spl_friend_bless", "Friend Blessing", "Freundes-Segen", 30, 'f', 30, 0, 25, 0, 0, false, "✨"},
+    {"spl_rain_dance", "Astral Harmony", "Astrale Harm", 45, 'b', 50, 0, 40, 0, 0, false, "🌟"}
+  };
+
+  // Only show learned spells (for now, show all if level >= minLevel)
+  for (uint8_t i = 0; i < 5; i++) {
+    uint8_t minLevel = 1;
+    if (i == 1) minLevel = 2;
+    else if (i == 2 || i == 3) minLevel = 3;
+    else if (i == 4) minLevel = 5;
+
+    if (myPet.level >= minLevel) {
+      spellFlyoutItems[availableSpellCount] = allSpells[i];
+      availableSpellCount++;
+    }
+  }
+}
+
+void drawFeedFlyout() {
+  if (availableFoodCount == 0) {
+    // Draw "No food - Go to Shop" button
+    tft.fillRoundRect(40, 2, 240, 36, 6, 0xD9E0);
+    tft.drawRoundRect(40, 2, 240, 36, 6, TFT_RED);
+    tft.setTextColor(TFT_WHITE, 0xD9E0);
+    tft.setTextDatum(MC_DATUM);
+    tft.drawString("Kein Essen! Shop oeffnen", 160, 20, 2);
+    // Close button
+    tft.fillRoundRect(284, 2, 34, 36, 6, 0x4A69);
+    tft.drawRoundRect(284, 2, 34, 36, 6, TFT_WHITE);
+    tft.setTextColor(TFT_WHITE, 0x4A69);
+    tft.drawString("X", 301, 20, 2);
+    return;
+  }
+
+  // Draw food items horizontally scrollable
+  int startX = 40;
+  int itemWidth = 44;
+  int gap = 4;
+
+  for (uint8_t i = 0; i < availableFoodCount; i++) {
+    FoodItem& item = feedFlyoutItems[i];
+    int x = startX + i * (itemWidth + gap);
+    if (x > 280) break; // Don't draw off-screen
+
+    uint16_t bgColor = (item.sickChancePct > 0) ? 0xFD40 : (item.satietyTicks > 0 ? 0x2E69 : 0x18E3);
+    uint16_t borderColor = (item.sickChancePct > 0) ? TFT_ORANGE : (item.satietyTicks > 0 ? TFT_GREEN : TFT_WHITE);
+
+    tft.fillRoundRect(x, 2, itemWidth, 36, 4, bgColor);
+    tft.drawRoundRect(x, 2, itemWidth, 36, 4, borderColor);
+
+    // Icon
+    tft.setTextColor(TFT_WHITE, bgColor);
+    tft.setTextDatum(MC_DATUM);
+    tft.drawString(item.icon, x + 8, 12, 2);
+
+    // Quantity
+    tft.setTextColor(TFT_YELLOW, bgColor);
+    tft.drawString(String("x") + item.quantity, x + 22, 12, 1);
+
+    // Hunger gain
+    tft.setTextColor(TFT_ORANGE, bgColor);
+    tft.drawString(String("+") + item.hungerGain, x + 8, 30, 1);
+
+    // Satiety shield indicator
+    if (item.satietyTicks > 0) {
+      tft.setTextColor(TFT_GREEN, bgColor);
+      tft.drawString(String("S") + item.satietyTicks, x + 22, 30, 1);
+    }
+    // Sickness risk indicator
+    if (item.sickChancePct > 0) {
+      tft.setTextColor(TFT_RED, bgColor);
+      tft.drawString("!", x + 36, 30, 1);
+    }
+
+    // Highlight selected
+    if (i == selectedFoodIndex) {
+      tft.drawRoundRect(x - 1, 1, itemWidth + 2, 38, 5, TFT_YELLOW);
+    }
+  }
+
+  // Close button on right
+  tft.fillRoundRect(284, 2, 34, 36, 6, 0x4A69);
+  tft.drawRoundRect(284, 2, 34, 36, 6, TFT_WHITE);
+  tft.setTextColor(TFT_WHITE, 0x4A69);
+  tft.setTextDatum(MC_DATUM);
+  tft.drawString("X", 301, 20, 2);
+}
+
+void drawSpellFlyout() {
+  if (availableSpellCount == 0) {
+    // Draw "No spells learned" button
+    tft.fillRoundRect(40, 127, 240, 36, 6, 0x78D8);
+    tft.drawRoundRect(40, 127, 240, 36, 6, TFT_PURPLE);
+    tft.setTextColor(TFT_WHITE, 0x78D8);
+    tft.setTextDatum(MC_DATUM);
+    tft.drawString("Keine Zauber! RPG -> Magie", 160, 145, 2);
+    // Close button
+    tft.fillRoundRect(284, 127, 34, 36, 6, 0x4A69);
+    tft.drawRoundRect(284, 127, 34, 36, 6, TFT_WHITE);
+    tft.setTextColor(TFT_WHITE, 0x4A69);
+    tft.drawString("X", 301, 145, 2);
+    return;
+  }
+
+  // Draw spell items horizontally scrollable
+  int startX = 40;
+  int itemWidth = 48;
+  int gap = 4;
+
+  for (uint8_t i = 0; i < availableSpellCount; i++) {
+    SpellData& spell = spellFlyoutItems[i];
+    int x = startX + i * (itemWidth + gap);
+    if (x > 280) break;
+
+    bool canAfford = myPet.mana >= spell.manaCost;
+    uint16_t bgColor = canAfford ? 0x78D8 : 0x18E3;
+    uint16_t borderColor = canAfford ? TFT_PURPLE : 0x4A69;
+    uint16_t textColor = canAfford ? TFT_WHITE : 0x7BEF;
+
+    tft.fillRoundRect(x, 127, itemWidth, 36, 4, bgColor);
+    tft.drawRoundRect(x, 127, itemWidth, 36, 4, borderColor);
+
+    // Icon
+    tft.setTextColor(textColor, bgColor);
+    tft.setTextDatum(MC_DATUM);
+    tft.drawString(spell.icon, x + 8, 137, 2);
+
+    // Target indicator
+    char targetIcon = (spell.target == 'f') ? 'F' : (spell.target == 'b' ? 'B' : 'S');
+    tft.setTextColor(TFT_YELLOW, bgColor);
+    tft.drawString(String(targetIcon), x + 24, 137, 1);
+
+    // Mana cost
+    tft.setTextColor(TFT_CYAN, bgColor);
+    tft.drawString(String(spell.manaCost) + "MP", x + 8, 155, 1);
+
+    // Satiety shield
+    if (spell.satietyTicks > 0) {
+      tft.setTextColor(TFT_GREEN, bgColor);
+      tft.drawString(String("S") + spell.satietyTicks, x + 24, 155, 1);
+    }
+    // Cure sickness
+    if (spell.curesSickness) {
+      tft.setTextColor(TFT_RED, bgColor);
+      tft.drawString("Rx", x + 36, 155, 1);
+    }
+
+    // Highlight selected
+    if (i == selectedSpellIndex) {
+      tft.drawRoundRect(x - 1, 126, itemWidth + 2, 38, 5, TFT_YELLOW);
+    }
+  }
+
+  // Close button on right
+  tft.fillRoundRect(284, 127, 34, 36, 6, 0x4A69);
+  tft.drawRoundRect(284, 127, 34, 36, 6, TFT_WHITE);
+  tft.setTextColor(TFT_WHITE, 0x4A69);
+  tft.setTextDatum(MC_DATUM);
+  tft.drawString("X", 301, 145, 2);
 }
 
 // ============================================================================
@@ -1406,7 +2289,8 @@ void checkForOTAUpdate() {
 
   if (httpCode == HTTP_CODE_OK) {
     String resp = http.getString();
-    StaticJsonDocument<768> doc;
+    Serial.printf("[OTA] Response: %s\n", resp.c_str());
+    StaticJsonDocument<1024> doc;
     DeserializationError err = deserializeJson(doc, resp);
     if (!err) {
       bool fwAvailable    = doc["fw_update_available"] | false;

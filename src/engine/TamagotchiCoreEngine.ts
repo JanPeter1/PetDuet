@@ -174,6 +174,7 @@ export class TamagotchiCoreEngine {
       lastFedAt: Date.now(),
       lastInteractedAt: Date.now(),
       dailyMissions: this.createInitialDailyMissionsState(1),
+      learnedSpells: [],
     };
   }
 

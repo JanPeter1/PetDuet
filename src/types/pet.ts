@@ -173,6 +173,7 @@ export interface PetState {
   lastFedAt: number;
   lastInteractedAt: number;
   dailyMissions?: DailyMissionsState;
+  learnedSpells: string[]; // Array of spell IDs that have been learned/purchased
 }
 
 export interface FriendPetSummary {

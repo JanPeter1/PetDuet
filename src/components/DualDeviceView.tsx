@@ -190,6 +190,7 @@ export const DualDeviceView: React.FC<DualDeviceViewProps> = ({
               onSendTreat={() => onDev1Action('send_treat')}
               onOpenChat={() => onDev1Action('open_chat')}
               onCastFriendMagic={() => onDev1Action('cast_magic')}
+              onCastSpell={(spellId) => onDev1Action(`cast_spell:${spellId}`)}
               onStartQuest={() => onDev1Action('start_quest')}
               onOpenTrade={() => onDev1Action('open_trade')}
               connectionType="direct_socket"

@@ -1,0 +1,37 @@
+idf_component_register(
+    SRCS
+        "main.cpp"
+        "PetGraphics.cpp"
+        "TamagotchiCoreEngine.cpp"
+        "NetworkManager.cpp"
+        "DisplayManager.cpp"
+        "TouchManager.cpp"
+        "RulesManager.cpp"
+        "OTAManager.cpp"
+        "PetStateManager.cpp"
+    INCLUDE_DIRS
+        "."
+    REQUIRES
+        esp_wifi
+        esp_netif
+        esp_http_client
+        esp_https_ota
+        esp-tls
+        esp_lcd
+        esp_timer
+        nvs_flash
+        spiffs
+        driver
+        spi_flash
+        json
+        freertos
+        esp_event
+        mbedtls
+        lwip
+        soc
+        hal
+        log
+        esp_system
+        bootloader_support
+        app_update
+)
