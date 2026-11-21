@@ -23,7 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $input) {
     $device_id = preg_replace('/[^a-zA-Z0-9_-]/', '', $input['deviceId'] ?? '');
     $pet_data  = $input['petData'] ?? null;
 
-    if (empty($device_id) || !$pet_data) {
+    if (empty($device_id) || !is_array($pet_data)) {
         http_response_code(400);
         echo json_encode(['status' => 'error', 'message' => 'Missing deviceId or petData']);
         exit;
@@ -47,6 +47,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $input) {
 
 // GET: Load save
 $device_id = preg_replace('/[^a-zA-Z0-9_-]/', '', $_GET['deviceId'] ?? '');
+if (empty($device_id)) {
+    http_response_code(400);
+    echo json_encode(['status' => 'error', 'message' => 'Missing deviceId']);
+    exit;
+}
 $save_file = $saves_dir . '/' . $device_id . '.json';
 
 if (!file_exists($save_file)) {

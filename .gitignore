@@ -19,8 +19,9 @@ esp32_firmware/.pio/
 esp32_firmware/build/
 esp32_firmware/components/
 esp32_firmware/data/
-esp32_firmware/dependencies.lock
-esp32_firmware/sdkconfig*
+esp32_firmware/sdkconfig
+esp32_firmware/sdkconfig.old
+esp32_firmware/managed_components/
 esp32_firmware/src/
 
 # PHP Server runtime state

@@ -23,6 +23,10 @@ interface RPGSubsystemsModalProps {
   onBuyShopItem?: (shopItem: ShopCatalogItem) => void;
   onClaimMission?: (missionId: string) => void;
   onClaimStreakBonus?: () => void;
+  coopCastWindow?: { initiator: 'DEV1' | 'DEV2'; expiresAt: number } | null;
+  coopRemainingSec?: number;
+  isAuroraActive?: boolean;
+  onTriggerCoopCast?: () => void;
 }
 
 export const RPGSubsystemsModal: React.FC<RPGSubsystemsModalProps> = ({
@@ -42,6 +46,10 @@ export const RPGSubsystemsModal: React.FC<RPGSubsystemsModalProps> = ({
   onBuyShopItem,
   onClaimMission,
   onClaimStreakBonus,
+  coopCastWindow = null,
+  coopRemainingSec = 0,
+  isAuroraActive = false,
+  onTriggerCoopCast,
 }) => {
   const t = translations[language] || translations.de;
   const [activeTab, setActiveTab] = useState<RPGModalTab>(initialTab);
@@ -873,6 +881,73 @@ export const RPGSubsystemsModal: React.FC<RPGSubsystemsModalProps> = ({
                   </button>
                 </div>
               </div>
+
+              {/* Co-op Dual-Cast Card (Dual Astral Harmony) */}
+              {onTriggerCoopCast && (
+                <div className={`p-4 rounded-xl border shadow-lg transition-all ${
+                  isAuroraActive
+                    ? 'bg-gradient-to-r from-emerald-950/80 via-cyan-950/80 to-purple-950/80 border-cyan-400'
+                    : coopCastWindow?.initiator === 'DEV2'
+                    ? 'bg-gradient-to-r from-fuchsia-950/80 via-indigo-950/70 to-cyan-950/80 border-cyan-400 animate-pulse'
+                    : 'bg-gradient-to-r from-indigo-950/70 via-slate-900 to-amber-950/40 border-amber-500/40'
+                }`}>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="space-y-1 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xl">🌟</span>
+                        <span className="font-bold text-slate-100 text-sm">{t.coopMagicCardTitle}</span>
+                        <span className="px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-[10px] font-mono font-bold">
+                          25 MP · SYNC 10s
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-300 leading-relaxed">
+                        {t.coopMagicCardDesc}
+                      </p>
+                      <div className="text-[11px] font-mono flex items-center gap-2">
+                        <span className={
+                          isAuroraActive ? 'text-emerald-300 font-bold' :
+                          coopCastWindow?.initiator === 'DEV2' ? 'text-cyan-300 font-bold' :
+                          coopCastWindow?.initiator === 'DEV1' ? 'text-amber-300 font-bold' :
+                          'text-slate-400'
+                        }>
+                          {isAuroraActive
+                            ? t.coopStatusActive
+                            : coopCastWindow?.initiator === 'DEV2'
+                            ? `${t.coopStatusPartnerReady} (${coopRemainingSec}s)`
+                            : coopCastWindow?.initiator === 'DEV1'
+                            ? `${t.coopStatusInitiator} (${coopRemainingSec}s)`
+                            : t.coopStatusIdle}
+                        </span>
+                      </div>
+                      {coopCastWindow && coopRemainingSec > 0 && (
+                        <div className="w-full max-w-xs h-1.5 bg-slate-900 rounded-full overflow-hidden border border-slate-700 mt-1">
+                          <div
+                            className="h-full bg-gradient-to-r from-cyan-400 to-amber-400 transition-all duration-300"
+                            style={{ width: `${Math.min(100, Math.round((coopRemainingSec / 10) * 100))}%` }}
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      disabled={pet.stats.mana < 25}
+                      onClick={() => {
+                        cydAudio.click();
+                        onTriggerCoopCast();
+                      }}
+                      className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center justify-center gap-1.5 shadow-md ${
+                        pet.stats.mana < 25
+                          ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
+                          : coopCastWindow?.initiator === 'DEV2'
+                          ? 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 border border-white active:scale-95'
+                          : 'bg-amber-600 hover:bg-amber-500 text-slate-950 border border-amber-400/50 active:scale-95'
+                      }`}
+                    >
+                      <span>{t.btnCoopCast}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div className="flex items-center justify-between text-xs text-slate-400">
                 <span>{language === 'de' ? 'Wirke Elementarzauber mit dem Manavorrat deines Haustiers.' : "Cast elemental spells powered by your pet's Mana pool."}</span>

@@ -9,7 +9,7 @@ This file provides architectural rules, runtime constraints, and implementation 
 **PetDuet** is a dual-device connected retro Tamagotchi RPG system.
 It consists of three interconnected layers:
 1. **Frontend Simulator (Web SPA)**: React 18 + Vite + TypeScript + Tailwind CSS. Emulates two ESP32 CYD devices side-by-side with interactive buttons, touch simulation, Web Audio sound effects, and comprehensive RPG subsystems.
-2. **Embedded Firmware (ESP32 CYD)**: C++ firmware for the **ESP32-2432S028R** ("Cheap Yellow Display", 2.8" 320x240 ILI9341 LCD + XPT2046 touch + RGB LED + Piezo buzzer). Includes hardware A/B OTA partition switching, FreeRTOS networking, and dynamic SPIFFS rules hot-reloading.
+2. **Embedded Firmware (ESP32 CYD)**: Native **ESP-IDF v5 + LVGL v8.3** C/C++ firmware for the **ESP32-2432S028R** ("Cheap Yellow Display", 2.8" 320x240 ILI9341 LCD + XPT2046 touch + RGB LED + Piezo buzzer). Includes hardware A/B OTA partition switching (`esp_ota_ops`), FreeRTOS networking (`lwip`/`esp_http_*`), and dynamic SPIFFS rules hot-reloading.
 3. **Backend Server (PHP 8 + SQLite)**: REST API and WebSocket hub providing device registration, pairing, state synchronization, trade escrow, shop purchases, global leaderboards, and OTA update manifests.
 
 ---
@@ -88,9 +88,10 @@ Before completing any task, run the following verification steps:
 | `src/engine/` | TypeScript game runtime engine and config parser |
 | `src/components/` | Dual CYD canvas, UI controls, RPG modals, shop & streak HUD |
 | `src/utils/i18n.ts` | Complete bilingual dictionary (English & German) |
-| `esp32_firmware/` | C++ firmware for the ESP32-2432S028R CYD |
-| `esp32_firmware/ESP32_Tamagotchi_CYD.ino` | Main sketch (rendering, touch, FreeRTOS networking, OTA) |
-| `esp32_firmware/TamagotchiCoreEngine.h` | Decoupled C++ game engine |
+| `esp32_firmware/` | Native ESP-IDF + LVGL firmware for the ESP32-2432S028R CYD |
+| `esp32_firmware/main/app_main.cpp` | FreeRTOS `app_main()` entry point, P2P sockets, NVS/SPIFFS, OTA |
+| `esp32_firmware/main/cyd_lvgl_ui.cpp` | LVGL v8 Dual-Pet UI, pixel sprites, food flyout, and RPG modals |
+| `esp32_firmware/TamagotchiCoreEngine.h` | Decoupled C++ game engine (zero heap, ESP-IDF + host test portable) |
 | `php_server/` | PHP 8 cloud backend (registration, sync, shop, leaderboard, OTA) |
 | `input/PetDuet.md` & `doc/PetDuet.md` | Master PRD and technical design specifications |
 | `public/` | Pre-packaged downloadable ZIP archives and Git bundles |

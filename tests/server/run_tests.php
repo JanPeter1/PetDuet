@@ -30,7 +30,7 @@ function copyDirRecursive(string $src, string $dst): void {
     foreach (scandir($src) as $item) {
         if ($item === '.' || $item === '..') continue;
         // Skip runtime generated state folders
-        if (in_array($item, ['saves', 'purchases', 'cyd_devices.json', 'cyd_mailbox.json'], true)) continue;
+        if (in_array($item, ['saves', 'purchases', 'cyd_devices.json', 'cyd_mailbox.json', 'cyd_trade_escrow.json', 'cyd_ota_reports.json'], true)) continue;
         $from = $src . DIRECTORY_SEPARATOR . $item;
         $to   = $dst . DIRECTORY_SEPARATOR . $item;
         if (is_dir($from)) {
@@ -52,6 +52,9 @@ function removeDirRecursive(string $dir): void {
 }
 
 copyDirRecursive($sourceServerDir, $tmpServer);
+if (!file_exists($tmpServer . DIRECTORY_SEPARATOR . 'cyd_tamagotchi.bin')) {
+    file_put_contents($tmpServer . DIRECTORY_SEPARATOR . 'cyd_tamagotchi.bin', "\xE9\x04\x02\x20" . str_repeat("\xAA", 512));
+}
 
 $covLogFile = $tmpRoot . DIRECTORY_SEPARATOR . 'server_cov_raw.json';
 $prependFile = __DIR__ . DIRECTORY_SEPARATOR . 'coverage_prepend.php';
@@ -262,6 +265,54 @@ try {
     $res = httpReq('GET', '/sync.php');
     check($res['status'] === 400, 'sync.php rejects GET without deviceId');
 
+    // 5b. Co-op Cast (MAGIC_SYNC) & Trade Escrow Lifecycle
+    $res = httpReq('POST', '/sync.php', [
+        'fromDeviceId' => 'CYD-DEV1',
+        'toDeviceId' => 'CYD-DEV2',
+        'type' => 'MAGIC_SYNC',
+        'payload' => ['text' => 'Dual Astral Harmony']
+    ]);
+    check($res['status'] === 200 && !empty($res['json']['messageId']), 'sync.php relays MAGIC_SYNC co-op cast packet');
+
+    $res = httpReq('POST', '/sync.php', [
+        'fromDeviceId' => 'CYD-DEV1',
+        'toDeviceId' => 'CYD-DEV2',
+        'type' => 'TRADE_OFFER',
+        'payload' => [
+            'tradeId' => 'tr_1001',
+            'offeredId' => 'mat_herb',
+            'offeredName' => 'Wiesenkräuter',
+            'requestedId' => 'mat_sunstone',
+            'requestedName' => 'Sonnensalz'
+        ]
+    ]);
+    check($res['status'] === 200 && ($res['json']['escrowStatus'] ?? '') === 'escrowed', 'sync.php records TRADE_OFFER in escrow');
+
+    $res = httpReq('GET', '/sync.php?escrow=1&deviceId=CYD-DEV1');
+    check($res['status'] === 200 && (($res['json']['escrows'][0]['status'] ?? '') === 'escrowed'), 'sync.php GET ?escrow=1 returns escrowed trade');
+
+    $res = httpReq('POST', '/sync.php', [
+        'fromDeviceId' => 'CYD-DEV2',
+        'toDeviceId' => 'CYD-DEV1',
+        'type' => 'TRADE_ACCEPT',
+        'payload' => ['tradeId' => 'tr_1001', 'offeredId' => 'mat_herb', 'requestedId' => 'mat_sunstone']
+    ]);
+    check($res['status'] === 200 && ($res['json']['escrowStatus'] ?? '') === 'completed', 'sync.php marks TRADE_ACCEPT completed');
+
+    $res = httpReq('POST', '/sync.php', [
+        'fromDeviceId' => 'CYD-DEV2',
+        'toDeviceId' => 'CYD-DEV1',
+        'type' => 'TRADE_OFFER',
+        'payload' => ['tradeId' => 'tr_1002', 'offeredId' => 'food_apple', 'offeredName' => 'Apfel', 'requestedId' => '', 'requestedName' => 'Geschenk']
+    ]);
+    $res = httpReq('POST', '/sync.php', [
+        'fromDeviceId' => 'CYD-DEV1',
+        'toDeviceId' => 'CYD-DEV2',
+        'type' => 'TRADE_DECLINE',
+        'payload' => ['tradeId' => 'tr_1002']
+    ]);
+    check($res['status'] === 200 && ($res['json']['escrowStatus'] ?? '') === 'declined_refunded', 'sync.php marks TRADE_DECLINE refunded');
+
     // 6. Cloud Save
     $res = httpReq('OPTIONS', '/cloud_save.php');
     check($res['status'] === 200, 'cloud_save.php OPTIONS returns 200');
@@ -277,6 +328,9 @@ try {
 
     $res = httpReq('GET', '/cloud_save.php?deviceId=CYD-DEV1');
     check($res['status'] === 200 && ($res['json']['petData']['coins'] ?? 0) === 120, 'cloud_save.php restores cloud backup');
+
+    $res = httpReq('GET', '/cloud_save.php');
+    check($res['status'] === 400, 'cloud_save.php rejects GET without deviceId');
 
     $res = httpReq('GET', '/cloud_save.php?deviceId=NOPE');
     check($res['status'] === 404, 'cloud_save.php returns 404 on unknown device');
@@ -326,6 +380,25 @@ try {
 
     $res = httpReq('HEAD', '/ota_download.php?type=firmware');
     check($res['status'] === 200, 'ota_download.php HEAD firmware returns 200');
+
+    // 9. OTA Report Endpoint
+    $res = httpReq('OPTIONS', '/ota_report.php');
+    check($res['status'] === 200, 'ota_report.php OPTIONS returns 200');
+
+    $res = httpReq('POST', '/ota_report.php', ['deviceId' => '', 'event' => 'ota_valid']);
+    check($res['status'] === 400, 'ota_report.php rejects empty deviceId');
+
+    $res = httpReq('POST', '/ota_report.php', [
+        'deviceId' => 'CYD-DEV1',
+        'event' => 'ota_valid',
+        'version' => '2.1.4',
+        'partition' => 'ota_0',
+        'detail' => 'ota_0'
+    ]);
+    check($res['status'] === 200 && ($res['json']['logged']['event'] ?? '') === 'ota_valid', 'ota_report.php logs ota_valid event');
+
+    $res = httpReq('GET', '/ota_report.php');
+    check($res['status'] === 200 && count($res['json']['reports'] ?? []) === 1, 'ota_report.php GET lists logged reports');
 
     // Also run index.php again after devices exist so table branch executes
     $res = httpReq('GET', '/index.php');

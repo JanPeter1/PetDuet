@@ -30,6 +30,10 @@ interface CYDScreenProps {
   activeNotification?: string | null;
   friendChatBalloon?: string | null;
   isActionAnimating?: 'feed' | 'play' | 'bath' | 'magic' | null;
+  isAuroraActive?: boolean;
+  coopWaitingRole?: 'initiator' | 'partner_ready' | null;
+  coopRemainingSec?: number;
+  pendingIncomingTradesCount?: number;
 }
 
 export const CYDScreen: React.FC<CYDScreenProps> = ({
@@ -56,6 +60,10 @@ export const CYDScreen: React.FC<CYDScreenProps> = ({
   activeNotification = null,
   friendChatBalloon = null,
   isActionAnimating = null,
+  isAuroraActive = false,
+  coopWaitingRole = null,
+  coopRemainingSec = 0,
+  pendingIncomingTradesCount = 0,
 }) => {
   const [feedMenuOpen, setFeedMenuOpen] = useState(false);
   const [spellMenuOpen, setSpellMenuOpen] = useState(false);
@@ -84,6 +92,21 @@ export const CYDScreen: React.FC<CYDScreenProps> = ({
     >
       {/* 2.8" LCD Pixel Grid Scanlines Overlay */}
       <div className="absolute inset-0 cyd-scanlines pointer-events-none z-30 opacity-40" />
+
+      {/* Dual Astral Harmony Co-op Aurora Overlay */}
+      {isAuroraActive && (
+        <div className="absolute inset-0 z-25 pointer-events-none cyd-aurora border-2 border-cyan-300/80">
+          <div className="absolute inset-x-0 top-1.5 flex justify-center">
+            <span className="px-2 py-0.5 rounded bg-slate-950/85 border border-amber-400 text-[7px] font-bold text-amber-300 tracking-wider shadow-lg animate-pulse">
+              ✨ ASTRAL HARMONY ✨
+            </span>
+          </div>
+          <div className="absolute top-8 left-12 text-[10px] animate-bounce">🌟</div>
+          <div className="absolute top-10 right-12 text-[10px] animate-bounce">✨</div>
+          <div className="absolute bottom-8 left-16 text-[9px] animate-pulse">💫</div>
+          <div className="absolute bottom-8 right-16 text-[9px] animate-pulse">🌠</div>
+        </div>
+      )}
 
       {/* Main 320x240 Layout Split: Left (Your Pet) + Right (Friend's Pet) */}
       <div className="relative w-full h-full flex">
@@ -299,7 +322,7 @@ export const CYDScreen: React.FC<CYDScreenProps> = ({
               season={myPet.season}
               phase={myPet.phase}
               isSleeping={myPet.isSleeping}
-              isHappy={isActionAnimating === 'play'}
+              isHappy={isActionAnimating === 'play' || isAuroraActive}
               isEating={isActionAnimating === 'feed'}
               isBath={isActionAnimating === 'bath'}
               eggWarmth={myPet.eggWarmth}
@@ -308,11 +331,12 @@ export const CYDScreen: React.FC<CYDScreenProps> = ({
             />
           </div>
 
-          {/* Bottom Bar: Coins & Mood */}
-          <div className="flex items-center justify-between text-[6px] text-slate-300 bg-black/50 px-1 py-0.5 rounded border border-slate-800">
-            <span className="text-amber-400">🪙 {myPet.coins}</span>
-            <span>❤️ {myPet.stats.happiness}%</span>
-            <span>⚡ {myPet.stats.energy}%</span>
+          {/* Bottom Bar: Coins, Mood, Energy & Mana */}
+          <div className="flex items-center justify-between text-[5.5px] text-slate-300 bg-black/50 px-1 py-0.5 rounded border border-slate-800">
+            <span className="text-amber-400">🪙{myPet.coins}</span>
+            <span>❤️{myPet.stats.happiness}</span>
+            <span>⚡{myPet.stats.energy}</span>
+            <span className="text-purple-300">✨{myPet.stats.mana}</span>
           </div>
         </div>
 
@@ -409,7 +433,7 @@ export const CYDScreen: React.FC<CYDScreenProps> = ({
               biome={friendPet.biome}
               phase={friendPet.phase}
               equipped={friendPet.equipped}
-              isHappy={isActionAnimating === 'magic'}
+              isHappy={isActionAnimating === 'magic' || isAuroraActive}
               scale={0.9}
             />
           </div>
@@ -458,9 +482,24 @@ export const CYDScreen: React.FC<CYDScreenProps> = ({
               cydAudio.click();
               onCastFriendMagic();
             }}
-            className="w-full h-[40px] bg-indigo-950/90 hover:bg-indigo-900 active:bg-indigo-700 border border-indigo-500/80 rounded flex flex-col items-center justify-center text-[7px] text-indigo-200 transition-transform active:scale-90"
-            title="Cast shared magic blessing"
+            className={`relative w-full h-[40px] border rounded flex flex-col items-center justify-center text-[7px] transition-transform active:scale-90 ${
+              coopWaitingRole === 'partner_ready'
+                ? 'bg-fuchsia-900/95 hover:bg-fuchsia-800 border-cyan-300 text-cyan-100 ring-2 ring-cyan-400 animate-pulse'
+                : coopWaitingRole === 'initiator'
+                ? 'bg-amber-900/90 hover:bg-amber-800 border-amber-400 text-amber-100 animate-pulse'
+                : 'bg-indigo-950/90 hover:bg-indigo-900 active:bg-indigo-700 border-indigo-500/80 text-indigo-200'
+            }`}
+            title="Cast shared Co-op Magic blessing (MGC+)"
           >
+            {coopWaitingRole && coopRemainingSec > 0 && (
+              <span className={`absolute -top-1 -right-1 px-1 rounded text-[5px] font-bold border ${
+                coopWaitingRole === 'partner_ready'
+                  ? 'bg-cyan-400 text-slate-950 border-white'
+                  : 'bg-amber-400 text-slate-950 border-amber-200'
+              }`}>
+                {coopRemainingSec}s
+              </span>
+            )}
             <span className="text-[12px] leading-none">🌟</span>
             <span className="mt-0.5 tracking-tighter">{t.btnMagicPlus}</span>
           </button>
@@ -484,9 +523,18 @@ export const CYDScreen: React.FC<CYDScreenProps> = ({
               cydAudio.click();
               onOpenTrade();
             }}
-            className="w-full h-[40px] bg-amber-950/90 hover:bg-amber-900 active:bg-amber-700 border border-amber-500/80 rounded flex flex-col items-center justify-center text-[7px] text-amber-200 transition-transform active:scale-90"
-            title="Trade rare accessories"
+            className={`relative w-full h-[40px] border rounded flex flex-col items-center justify-center text-[7px] transition-transform active:scale-90 ${
+              pendingIncomingTradesCount > 0
+                ? 'bg-amber-800/95 hover:bg-amber-700 border-amber-300 text-white ring-1 ring-amber-400 animate-pulse'
+                : 'bg-amber-950/90 hover:bg-amber-900 active:bg-amber-700 border-amber-500/80 text-amber-200'
+            }`}
+            title="Trade items & accessories via escrow"
           >
+            {pendingIncomingTradesCount > 0 && (
+              <span className="absolute -top-1 -right-1 px-1 rounded-full bg-rose-500 text-white text-[5px] font-bold border border-white">
+                {pendingIncomingTradesCount}
+              </span>
+            )}
             <span className="text-[12px] leading-none">🎁</span>
             <span className="mt-0.5 tracking-tighter">{t.btnTrade}</span>
           </button>

@@ -9,8 +9,22 @@
 #ifndef PET_GRAPHICS_H
 #define PET_GRAPHICS_H
 
-#include <Arduino.h>
-#include <TFT_eSPI.h>
+#include <stdint.h>
+#include <string.h>
+
+#ifdef ARDUINO
+  #include <Arduino.h>
+  #include <TFT_eSPI.h>
+#else
+  #include "main/cyd_display.h"
+#endif
+
+#ifndef map
+  #define pet_map(x, in_min, in_max, out_min, out_max) \
+    (((in_max) <= (in_min)) ? (out_min) : ((((x) - (in_min)) * ((out_max) - (out_min))) / ((in_max) - (in_min)) + (out_min)))
+#else
+  #define pet_map(x, in_min, in_max, out_min, out_max) map((x), (in_min), (in_max), (out_min), (out_max))
+#endif
 
 // 16-bit 565 Color Constants for 2.8" LCD
 #define COLOR_DESERT_BG   0x2960 // Dark Amber
@@ -94,7 +108,8 @@ inline uint16_t mapSpriteColor(char c) {
   }
 }
 
-inline void drawPixelSprite16(TFT_eSPI& tft, int topLeftX, int topLeftY, const char* const rows[16]) {
+template <typename DisplayT>
+inline void drawPixelSprite16(DisplayT& tft, int topLeftX, int topLeftY, const char* const rows[16]) {
   for (int py = 0; py < 16; py++) {
     const char* row = rows[py];
     for (int px = 0; row[px] != '\0' && px < 16; px++) {
@@ -422,7 +437,8 @@ static const char* const SPR_FOOD_STEW[16] = {
 /**
  * Draws an Egg on the display with biome markings & warm highlights
  */
-inline void drawPixelEgg(TFT_eSPI& tft, int cx, int cy, uint16_t shellColor, uint8_t warmth, const char* biome = "grassland") {
+template <typename DisplayT>
+inline void drawPixelEgg(DisplayT& tft, int cx, int cy, uint16_t shellColor, uint8_t warmth, const char* biome = "grassland") {
   // Ground shadow
   tft.fillEllipse(cx, cy + 27, 17, 4, 0x0842);
 
@@ -463,7 +479,8 @@ inline void drawPixelEgg(TFT_eSPI& tft, int cx, int cy, uint16_t shellColor, uin
 /**
  * Draws Pet Critter based on Biome, Phase & Mood
  */
-inline void drawPixelPet(TFT_eSPI& tft, int cx, int cy, const char* biome, const char* phase, bool isFriend = false) {
+template <typename DisplayT>
+inline void drawPixelPet(DisplayT& tft, int cx, int cy, const char* biome, const char* phase, bool isFriend = false) {
   BiomeTheme theme = getBiomeTheme(biome);
   bool isElder = strcmp(phase, "Elder") == 0;
   bool isAdult = strcmp(phase, "Adult") == 0 || isElder;
@@ -545,10 +562,97 @@ inline void drawPixelPet(TFT_eSPI& tft, int cx, int cy, const char* biome, const
 }
 
 /**
+ * Draws Equipped Headgear Accessories & Status Overlays (Waste, Sleep, Sickness, Attention, Evolution Branch)
+ */
+template <typename DisplayT>
+inline void drawPetOverlays(
+  DisplayT& tft,
+  int cx, int cy,
+  const char* phase,
+  const char* evoBranch,
+  const char* equippedHead,
+  uint8_t poopCount,
+  bool isSick,
+  bool isSleeping,
+  bool attentionNeeded
+) {
+  bool isElder = phase && std::strcmp(phase, "Elder") == 0;
+  bool isAdult = (phase && std::strcmp(phase, "Adult") == 0) || isElder;
+  int radius = isAdult ? 20 : 17;
+
+  // Branch indicator on Adult / Elder forms
+  if (evoBranch && isAdult) {
+    if (std::strcmp(evoBranch, "Paragon") == 0) {
+      tft.drawCircle(cx, cy - radius - 8, 5, COLOR_GOLD);
+      tft.drawCircle(cx, cy - radius - 8, 4, TFT_YELLOW);
+    } else if (std::strcmp(evoBranch, "Wild") == 0) {
+      tft.drawLine(cx - 9, cy - 8, cx - 3, cy - 6, COLOR_HEART_RED);
+      tft.drawLine(cx + 9, cy - 8, cx + 3, cy - 6, COLOR_HEART_RED);
+    }
+  }
+
+  // Equipped Headgear Accessories
+  if (equippedHead && std::strlen(equippedHead) > 0) {
+    if (std::strcmp(equippedHead, "acc_flower") == 0) {
+      int fy = cy - radius - 1;
+      tft.fillCircle(cx - 6, fy, 3, TFT_PINK);
+      tft.fillCircle(cx, fy - 2, 3, TFT_YELLOW);
+      tft.fillCircle(cx + 6, fy, 3, TFT_MAGENTA);
+      tft.fillCircle(cx, fy - 2, 1, TFT_WHITE);
+    } else if (std::strcmp(equippedHead, "acc_wizard") == 0) {
+      int by = cy - radius + 1;
+      tft.fillTriangle(cx - 12, by, cx, by - 17, cx + 12, by, 0x601F); // Purple cone
+      tft.fillRect(cx - 14, by - 1, 28, 3, COLOR_GOLD);
+      tft.fillCircle(cx, by - 8, 2, TFT_YELLOW);
+    } else if (std::strcmp(equippedHead, "acc_tophat") == 0) {
+      int by = cy - radius + 1;
+      tft.fillRect(cx - 9, by - 14, 18, 13, 0x10A4);
+      tft.fillRect(cx - 14, by - 2, 28, 3, 0x10A4);
+      tft.fillRect(cx - 9, by - 4, 18, 2, COLOR_GOLD);
+    }
+  }
+
+  // Sleeping Zz indicator & closed eyelids overlay
+  if (isSleeping) {
+    tft.drawFastHLine(cx - 9, cy - 4, 6, 0x10A4);
+    tft.drawFastHLine(cx + 3, cy - 4, 6, 0x10A4);
+    tft.drawFastHLine(cx + 18, cy - 22, 6, TFT_CYAN);
+    tft.drawLine(cx + 24, cy - 22, cx + 18, cy - 16, TFT_CYAN);
+    tft.drawFastHLine(cx + 18, cy - 16, 6, TFT_CYAN);
+  }
+
+  // Sickness indicator
+  if (isSick) {
+    tft.fillCircle(cx - 24, cy - 18, 5, 0x07E0);
+    tft.drawCircle(cx - 24, cy - 18, 5, TFT_WHITE);
+    tft.drawLine(cx - 26, cy - 20, cx - 22, cy - 16, TFT_RED);
+    tft.drawLine(cx - 22, cy - 20, cx - 26, cy - 16, TFT_RED);
+  }
+
+  // Waste / Poop swirls in bottom-right corner
+  for (uint8_t p = 0; p < poopCount && p < 3; p++) {
+    int px = cx + 18 + (p * 6) - (p == 2 ? 12 : 0);
+    int py = cy + radius - 1 - (p == 2 ? 7 : 0);
+    tft.fillCircle(px, py + 2, 4, 0x8A22);
+    tft.fillCircle(px, py - 1, 3, 0x8A22);
+    tft.drawPixel(px - 1, py - 3, 0xD69A);
+  }
+
+  // Attention Call '!' badge in top-right corner
+  if (attentionNeeded) {
+    tft.fillCircle(cx + 26, cy - 26, 6, TFT_RED);
+    tft.drawCircle(cx + 26, cy - 26, 6, TFT_YELLOW);
+    tft.fillRect(cx + 25, cy - 30, 2, 5, TFT_WHITE);
+    tft.fillRect(cx + 25, cy - 23, 2, 2, TFT_WHITE);
+  }
+}
+
+/**
  * Draws a modern dark-tinted CYD touch button with 16x16 pixel-art icon + crisp label
  */
+template <typename DisplayT>
 inline void drawTouchButton(
-  TFT_eSPI& tft,
+  DisplayT& tft,
   int x, int y, int w, int h,
   const char* label,
   uint16_t fillCol,
@@ -591,7 +695,8 @@ inline void drawTouchButton(
 /**
  * Draws a crisp 16x16 pixel-art food icon inside feed flyout buttons
  */
-inline void drawFoodIcon(TFT_eSPI& tft, int cx, int cy, const char* foodId) {
+template <typename DisplayT>
+inline void drawFoodIcon(DisplayT& tft, int cx, int cy, const char* foodId) {
   int sx = cx - 8;
   int sy = cy - 8;
   if (strcmp(foodId, "food_apple") == 0) {
@@ -612,10 +717,11 @@ inline void drawFoodIcon(TFT_eSPI& tft, int cx, int cy, const char* foodId) {
 /**
  * Draws a status bar with border
  */
-inline void drawMiniBar(TFT_eSPI& tft, int x, int y, int w, int h, uint8_t value, uint16_t barCol) {
+template <typename DisplayT>
+inline void drawMiniBar(DisplayT& tft, int x, int y, int w, int h, uint8_t value, uint16_t barCol) {
   tft.drawRect(x, y, w, h, TFT_WHITE);
   tft.fillRect(x + 1, y + 1, w - 2, h - 2, TFT_BLACK);
-  int fillW = map(value, 0, 100, 0, w - 2);
+  int fillW = pet_map(value, 0, 100, 0, w - 2);
   if (fillW > 0) {
     tft.fillRect(x + 1, y + 1, fillW, h - 2, barCol);
   }

@@ -204,8 +204,9 @@ export interface TradeOffer {
   fromPetName: string;
   toDeviceId: string;
   offeredItem: InventoryItem;
+  requestedItemId?: string;
   requestedItemName: string;
-  status: 'pending' | 'accepted' | 'declined';
+  status: 'pending' | 'accepted' | 'declined' | 'cancelled';
   timestamp: number;
 }
 
@@ -229,7 +230,7 @@ export interface CYDMessagePacket {
   id: string;
   fromDeviceId: string;
   toDeviceId: string;
-  type: 'TREAT' | 'CHAT' | 'MAGIC' | 'TRADE_OFFER' | 'TRADE_RESPONSE' | 'STATUS_SYNC';
+  type: 'TREAT' | 'CHAT' | 'MAGIC' | 'MAGIC_SYNC' | 'TRADE_OFFER' | 'TRADE_RESPONSE' | 'TRADE_CANCEL' | 'STATUS_SYNC';
   payload: any;
   timestamp: number;
 }

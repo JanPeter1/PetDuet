@@ -1,17 +1,17 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-    PetDuet Windows Firmware Release, Test, Coverage, OTA Deploy & Flash Pipeline
+    PetDuet Windows Firmware Release, Test, Coverage, OTA Deploy & Flash Pipeline (ESP-IDF + LVGL)
 .DESCRIPTION
-    1. Erhoeht die FIRMWARE_VERSION in esp32_firmware\config.h (patch/minor/major oder explizit)
-    2. Kompiliert die ESP32-Firmware via PlatformIO (pio run)
-    3. Fuehrt Unit-Tests aus und ermittelt Code-Coverage getrennt nach Firmware (C++/gcov) und Server (PHP)
-    4. Kopiert die kompilierte Firmware + OTA-Versionsfile (ota_manifest.json) zum Server (php_server\firmware\)
+    1. Erhoeht FIRMWARE_VERSION in esp32_firmware\config.h & PROJECT_VER in esp32_firmware\CMakeLists.txt
+    2. Kompiliert die ESP32-Firmware nativ via ESP-IDF (idf.py build) oder PlatformIO (pio run, framework = espidf)
+    3. Fuehrt Unit-Tests aus (mit -Coverage auch Code-Coverage getrennt nach Firmware C++/gcov & PHP Server)
+    4. Kopiert Binary + OTA-Versionsfile zum Server (php_server\cyd_tamagotchi.bin, php_server\firmware\, ota_manifest.json)
     5. Fragt interaktiv nach, ob die Firmware geflasht werden soll
-    6. Flasht die Firmware via PlatformIO auf das angeschlossene ESP32 CYD
+    6. Flasht die Firmware via idf.py flash oder PlatformIO auf das angeschlossene ESP32 CYD
 .EXAMPLE
     .\release_firmware.ps1
-    .\release_firmware.ps1 -Bump minor -Notes "Neues Chat-Menue & Bugfixes"
+    .\release_firmware.ps1 -Coverage -Bump minor -Notes "Migration auf natives ESP-IDF + LVGL"
     .\release_firmware.ps1 -Version 2.2.0 -ServerPath "C:\xampp\htdocs\cyd-tamagotchi" -ComPort COM5
 #>
 
@@ -35,7 +35,8 @@ param(
 
     [switch]$Flash,
     [switch]$NoFlash,
-    [switch]$Coverage
+    [switch]$Coverage,
+    [switch]$PreferPio
 )
 
 $ErrorActionPreference = "Stop"
@@ -43,10 +44,14 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot  = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $FirmwareDir  = Join-Path $ProjectRoot "esp32_firmware"
 $ConfigH      = Join-Path $FirmwareDir "config.h"
-$FirmwareBin  = Join-Path $FirmwareDir ".pio\build\esp32-2432s028r\firmware.bin"
+$RootCMake    = Join-Path $FirmwareDir "CMakeLists.txt"
+
+$IdfBin       = Join-Path $FirmwareDir "build\petduet.bin"
+$PioBin       = Join-Path $FirmwareDir ".pio\build\esp32-2432s028r\firmware.bin"
 
 $ServerDir        = Join-Path $ProjectRoot "php_server"
 $ServerFwDir      = Join-Path $ServerDir "firmware"
+$ServerRootBin    = Join-Path $ServerDir "cyd_tamagotchi.bin"
 $ServerBin        = Join-Path $ServerFwDir "cyd_tamagotchi.bin"
 $ServerVerJson    = Join-Path $ServerFwDir "version.json"
 $ManifestFile     = Join-Path $ServerDir "ota_manifest.json"
@@ -75,13 +80,48 @@ function Find-Tool([string]$exeName, [string[]]$extraCandidates) {
     return $null
 }
 
+function Ensure-IdfEnvironment {
+    if (Get-Command "idf.py" -ErrorAction SilentlyContinue) {
+        return $true
+    }
+    $idfCandidates = @()
+    if ($env:IDF_PATH) { $idfCandidates += $env:IDF_PATH }
+    if (Test-Path "C:\Espressif\frameworks") {
+        $dirs = Get-ChildItem "C:\Espressif\frameworks" -Directory -Filter "esp-idf*" -ErrorAction SilentlyContinue | Sort-Object Name -Descending
+        foreach ($d in $dirs) { $idfCandidates += $d.FullName }
+    }
+    if (Test-Path "$env:USERPROFILE\esp") {
+        $dirs = Get-ChildItem "$env:USERPROFILE\esp" -Directory -Filter "esp-idf*" -ErrorAction SilentlyContinue | Sort-Object Name -Descending
+        foreach ($d in $dirs) { $idfCandidates += $d.FullName }
+    }
+
+    foreach ($cand in $idfCandidates) {
+        $exportPs1 = Join-Path $cand "export.ps1"
+        if (Test-Path $exportPs1) {
+            Write-Host "  Lade ESP-IDF Umgebung: $exportPs1" -ForegroundColor Gray
+            $env:IDF_PATH = $cand
+            & $exportPs1 | Out-Null
+            if (Get-Command "idf.py" -ErrorAction SilentlyContinue) {
+                return $true
+            }
+        }
+    }
+    return $false
+}
+
 $ConfigBackup = $null
+$CMakeBackup  = $null
 $VersionChanged = $false
 
 function Restore-ConfigOnFailure {
-    if ($script:VersionChanged -and $null -ne $script:ConfigBackup) {
-        [System.IO.File]::WriteAllText($ConfigH, $script:ConfigBackup, $Utf8NoBom)
-        Write-Host "[Rollback] config.h wurde wegen Fehler auf die vorherige Version zurueckgesetzt." -ForegroundColor Yellow
+    if ($script:VersionChanged) {
+        if ($null -ne $script:ConfigBackup) {
+            [System.IO.File]::WriteAllText($ConfigH, $script:ConfigBackup, $Utf8NoBom)
+        }
+        if ($null -ne $script:CMakeBackup -and (Test-Path $RootCMake)) {
+            [System.IO.File]::WriteAllText($RootCMake, $script:CMakeBackup, $Utf8NoBom)
+        }
+        Write-Host "[Rollback] config.h & CMakeLists.txt auf vorherige Version zurueckgesetzt." -ForegroundColor Yellow
     }
 }
 
@@ -93,11 +133,15 @@ try {
     New-Item -ItemType Directory -Path $CoverageDir -Force | Out-Null
 
     # ========================================================================
-    # SCHRITT 1: FIRMWARE-VERSION ERHOEHEN
+    # SCHRITT 1: FIRMWARE-VERSION ERHOEHEN (config.h & CMakeLists.txt)
     # ========================================================================
-    Write-Step "[1/6] Firmware-Version in config.h erhoehen"
+    Write-Step "[1/6] Firmware-Version in config.h & CMakeLists.txt erhoehen"
 
     $ConfigBackup = [System.IO.File]::ReadAllText($ConfigH, $Utf8NoBom)
+    if (Test-Path $RootCMake) {
+        $CMakeBackup = [System.IO.File]::ReadAllText($RootCMake, $Utf8NoBom)
+    }
+
     $verMatch = [regex]::Match($ConfigBackup, '#define\s+FIRMWARE_VERSION\s+"(\d+\.\d+\.\d+)"')
     if (-not $verMatch.Success) {
         throw "Konnte #define FIRMWARE_VERSION `"x.y.z`" in $ConfigH nicht finden."
@@ -120,7 +164,7 @@ try {
     }
 
     if ([string]::IsNullOrWhiteSpace($Notes)) {
-        $Notes = "Firmware Release v$NewVersion"
+        $Notes = "ESP-IDF Release v$NewVersion"
     }
 
     $updatedConfig = [regex]::Replace(
@@ -129,6 +173,15 @@ try {
         ('${1}' + $NewVersion + '${3}')
     )
     [System.IO.File]::WriteAllText($ConfigH, $updatedConfig, $Utf8NoBom)
+
+    if ($null -ne $CMakeBackup) {
+        $updatedCMake = [regex]::Replace(
+            $CMakeBackup,
+            '(set\s*\(\s*PROJECT_VER\s+")(\d+\.\d+\.\d+)("\s*\))',
+            ('${1}' + $NewVersion + '${3}')
+        )
+        [System.IO.File]::WriteAllText($RootCMake, $updatedCMake, $Utf8NoBom)
+    }
     $VersionChanged = $true
 
     Write-Host "  Alte Version : $OldVersion" -ForegroundColor Gray
@@ -136,28 +189,48 @@ try {
     Write-Host "  Rules Version: $RulesVersion" -ForegroundColor Gray
 
     # ========================================================================
-    # SCHRITT 2: FIRMWARE KOMPILIEREN (PlatformIO)
+    # SCHRITT 2: FIRMWARE KOMPILIEREN (ESP-IDF idf.py oder PlatformIO espidf)
     # ========================================================================
-    Write-Step "[2/6] ESP32-Firmware kompilieren (PlatformIO)"
+    Write-Step "[2/6] ESP32-Firmware kompilieren (ESP-IDF + LVGL)"
 
-    $pioExe = Find-Tool "pio" @(
-        (Join-Path $env:USERPROFILE ".platformio\penv\Scripts\pio.exe"),
-        (Join-Path $env:LOCALAPPDATA "Programs\PlatformIO\penv\Scripts\pio.exe"),
-        "C:\Users\$env:USERNAME\.platformio\penv\Scripts\pio.exe"
-    )
-    if (-not $pioExe) {
-        throw "PlatformIO CLI ('pio') nicht gefunden. Bitte PlatformIO Core installieren oder PATH ergaenzen."
-    }
-    Write-Host "  PlatformIO: $pioExe" -ForegroundColor Gray
+    $buildTool = ""
+    $FirmwareBin = ""
+    $hasIdf = if ($PreferPio) { $false } else { Ensure-IdfEnvironment }
 
-    Push-Location $FirmwareDir
-    try {
-        & $pioExe run -e esp32-2432s028r
-        if ($LASTEXITCODE -ne 0) {
-            throw "Firmware-Kompilierung fehlgeschlagen (Exit Code $LASTEXITCODE)."
+    if ($hasIdf) {
+        $buildTool = "idf.py"
+        Write-Host "  Compiler: ESP-IDF (idf.py)" -ForegroundColor Gray
+        Push-Location $FirmwareDir
+        try {
+            & idf.py build
+            if ($LASTEXITCODE -ne 0) {
+                throw "ESP-IDF Kompilierung fehlgeschlagen (Exit Code $LASTEXITCODE)."
+            }
+        } finally {
+            Pop-Location
         }
-    } finally {
-        Pop-Location
+        $FirmwareBin = $IdfBin
+    } else {
+        $pioExe = Find-Tool "pio" @(
+            (Join-Path $env:USERPROFILE ".platformio\penv\Scripts\pio.exe"),
+            (Join-Path $env:LOCALAPPDATA "Programs\PlatformIO\penv\Scripts\pio.exe"),
+            "C:\Users\$env:USERNAME\.platformio\penv\Scripts\pio.exe"
+        )
+        if (-not $pioExe) {
+            throw "Weder ESP-IDF ('idf.py') noch PlatformIO ('pio') gefunden. Bitte ESP-IDF oder PlatformIO installieren."
+        }
+        $buildTool = "pio"
+        Write-Host "  Compiler: PlatformIO ESP-IDF ($pioExe)" -ForegroundColor Gray
+        Push-Location $FirmwareDir
+        try {
+            & $pioExe run -e esp32-2432s028r
+            if ($LASTEXITCODE -ne 0) {
+                throw "PlatformIO ESP-IDF Kompilierung fehlgeschlagen (Exit Code $LASTEXITCODE)."
+            }
+        } finally {
+            Pop-Location
+        }
+        $FirmwareBin = $PioBin
     }
 
     if (-not (Test-Path $FirmwareBin)) {
@@ -165,104 +238,68 @@ try {
     }
     $binInfo = Get-Item $FirmwareBin
     $binHash = (Get-FileHash -Algorithm SHA256 $FirmwareBin).Hash.ToLowerInvariant()
-    Write-Host ("  Build OK: {0} ({1} Bytes, SHA256: {2}...)" -f $FirmwareBin, $binInfo.Length, $binHash.Substring(0, 16)) -ForegroundColor Green
+    Write-Host ("  Build OK ({0}): {1} ({2} Bytes, SHA256: {3}...)" -f $buildTool, $FirmwareBin, $binInfo.Length, $binHash.Substring(0, 16)) -ForegroundColor Green
 
     # ========================================================================
-    # SCHRITT 3: UNIT-TESTS (OHNE COVERAGE - NUR MIT -Coverage OPTION)
+    # SCHRITT 3: UNIT-TESTS (+ OPTIONAL -Coverage GETRENNT NACH FW & SERVER)
     # ========================================================================
-    Write-Step "[3/6] Unit-Tests (ohne Code-Coverage - nutze -Coverage für Coverage)"
+    Write-Step "[3/6] Unit-Tests (Firmware C++ Engine & PHP Server)"
 
     $fwAssertionsPassed = $false
     $fwCovLinePct = $null
     $fwExecLines = 0
     $fwTotalLines = 0
-    $srvCov = $null
+
+    $gppExe = Find-Tool "g++" @(
+        "C:\msys64\ucrt64\bin\g++.exe",
+        "C:\msys64\mingw64\bin\g++.exe",
+        "C:\mingw64\bin\g++.exe",
+        "C:\WinLibs\mingw64\bin\g++.exe",
+        "C:\ProgramData\chocolatey\bin\g++.exe"
+    )
 
     if ($Coverage) {
         Write-Host "  [Coverage-Modus aktiviert]" -ForegroundColor Yellow
-
-        # --- 3A: Firmware Unit Tests + gcov Coverage ---
-        Write-Host "`n--- [3A] Firmware Unit-Tests & Code-Coverage (C++ / gcov) ---" -ForegroundColor Yellow
-
-        $gppExe = Find-Tool "g++" @(
-            "C:\msys64\ucrt64\bin\g++.exe",
-            "C:\msys64\mingw64\bin\g++.exe",
-            "C:\mingw64\bin\g++.exe",
-            "C:\WinLibs\mingw64\bin\g++.exe",
-            "C:\ProgramData\chocolatey\bin\g++.exe"
-        )
         if (-not $gppExe) {
-            throw "Kein Host C++ Compiler (g++) fuer Firmware-Tests/Coverage gefunden (z.B. MSYS2/MinGW/WinLibs g++.exe)."
+            throw "Kein Host C++ Compiler (g++) fuer Firmware-Tests/Coverage gefunden."
         }
-
-        $gcovExe = Find-Tool "gcov" @(
-            (Join-Path (Split-Path $gppExe -Parent) "gcov.exe")
-        )
+        $gcovExe = Find-Tool "gcov" @((Join-Path (Split-Path $gppExe -Parent) "gcov.exe"))
         if (-not $gcovExe) {
-            throw "gcov.exe nicht gefunden (wird fuer Firmware Code-Coverage benoetigt)."
+            throw "gcov.exe nicht gefunden."
         }
 
         $fwCovWorkDir = Join-Path $env:TEMP ("petduet_fw_cov_" + $PID)
         if (Test-Path $fwCovWorkDir) { Remove-Item $fwCovWorkDir -Recurse -Force }
         New-Item -ItemType Directory -Path $fwCovWorkDir -Force | Out-Null
-
         $fwTestExe = Join-Path $fwCovWorkDir "test_firmware_engine.exe"
 
         Push-Location $fwCovWorkDir
         try {
-            # Ensure g++ DLLs (e.g. libstdc++-6.dll) are resolvable at runtime
             $oldPath = $env:PATH
-            $gppDir = Split-Path $gppExe -Parent
-            $env:PATH = "$gppDir;$oldPath"
+            $env:PATH = "$(Split-Path $gppExe -Parent);$oldPath"
 
             & $gppExe -std=c++17 -O0 -g --coverage "-I$FwMockInc" "-I$FirmwareDir" "$FwTestSrc" -o "$fwTestExe"
-            if ($LASTEXITCODE -ne 0) {
-                throw "Kompilierung der Firmware-Unit-Tests fehlgeschlagen."
-            }
-
+            if ($LASTEXITCODE -ne 0) { throw "Kompilierung der Firmware-Unit-Tests fehlgeschlagen." }
             & $fwTestExe
-            if ($LASTEXITCODE -ne 0) {
-                throw "Firmware-Unit-Tests sind fehlgeschlagen!"
-            }
+            if ($LASTEXITCODE -ne 0) { throw "Firmware-Unit-Tests fehlgeschlagen!" }
             $fwAssertionsPassed = $true
 
-            # Run gcov to collect coverage strictly for TamagotchiCoreEngine.h
             $gcdaItem = Get-ChildItem -Path $fwCovWorkDir -Filter "*.gcda" | Select-Object -First 1
-            if (-not $gcdaItem) {
-                throw "Keine .gcda Coverage-Daten von g++ erzeugt."
+            if ($gcdaItem) {
+                & $gcovExe -b -c "$($gcdaItem.FullName)" 2>&1 | Out-Null
             }
-            $gcovOut = & $gcovExe -b -c "$($gcdaItem.FullName)" 2>&1
-
             $gcovHeaderFile = Get-ChildItem -Path $fwCovWorkDir -Filter "*TamagotchiCoreEngine.h.gcov" | Select-Object -First 1
             if ($gcovHeaderFile) {
-                $lines = Get-Content $gcovHeaderFile.FullName
-                foreach ($ln in $lines) {
+                foreach ($ln in (Get-Content $gcovHeaderFile.FullName)) {
                     if ($ln -match '^\s*([^:]+):\s*(\d+):') {
                         $cnt = $matches[1].Trim()
                         if ($cnt -eq '-' -or $cnt -eq '') { continue }
                         $fwTotalLines++
-                        if ($cnt -ne '#####' -and $cnt -ne '=====') {
-                            $fwExecLines++
-                        }
+                        if ($cnt -ne '#####' -and $cnt -ne '=====') { $fwExecLines++ }
                     }
                 }
-                if ($fwTotalLines -gt 0) {
-                    $fwCovLinePct = [math]::Round(($fwExecLines / $fwTotalLines) * 100.0, 2)
-                }
+                if ($fwTotalLines -gt 0) { $fwCovLinePct = [math]::Round(($fwExecLines / $fwTotalLines) * 100.0, 2) }
             }
-
-            $fwReportText = @(
-                "PetDuet Firmware Unit-Test & Code-Coverage Report"
-                "================================================"
-                "Compiler       : $gppExe"
-                "Target Header  : esp32_firmware\TamagotchiCoreEngine.h"
-                "Tests Passed   : $fwAssertionsPassed"
-                "Line Coverage  : $fwCovLinePct% ($fwExecLines / $fwTotalLines ausfuehrbare Zeilen)"
-            ) -join [Environment]::NewLine
-
-            $fwTxtOut  = Join-Path $CoverageDir "firmware_coverage.txt"
-            $fwJsonOut = Join-Path $CoverageDir "firmware_coverage.json"
-            [System.IO.File]::WriteAllText($fwTxtOut, $fwReportText + [Environment]::NewLine, $Utf8NoBom)
 
             $fwJsonObj = [ordered]@{
                 component = "firmware"
@@ -272,97 +309,47 @@ try {
                 executed_lines = $fwExecLines
                 executable_lines = $fwTotalLines
             } | ConvertTo-Json -Depth 4
-            [System.IO.File]::WriteAllText($fwJsonOut, $fwJsonObj, $Utf8NoBom)
-
+            [System.IO.File]::WriteAllText((Join-Path $CoverageDir "firmware_coverage.json"), $fwJsonObj, $Utf8NoBom)
             Write-Host ("  Firmware Coverage (TamagotchiCoreEngine.h): {0}% ({1}/{2} Zeilen)" -f $fwCovLinePct, $fwExecLines, $fwTotalLines) -ForegroundColor Green
         } finally {
             if ($oldPath) { $env:PATH = $oldPath }
             Pop-Location
-            if (Test-Path $fwCovWorkDir) { Remove-Item $fwCovWorkDir -Recurse -Force -ErrorAction SilentlyContinue }
+            Remove-Item $fwCovWorkDir -Recurse -Force -ErrorAction SilentlyContinue
         }
-
-        # --- 3B: Server Unit Tests + PHP Coverage ---
-        Write-Host "`n--- [3B] Server Unit-Tests & Code-Coverage (PHP Server Endpoints) ---" -ForegroundColor Yellow
-
-        $laragonPhp = Get-ChildItem -Path "C:\laragon\bin\php" -Filter "php.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-        $phpExe = Find-Tool "php" @(
-            "C:\php\php.exe",
-            "C:\xampp\php\php.exe",
-            $laragonPhp,
-            "C:\tools\php\php.exe"
-        )
-        if (-not $phpExe) {
-            throw "PHP CLI ('php.exe') nicht gefunden. Bitte PHP installieren oder in PATH aufnehmen."
-        }
-
-        & $phpExe "$SrvTestRunner" "--cov-dir=$CoverageDir"
-        if ($LASTEXITCODE -ne 0) {
-            throw "Server-Unit-Tests sind fehlgeschlagen (Exit Code $LASTEXITCODE)!"
-        }
-
-        $srvJsonPath = Join-Path $CoverageDir "server_coverage.json"
-        $srvCov = Get-Content $srvJsonPath -Raw | ConvertFrom-Json
     } else {
-        # --- Without Coverage: Just run tests ---
-        Write-Host "  [Tests ohne Coverage-Messung]" -ForegroundColor Cyan
-
-        # Firmware tests without coverage flags
-        $gppExe = Find-Tool "g++" @(
-            "C:\msys64\ucrt64\bin\g++.exe",
-            "C:\msys64\mingw64\bin\g++.exe",
-            "C:\mingw64\bin\g++.exe",
-            "C:\WinLibs\mingw64\bin\g++.exe",
-            "C:\ProgramData\chocolatey\bin\g++.exe"
-        )
         if ($gppExe) {
             $fwTestWorkDir = Join-Path $env:TEMP ("petduet_fw_test_" + $PID)
-            if (Test-Path $fwTestWorkDir) { Remove-Item $fwTestWorkDir -Recurse -Force }
             New-Item -ItemType Directory -Path $fwTestWorkDir -Force | Out-Null
-
             $fwTestExe = Join-Path $fwTestWorkDir "test_firmware_engine.exe"
-            Push-Location $fwTestWorkDir
             try {
                 $oldPath = $env:PATH
-                $gppDir = Split-Path $gppExe -Parent
-                $env:PATH = "$gppDir;$oldPath"
-
-                & $gppExe -std=c++17 -O0 -g "-I$FwMockInc" "-I$FirmwareDir" "$FwTestSrc" -o "$fwTestExe"
-                if ($LASTEXITCODE -ne 0) {
-                    throw "Kompilierung der Firmware-Unit-Tests fehlgeschlagen."
-                }
-
+                $env:PATH = "$(Split-Path $gppExe -Parent);$oldPath"
+                & $gppExe -std=c++17 -O0 "-I$FwMockInc" "-I$FirmwareDir" "$FwTestSrc" -o "$fwTestExe"
+                if ($LASTEXITCODE -ne 0) { throw "Kompilierung der Firmware-Unit-Tests fehlgeschlagen." }
                 & $fwTestExe
-                if ($LASTEXITCODE -ne 0) {
-                    throw "Firmware-Unit-Tests sind fehlgeschlagen!"
-                }
-                $fwAssertionsPassed = $true
+                if ($LASTEXITCODE -ne 0) { throw "Firmware-Unit-Tests fehlgeschlagen!" }
                 Write-Host "  Firmware Tests: PASSED" -ForegroundColor Green
             } finally {
                 if ($oldPath) { $env:PATH = $oldPath }
-                Pop-Location
-                if (Test-Path $fwTestWorkDir) { Remove-Item $fwTestWorkDir -Recurse -Force -ErrorAction SilentlyContinue }
+                Remove-Item $fwTestWorkDir -Recurse -Force -ErrorAction SilentlyContinue
             }
         } else {
-            Write-Host "  Firmware Tests: ÜBERSPRUNGEN (kein g++ gefunden)" -ForegroundColor Yellow
+            Write-Host "  Firmware Tests: UEBERPRUNGEN (kein g++ gefunden)" -ForegroundColor Yellow
         }
+    }
 
-        # Server tests without coverage
-        $laragonPhp = Get-ChildItem -Path "C:\laragon\bin\php" -Filter "php.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-        $phpExe = Find-Tool "php" @(
-            "C:\php\php.exe",
-            "C:\xampp\php\php.exe",
-            $laragonPhp,
-            "C:\tools\php\php.exe"
-        )
-        if ($phpExe) {
-            & $phpExe "$SrvTestRunner"
-            if ($LASTEXITCODE -ne 0) {
-                throw "Server-Unit-Tests sind fehlgeschlagen (Exit Code $LASTEXITCODE)!"
-            }
-            Write-Host "  Server Tests: PASSED" -ForegroundColor Green
+    $laragonPhp = Get-ChildItem -Path "C:\laragon\bin\php" -Filter "php.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+    $phpExe = Find-Tool "php" @("C:\php\php.exe", "C:\xampp\php\php.exe", $laragonPhp, "C:\tools\php\php.exe")
+    if ($phpExe) {
+        if ($Coverage) {
+            & $phpExe "$SrvTestRunner" "--cov-dir=$CoverageDir"
         } else {
-            Write-Host "  Server Tests: ÜBERSPRUNGEN (kein PHP gefunden)" -ForegroundColor Yellow
+            & $phpExe "$SrvTestRunner"
         }
+        if ($LASTEXITCODE -ne 0) { throw "Server-Unit-Tests fehlgeschlagen (Exit Code $LASTEXITCODE)!" }
+        Write-Host "  Server Tests: PASSED" -ForegroundColor Green
+    } else {
+        Write-Host "  Server Tests: UEBERPRUNGEN (kein PHP gefunden)" -ForegroundColor Yellow
     }
 
     # ========================================================================
@@ -371,6 +358,7 @@ try {
     Write-Step "[4/6] Firmware & Versionsfile (OTA-faehig) zum Server kopieren"
 
     New-Item -ItemType Directory -Path $ServerFwDir -Force | Out-Null
+    Copy-Item -Path $FirmwareBin -Destination $ServerRootBin -Force
     Copy-Item -Path $FirmwareBin -Destination $ServerBin -Force
 
     $today = Get-Date -Format "yyyy-MM-dd"
@@ -397,11 +385,11 @@ try {
     $manifestJson = $manifest | ConvertTo-Json -Depth 6
     [System.IO.File]::WriteAllText($ManifestFile, $manifestJson + [Environment]::NewLine, $Utf8NoBom)
 
-    # Begleitendes Versionsfile direkt neben dem Binary im Server-Firmware-Ordner
     $verMeta = [ordered]@{
         firmware_version = $NewVersion
         rules_version    = $RulesVersion
         binary_filename  = "cyd_tamagotchi.bin"
+        framework        = "esp-idf-lvgl"
         file_size        = [int64]$binInfo.Length
         sha256           = $binHash
         release_date     = $today
@@ -409,15 +397,15 @@ try {
     } | ConvertTo-Json -Depth 4
     [System.IO.File]::WriteAllText($ServerVerJson, $verMeta + [Environment]::NewLine, $Utf8NoBom)
 
-    Write-Host "  OTA Binary  : $ServerBin" -ForegroundColor Green
+    Write-Host "  OTA Binary  : $ServerRootBin" -ForegroundColor Green
     Write-Host "  OTA Manifest: $ManifestFile" -ForegroundColor Green
     Write-Host "  Version-File: $ServerVerJson" -ForegroundColor Green
 
-    # Optional: Auf externes Server-Zielverzeichnis (z.B. XAMPP/htdocs oder Netzlaufwerk) deployen
     if (-not [string]::IsNullOrWhiteSpace($ServerPath)) {
         Write-Host "  Kopiere OTA-Serverpaket nach: $ServerPath" -ForegroundColor Cyan
         $extFwDir = Join-Path $ServerPath "firmware"
         New-Item -ItemType Directory -Path $extFwDir -Force | Out-Null
+        Copy-Item -Path $ServerRootBin -Destination (Join-Path $ServerPath "cyd_tamagotchi.bin") -Force
         Copy-Item -Path $ServerBin     -Destination (Join-Path $extFwDir "cyd_tamagotchi.bin") -Force
         Copy-Item -Path $ServerVerJson -Destination (Join-Path $extFwDir "version.json")       -Force
         Copy-Item -Path $ManifestFile  -Destination (Join-Path $ServerPath "ota_manifest.json") -Force
@@ -433,7 +421,6 @@ try {
         Write-Host "  Externes Server-Deployment abgeschlossen." -ForegroundColor Green
     }
 
-    # Build & Tests waren erfolgreich -> kein Rollback mehr noetig
     $VersionChanged = $false
 
     # ========================================================================
@@ -458,17 +445,27 @@ try {
     # ========================================================================
     # SCHRITT 6: FIRMWARE FLASHEN
     # ========================================================================
-    Write-Step "[6/6] Firmware flashen"
+    Write-Step "[6/6] Firmware flashen ($buildTool)"
 
     if ($doFlash) {
         Push-Location $FirmwareDir
         try {
-            $uploadArgs = @("run", "-e", "esp32-2432s028r", "-t", "upload")
-            if (-not [string]::IsNullOrWhiteSpace($ComPort)) {
-                $uploadArgs += @("--upload-port", $ComPort)
+            if ($buildTool -eq "idf.py") {
+                $idfArgs = @()
+                if (-not [string]::IsNullOrWhiteSpace($ComPort)) {
+                    $idfArgs += @("-p", $ComPort)
+                }
+                $idfArgs += @("flash")
+                Write-Host "  Starte Upload: idf.py $($idfArgs -join ' ')" -ForegroundColor Cyan
+                & idf.py @idfArgs
+            } else {
+                $uploadArgs = @("run", "-e", "esp32-2432s028r", "-t", "upload")
+                if (-not [string]::IsNullOrWhiteSpace($ComPort)) {
+                    $uploadArgs += @("--upload-port", $ComPort)
+                }
+                Write-Host "  Starte Upload: $pioExe $($uploadArgs -join ' ')" -ForegroundColor Cyan
+                & $pioExe @uploadArgs
             }
-            Write-Host "  Starte Upload: $pioExe $($uploadArgs -join ' ')" -ForegroundColor Cyan
-            & $pioExe @uploadArgs
             if ($LASTEXITCODE -ne 0) {
                 throw "Flashen fehlgeschlagen (Exit Code $LASTEXITCODE)."
             }
@@ -480,7 +477,7 @@ try {
         Write-Host "  USB-Flash uebersprungen. Die OTA-Dateien stehen auf dem Server bereit." -ForegroundColor Yellow
     }
 
-    Write-Host "`nRelease-Pipeline v$NewVersion erfolgreich abgeschlossen." -ForegroundColor Green
+    Write-Host "`nRelease-Pipeline v$NewVersion abgeschlossen." -ForegroundColor Green
     exit 0
 } catch {
     Write-Host "`n[FEHLER] $($_.Exception.Message)" -ForegroundColor Red
