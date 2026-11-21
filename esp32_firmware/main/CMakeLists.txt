@@ -21,9 +21,13 @@ idf_component_register(
         esp_timer
         nvs_flash
         spiffs
-        driver
+        esp_driver_gpio
+        esp_driver_spi
+        esp_driver_ledc
+        esp_driver_gptimer
+        esp_adc
         spi_flash
-        json
+        cjson
         freertos
         esp_event
         mbedtls
@@ -34,4 +38,6 @@ idf_component_register(
         esp_system
         bootloader_support
         app_update
+        esp_partition
+        vfs
 )

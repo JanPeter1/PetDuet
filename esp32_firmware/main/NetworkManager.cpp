@@ -67,6 +67,12 @@ static esp_err_t http_event_handler(esp_http_client_event_t* evt) {
         case HTTP_EVENT_ON_HEADER:
             ESP_LOGD(TAG, "HTTP_EVENT_ON_HEADER, key=%s, value=%s", evt->header_key, evt->header_value);
             break;
+        case HTTP_EVENT_ON_HEADERS_COMPLETE:
+            ESP_LOGD(TAG, "HTTP_EVENT_ON_HEADERS_COMPLETE");
+            break;
+        case HTTP_EVENT_ON_STATUS_CODE:
+            ESP_LOGD(TAG, "HTTP_EVENT_ON_STATUS_CODE");
+            break;
         case HTTP_EVENT_ON_DATA:
             ESP_LOGD(TAG, "HTTP_EVENT_ON_DATA, len=%d", evt->data_len);
             break;
@@ -78,6 +84,8 @@ static esp_err_t http_event_handler(esp_http_client_event_t* evt) {
             break;
         case HTTP_EVENT_REDIRECT:
             ESP_LOGD(TAG, "HTTP_EVENT_REDIRECT");
+            break;
+        default:
             break;
     }
     return ESP_OK;
@@ -121,7 +129,8 @@ esp_err_t net_init(NetworkManager* net, const char* ssid, const char* password,
                                                         net,
                                                         &instance_got_ip));
 
-    wifi_config_t wifi_config = {};
+    wifi_config_t wifi_config;
+    memset(&wifi_config, 0, sizeof(wifi_config));
     strncpy((char*)wifi_config.sta.ssid, ssid, sizeof(wifi_config.sta.ssid)-1);
     strncpy((char*)wifi_config.sta.password, password, sizeof(wifi_config.sta.password)-1);
     wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
@@ -133,7 +142,8 @@ esp_err_t net_init(NetworkManager* net, const char* ssid, const char* password,
     ESP_ERROR_CHECK(esp_wifi_start());
 
     // Initialize HTTP client
-    esp_http_client_config_t http_cfg = {0};
+    esp_http_client_config_t http_cfg;
+    memset(&http_cfg, 0, sizeof(http_cfg));
     http_cfg.url = server_url;
     http_cfg.event_handler = http_event_handler;
     http_cfg.timeout_ms = 10000;
@@ -165,6 +175,11 @@ void net_deinit(NetworkManager* net) {
 
 esp_err_t net_wifi_connect(NetworkManager* net) {
     if (!net) return ESP_ERR_INVALID_ARG;
+    if (strlen(net->wifi_ssid) == 0 ||
+        strcmp(net->wifi_ssid, "YOUR_WIFI_SSID") == 0) {
+        net->state = NET_STATE_DISCONNECTED;
+        return ESP_ERR_INVALID_STATE;
+    }
 
     net->state = NET_STATE_CONNECTING;
     esp_err_t ret = esp_wifi_connect();

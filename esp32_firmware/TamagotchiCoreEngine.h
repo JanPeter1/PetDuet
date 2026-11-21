@@ -2359,7 +2359,7 @@ public:
     if (!outBuf || maxLen < 64) return 0;
     size_t pos = 0;
     outBuf[0] = '\0';
-    char tmp[192];
+    char tmp[384];
 
     appendJsonRaw(outBuf, maxLen, pos, "{\"deviceId\":");
     appendJsonEscapedStr(outBuf, maxLen, pos, deviceId ? deviceId : "CYD-DEV1");

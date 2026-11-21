@@ -18,11 +18,29 @@
 #include "driver/ledc.h"
 #include "driver/spi_master.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "PetGraphics.h"
 #include "CYD_Pins.h"
+#include "cyd_font_5x7.h"
 
 static const char* TAG = "PetGraphics";
+static const size_t LCD_COLOR_CHUNK_ROWS = 8;
+static uint16_t s_rgb565_swap_buf[TFT_WIDTH * LCD_COLOR_CHUNK_ROWS];
+static SemaphoreHandle_t s_color_transfer_sem = NULL;
+static uint16_t s_text_glyph_buf[6 * 3 * 7 * 3];
+
+static bool IRAM_ATTR lcd_color_transfer_done_cb(esp_lcd_panel_io_handle_t /*panel_io*/,
+                                                  esp_lcd_panel_io_event_data_t* /*edata*/,
+                                                  void* user_ctx) {
+    BaseType_t high_task_woken = pdFALSE;
+    xSemaphoreGiveFromISR((SemaphoreHandle_t)user_ctx, &high_task_woken);
+    return high_task_woken == pdTRUE;
+}
+
+static void lcd_wait_for_color_transfer(void) {
+    xSemaphoreTake(s_color_transfer_sem, portMAX_DELAY);
+}
 
 // ============================================================================
 // Biome Themes
@@ -306,35 +324,76 @@ static esp_lcd_panel_io_handle_t s_io = NULL;
 #define ILI9341_MADCTL_MV       0x20
 #define ILI9341_MADCTL_BGR      0x08
 
-#define ILI9341_MADCTL_DEFAULT  (ILI9341_MADCTL_MX | ILI9341_MADCTL_BGR)
+#define ILI9341_MADCTL_DEFAULT  (ILI9341_MADCTL_MY | ILI9341_MADCTL_BGR)
 
 // ============================================================================
 // Low-level Drawing Functions (using IO handle directly)
 // ============================================================================
 static void lcd_draw_bitmap(int16_t x, int16_t y, int16_t w, int16_t h, const uint16_t* data) {
-    if (!s_io || !data) return;
-    // Set column address
-    ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(s_io, ILI9341_CASET, (uint8_t[]){
-        (uint8_t)((x >> 8) & 0xFF), (uint8_t)(x & 0xFF),
-        (uint8_t)(((x + w - 1) >> 8) & 0xFF), (uint8_t)((x + w - 1) & 0xFF)
-    }, 4));
-    // Set row address
-    ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(s_io, ILI9341_RASET, (uint8_t[]){
-        (uint8_t)((y >> 8) & 0xFF), (uint8_t)(y & 0xFF),
-        (uint8_t)(((y + h - 1) >> 8) & 0xFF), (uint8_t)((y + h - 1) & 0xFF)
-    }, 4));
-    // Write bitmap
-    size_t len = w * h * 2;
-    ESP_ERROR_CHECK(esp_lcd_panel_io_tx_color(s_io, ILI9341_RAMWR, data, len));
+    if (!s_io || !data || w <= 0 || h <= 0) return;
+    if (w > TFT_WIDTH) {
+        ESP_LOGE(TAG, "RGB565 bitmap width %d exceeds display width", w);
+        return;
+    }
+
+    for (int16_t row = 0; row < h; row += LCD_COLOR_CHUNK_ROWS) {
+        int16_t chunk_rows = h - row;
+        if (chunk_rows > LCD_COLOR_CHUNK_ROWS) chunk_rows = LCD_COLOR_CHUNK_ROWS;
+        size_t chunk_pixels = (size_t)w * chunk_rows;
+        size_t source_offset = (size_t)row * w;
+        for (size_t i = 0; i < chunk_pixels; i++) {
+            uint16_t color = data[source_offset + i];
+            s_rgb565_swap_buf[i] = (uint16_t)((color >> 8) | (color << 8));
+        }
+
+        int16_t chunk_y = y + row;
+        int16_t chunk_y_end = chunk_y + chunk_rows - 1;
+        ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(s_io, ILI9341_CASET, (uint8_t[]){
+            (uint8_t)((x >> 8) & 0xFF), (uint8_t)(x & 0xFF),
+            (uint8_t)(((x + w - 1) >> 8) & 0xFF), (uint8_t)((x + w - 1) & 0xFF)
+        }, 4));
+        ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(s_io, ILI9341_RASET, (uint8_t[]){
+            (uint8_t)((chunk_y >> 8) & 0xFF), (uint8_t)(chunk_y & 0xFF),
+            (uint8_t)((chunk_y_end >> 8) & 0xFF), (uint8_t)(chunk_y_end & 0xFF)
+        }, 4));
+        ESP_ERROR_CHECK(esp_lcd_panel_io_tx_color(s_io, ILI9341_RAMWR,
+                                                   s_rgb565_swap_buf,
+                                                   chunk_pixels * sizeof(uint16_t)));
+        lcd_wait_for_color_transfer();
+    }
 }
 
 static void lcd_fill_rect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color) {
-    if (!s_io) return;
-    uint16_t* buf = (uint16_t*)malloc(w * h * 2);
-    if (!buf) return;
-    for (int i = 0; i < w * h; i++) buf[i] = color;
-    lcd_draw_bitmap(x, y, w, h, buf);
-    free(buf);
+    if (!s_io || w <= 0 || h <= 0) return;
+    if (w > TFT_WIDTH) {
+        ESP_LOGE(TAG, "RGB565 fill width %d exceeds display width", w);
+        return;
+    }
+
+    uint16_t swapped_color = (uint16_t)((color >> 8) | (color << 8));
+    for (int16_t row = 0; row < h; row += LCD_COLOR_CHUNK_ROWS) {
+        int16_t chunk_rows = h - row;
+        if (chunk_rows > LCD_COLOR_CHUNK_ROWS) chunk_rows = LCD_COLOR_CHUNK_ROWS;
+        size_t chunk_pixels = (size_t)w * chunk_rows;
+        for (size_t i = 0; i < chunk_pixels; i++) {
+            s_rgb565_swap_buf[i] = swapped_color;
+        }
+
+        int16_t chunk_y = y + row;
+        int16_t chunk_y_end = chunk_y + chunk_rows - 1;
+        ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(s_io, ILI9341_CASET, (uint8_t[]){
+            (uint8_t)((x >> 8) & 0xFF), (uint8_t)(x & 0xFF),
+            (uint8_t)(((x + w - 1) >> 8) & 0xFF), (uint8_t)((x + w - 1) & 0xFF)
+        }, 4));
+        ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(s_io, ILI9341_RASET, (uint8_t[]){
+            (uint8_t)((chunk_y >> 8) & 0xFF), (uint8_t)(chunk_y & 0xFF),
+            (uint8_t)((chunk_y_end >> 8) & 0xFF), (uint8_t)(chunk_y_end & 0xFF)
+        }, 4));
+        ESP_ERROR_CHECK(esp_lcd_panel_io_tx_color(s_io, ILI9341_RAMWR,
+                                                   s_rgb565_swap_buf,
+                                                   chunk_pixels * sizeof(uint16_t)));
+        lcd_wait_for_color_transfer();
+    }
 }
 
 // ============================================================================
@@ -342,22 +401,24 @@ static void lcd_fill_rect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t c
 // ============================================================================
 esp_err_t display_init(esp_lcd_panel_handle_t* panel_handle, esp_lcd_panel_io_handle_t* io_handle) {
     ESP_LOGI(TAG, "Initializing ILI9341 display...");
+    s_color_transfer_sem = xSemaphoreCreateBinary();
+    if (!s_color_transfer_sem) return ESP_ERR_NO_MEM;
 
     // Panel IO configuration - using correct field order for ESP-IDF v5.4
-    esp_lcd_panel_io_spi_config_t io_config = {
-        .cs_gpio_num = TFT_CS,
-        .dc_gpio_num = TFT_DC,
-        .spi_mode = 0,
-        .pclk_hz = TFT_SPI_FREQ_HZ,
-        .trans_queue_depth = 10,
-        .on_color_trans_done = NULL,
-        .user_ctx = NULL,
-        .lcd_cmd_bits = 8,
-        .lcd_param_bits = 8,
-        .cs_ena_pretrans = 0,
-        .cs_ena_posttrans = 0,
-        .flags = {0},
-    };
+    esp_lcd_panel_io_spi_config_t io_config;
+    memset(&io_config, 0, sizeof(io_config));
+    io_config.cs_gpio_num = (gpio_num_t)TFT_CS;
+    io_config.dc_gpio_num = (gpio_num_t)TFT_DC;
+    io_config.spi_mode = 0;
+    io_config.pclk_hz = TFT_SPI_FREQ_HZ;
+    io_config.trans_queue_depth = 10;
+    io_config.on_color_trans_done = lcd_color_transfer_done_cb;
+    io_config.user_ctx = s_color_transfer_sem;
+    io_config.lcd_cmd_bits = 8;
+    io_config.lcd_param_bits = 8;
+    io_config.cs_ena_pretrans = 0;
+    io_config.cs_ena_posttrans = 0;
+    // flags sub-struct fields default to 0/false from memset
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)TFT_SPI_HOST, &io_config, io_handle));
 
     // Use the IO handle as panel handle (we'll implement ILI9341 commands directly)
@@ -388,8 +449,7 @@ esp_err_t display_init(esp_lcd_panel_handle_t* panel_handle, esp_lcd_panel_io_ha
     // Display on
     ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(*io_handle, ILI9341_DISPON, NULL, 0));
 
-    // Invert colors (for better visibility)
-    ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(*io_handle, ILI9341_INVON, NULL, 0));
+    ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(*io_handle, ILI9341_INVOFF, NULL, 0));
 
     // Store handles globally
     s_panel = *panel_handle;
@@ -410,40 +470,18 @@ void display_deinit(esp_lcd_panel_handle_t panel_handle, esp_lcd_panel_io_handle
         esp_lcd_panel_io_tx_param(io_handle, ILI9341_SLPIN, NULL, 0);
         esp_lcd_panel_io_del(io_handle);
     }
+    if (s_color_transfer_sem) {
+        vSemaphoreDelete(s_color_transfer_sem);
+        s_color_transfer_sem = NULL;
+    }
     // panel_handle is the same as io_handle in our implementation
     s_panel = NULL;
     s_io = NULL;
 }
 
 void display_set_backlight(uint8_t brightness) {
-    // Configure LEDC if not already done
-    static bool ledc_initialized = false;
-    if (!ledc_initialized) {
-        ledc_timer_config_t timer_cfg = {
-            .speed_mode = LEDC_LOW_SPEED_MODE,
-            .duty_resolution = LEDC_TIMER_8_BIT,
-            .timer_num = LEDC_TIMER_0,
-            .freq_hz = 5000,
-            .clk_cfg = LEDC_AUTO_CLK,
-            .deconfigure = false,
-        };
-        ledc_timer_config(&timer_cfg);
-        ledc_channel_config_t ch_cfg = {
-            .gpio_num = TFT_BL,
-            .speed_mode = LEDC_LOW_SPEED_MODE,
-            .channel = LEDC_CHANNEL_0,
-            .intr_type = LEDC_INTR_DISABLE,
-            .timer_sel = LEDC_TIMER_0,
-            .duty = 0,
-            .hpoint = 0,
-            .sleep_mode = LEDC_SLEEP_MODE_NO_ALIVE_NO_PD,
-            .flags = 0,
-        };
-        ledc_channel_config(&ch_cfg);
-        ledc_initialized = true;
-    }
-    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, brightness);
-    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+    ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, brightness));
+    ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1));
 }
 
 // ============================================================================
@@ -675,17 +713,31 @@ void draw_button(esp_lcd_panel_handle_t panel, const UIButton* btn) {
 
 void draw_text(esp_lcd_panel_handle_t panel, int16_t x, int16_t y,
                const char* text, uint16_t color, uint16_t bg_color, uint8_t size) {
-    // Simple 5x7 font rendering - in production use a proper font library
-    // This is a placeholder that draws character blocks
-    int len = strlen(text);
-    for (int i = 0; i < len; i++) {
-        char c = text[i];
-        if (c >= 32 && c < 127) {
-            // Draw a simple block for each character
-            fill_rect(panel, x + i * 6 * size, y, 5 * size, 7 * size, bg_color);
-            // In real implementation, render actual font glyph here
-            draw_rect(panel, x + i * 6 * size, y, 5 * size, 7 * size, color);
+    if (!text || size == 0) return;
+    if (size > 3) {
+        ESP_LOGE(TAG, "Unsupported 5x7 font scale: %u", size);
+        return;
+    }
+
+    int glyph_w = 6 * size;
+    int glyph_h = 7 * size;
+    for (size_t i = 0; text[i] != '\0'; i++) {
+        unsigned char c = (unsigned char)text[i];
+        if (c < 0x20 || c > 0x7E) c = '?';
+        const uint8_t* glyph = CYD_FONT5X7[c - 0x20];
+        for (int row = 0; row < 7; row++) {
+            for (int sy = 0; sy < size; sy++) {
+                for (int col = 0; col < 6; col++) {
+                    uint16_t pixel = bg_color;
+                    if (col < 5 && (glyph[col] & (1U << row))) pixel = color;
+                    for (int sx = 0; sx < size; sx++) {
+                        size_t index = (size_t)(row * size + sy) * glyph_w + col * size + sx;
+                        s_text_glyph_buf[index] = pixel;
+                    }
+                }
+            }
         }
+        lcd_draw_bitmap(x + i * glyph_w, y, glyph_w, glyph_h, s_text_glyph_buf);
     }
 }
 

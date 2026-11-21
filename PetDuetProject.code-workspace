@@ -1,0 +1,19 @@
+{
+	"folders": [
+		{
+			"name": "Gesamtprojekt (Root & PHP)",
+			"path": "."
+		},
+		{
+			"name": "ESP32 Firmware",
+			"path": "./esp32_firmware"
+		},
+		{
+			"name": "PHP Server",
+			"path": "./php_server"
+		}
+	],
+	"settings": {
+		"idf.saveScope": 3
+	}
+}

@@ -15,6 +15,8 @@
 #include "driver/gpio.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "TouchManager.h"
 #include "CYD_Pins.h"
 #include "PetGraphics.h"
@@ -74,11 +76,11 @@ esp_err_t touch_init(TouchManager* tm) {
     gpio_config_t irq_cfg = {
         .pin_bit_mask = (1ULL << TOUCH_IRQ),
         .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_NEGEDGE,
+        .intr_type = GPIO_INTR_DISABLE,
     };
-    gpio_config(&irq_cfg);
+    ESP_ERROR_CHECK(gpio_config(&irq_cfg));
 
     ESP_LOGI(TAG, "Touch manager initialized");
     return ESP_OK;
@@ -94,16 +96,20 @@ void touch_deinit(TouchManager* tm) {
 static esp_err_t touch_read_register(TouchManager* tm, uint8_t cmd, uint16_t* value) {
     if (!tm || !tm->spi_dev || !value) return ESP_ERR_INVALID_ARG;
 
-    spi_transaction_t trans = {
-        .flags = SPI_TRANS_USE_TXDATA | SPI_TRANS_USE_RXDATA,
-        .cmd = 0,
-        .addr = 0,
-        .length = 8,
-        .rxlength = 16,
-        .user = NULL,
-        .tx_data = {cmd, 0, 0, 0},
-        .rx_buffer = NULL,
-    };
+    spi_transaction_t trans;
+    memset(&trans, 0, sizeof(trans));
+    trans.flags = SPI_TRANS_USE_TXDATA | SPI_TRANS_USE_RXDATA;
+    trans.cmd = 0;
+    trans.addr = 0;
+    trans.length = 8;
+    trans.rxlength = 16;
+    trans.user = NULL;
+    trans.tx_data[0] = cmd;
+    trans.tx_data[1] = 0;
+    trans.tx_data[2] = 0;
+    trans.tx_data[3] = 0;
+    trans.rx_buffer = NULL;
+    trans.override_freq_hz = 0;
 
     esp_err_t ret = spi_device_polling_transmit(tm->spi_dev, &trans);
     if (ret == ESP_OK) {

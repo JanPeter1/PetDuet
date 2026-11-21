@@ -36,7 +36,7 @@
 // Point this to your PHP server deployment or your local IP:
 // e.g., "http://192.168.1.100/cyd-tamagotchi" or "https://yourdomain.com/cyd"
 // ----------------------------------------------------------------------------
-#define PHP_SERVER_BASE_URL "http://192.168.1.100/cyd-tamagotchi"
+#define PHP_SERVER_BASE_URL "https://www.familie-riegel.de/PetDuet/"
 
 // Versioning and OTA Updates (A/B Dual Partition Switching)
 #define FIRMWARE_VERSION        "2.1.11"

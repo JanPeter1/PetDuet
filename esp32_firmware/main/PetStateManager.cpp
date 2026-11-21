@@ -183,10 +183,10 @@ esp_err_t pet_mgr_request_partner_sync(PetStateManager* pm) {
     if (!pm) return ESP_ERR_INVALID_ARG;
 
     // Send sync request via WebSocket
-    WSMessage msg = {
-        .type = WS_MSG_TYPE_SYNC_REQUEST,
-        .timestamp = (uint32_t)(esp_timer_get_time() / 1000),
-    };
+    WSMessage msg;
+    memset(&msg, 0, sizeof(msg));
+    msg.type = WS_MSG_TYPE_SYNC_REQUEST;
+    msg.timestamp = (uint32_t)(esp_timer_get_time() / 1000);
     strncpy(msg.from_device, pm->pet.device_id, MAX_STRING_LEN-1);
     strncpy(msg.to_device, pm->pet.partner_device_id, MAX_STRING_LEN-1);
 

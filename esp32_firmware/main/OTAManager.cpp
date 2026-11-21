@@ -13,7 +13,6 @@
 #include "esp_ota_ops.h"
 #include "esp_https_ota.h"
 #include "esp_partition.h"
-#include "mbedtls/sha256.h"
 #include "esp_crc.h"
 #include "esp_timer.h"
 #include "OTAManager.h"
@@ -111,56 +110,54 @@ esp_err_t ota_download_firmware(OTAManager* om) {
 
     if (om->on_progress) om->on_progress(10, "Downloading firmware...", om->user_data);
 
-    esp_http_client_config_t config = {
-        .url = om->manifest.firmware_url,
-        .host = NULL,
-        .port = 0,
-        .username = NULL,
-        .password = NULL,
-        .auth_type = HTTP_AUTH_TYPE_NONE,
-        .path = NULL,
-        .query = NULL,
-        .cert_pem = NULL,
-        .cert_len = 0,
-        .client_cert_pem = NULL,
-        .client_cert_len = 0,
-        .client_key_pem = NULL,
-        .client_key_len = 0,
-        .client_key_password = NULL,
-        .client_key_password_len = 0,
-        .tls_version = ESP_HTTP_CLIENT_TLS_VER_ANY,
-        .user_agent = NULL,
-        .method = HTTP_METHOD_GET,
-        .timeout_ms = 30000,
-        .disable_auto_redirect = false,
-        .max_redirection_count = 0,
-        .max_authorization_retries = 0,
-        .event_handler = NULL,
-        .transport_type = HTTP_TRANSPORT_UNKNOWN,
-        .buffer_size = 8192,
-        .buffer_size_tx = 0,
-        .user_data = NULL,
-        .is_async = false,
-        .use_global_ca_store = false,
-        .skip_cert_common_name_check = false,
-        .common_name = NULL,
-        .crt_bundle_attach = NULL,
-        .keep_alive_enable = false,
-        .keep_alive_idle = 0,
-        .keep_alive_interval = 0,
-        .keep_alive_count = 0,
-        .if_name = NULL,
-        .addr_type = HTTP_ADDR_TYPE_UNSPEC,
-    };
+    esp_http_client_config_t config;
+    memset(&config, 0, sizeof(config));
+    config.url = om->manifest.firmware_url;
+    config.host = NULL;
+    config.port = 0;
+    config.username = NULL;
+    config.password = NULL;
+    config.auth_type = HTTP_AUTH_TYPE_NONE;
+    config.path = NULL;
+    config.query = NULL;
+    config.cert_pem = NULL;
+    config.cert_len = 0;
+    config.client_cert_pem = NULL;
+    config.client_cert_len = 0;
+    config.client_key_pem = NULL;
+    config.client_key_len = 0;
+    config.client_key_password = NULL;
+    config.client_key_password_len = 0;
+    config.tls_version = ESP_HTTP_CLIENT_TLS_VER_ANY;
+    config.user_agent = NULL;
+    config.method = HTTP_METHOD_GET;
+    config.timeout_ms = 30000;
+    config.disable_auto_redirect = false;
+    config.max_redirection_count = 0;
+    config.max_authorization_retries = 0;
+    config.event_handler = NULL;
+    config.transport_type = HTTP_TRANSPORT_UNKNOWN;
+    config.buffer_size = 8192;
+    config.buffer_size_tx = 0;
+    config.user_data = NULL;
+    config.is_async = false;
+    config.use_global_ca_store = false;
+    config.skip_cert_common_name_check = false;
+    config.common_name = NULL;
+    config.crt_bundle_attach = NULL;
+    config.keep_alive_enable = false;
+    config.keep_alive_idle = 0;
+    config.keep_alive_interval = 0;
+    config.keep_alive_count = 0;
+    config.if_name = NULL;
+    config.addr_type = HTTP_ADDR_TYPE_UNSPEC;
 
-    esp_https_ota_config_t ota_config = {
-        .http_config = &config,
-        .http_client_init_cb = NULL,
-        .bulk_flash_erase = false,
-        .partial_http_download = false,
-        .max_http_request_size = 0,
-        .buffer_caps = MALLOC_CAP_DEFAULT,
-    };
+    esp_https_ota_config_t ota_config;
+    memset(&ota_config, 0, sizeof(ota_config));
+    ota_config.http_config = &config;
+    ota_config.http_client_init_cb = NULL;
+    ota_config.bulk_flash_erase = false;
+    ota_config.buffer_caps = MALLOC_CAP_DEFAULT;
 
     esp_err_t err = esp_https_ota_begin(&ota_config, &om->ota_handle);
     if (err != ESP_OK) {
@@ -281,47 +278,47 @@ esp_err_t ota_download_rules(OTAManager* om) {
     if (om->on_progress) om->on_progress(20, "Downloading rules...", om->user_data);
 
     // Download rules.json via HTTP
-    esp_http_client_config_t config = {
-        .url = om->manifest.rules_url,
-        .host = NULL,
-        .port = 0,
-        .username = NULL,
-        .password = NULL,
-        .auth_type = HTTP_AUTH_TYPE_NONE,
-        .path = NULL,
-        .query = NULL,
-        .cert_pem = NULL,
-        .cert_len = 0,
-        .client_cert_pem = NULL,
-        .client_cert_len = 0,
-        .client_key_pem = NULL,
-        .client_key_len = 0,
-        .client_key_password = NULL,
-        .client_key_password_len = 0,
-        .tls_version = ESP_HTTP_CLIENT_TLS_VER_ANY,
-        .user_agent = NULL,
-        .method = HTTP_METHOD_GET,
-        .timeout_ms = 15000,
-        .disable_auto_redirect = false,
-        .max_redirection_count = 0,
-        .max_authorization_retries = 0,
-        .event_handler = NULL,
-        .transport_type = HTTP_TRANSPORT_UNKNOWN,
-        .buffer_size = 512,
-        .buffer_size_tx = 0,
-        .user_data = NULL,
-        .is_async = false,
-        .use_global_ca_store = false,
-        .skip_cert_common_name_check = false,
-        .common_name = NULL,
-        .crt_bundle_attach = NULL,
-        .keep_alive_enable = false,
-        .keep_alive_idle = 0,
-        .keep_alive_interval = 0,
-        .keep_alive_count = 0,
-        .if_name = NULL,
-        .addr_type = HTTP_ADDR_TYPE_UNSPEC,
-    };
+    esp_http_client_config_t config;
+    memset(&config, 0, sizeof(config));
+    config.url = om->manifest.rules_url;
+    config.host = NULL;
+    config.port = 0;
+    config.username = NULL;
+    config.password = NULL;
+    config.auth_type = HTTP_AUTH_TYPE_NONE;
+    config.path = NULL;
+    config.query = NULL;
+    config.cert_pem = NULL;
+    config.cert_len = 0;
+    config.client_cert_pem = NULL;
+    config.client_cert_len = 0;
+    config.client_key_pem = NULL;
+    config.client_key_len = 0;
+    config.client_key_password = NULL;
+    config.client_key_password_len = 0;
+    config.tls_version = ESP_HTTP_CLIENT_TLS_VER_ANY;
+    config.user_agent = NULL;
+    config.method = HTTP_METHOD_GET;
+    config.timeout_ms = 15000;
+    config.disable_auto_redirect = false;
+    config.max_redirection_count = 0;
+    config.max_authorization_retries = 0;
+    config.event_handler = NULL;
+    config.transport_type = HTTP_TRANSPORT_UNKNOWN;
+    config.buffer_size = 512;
+    config.buffer_size_tx = 0;
+    config.user_data = NULL;
+    config.is_async = false;
+    config.use_global_ca_store = false;
+    config.skip_cert_common_name_check = false;
+    config.common_name = NULL;
+    config.crt_bundle_attach = NULL;
+    config.keep_alive_enable = false;
+    config.keep_alive_idle = 0;
+    config.keep_alive_interval = 0;
+    config.keep_alive_count = 0;
+    config.if_name = NULL;
+    config.addr_type = HTTP_ADDR_TYPE_UNSPEC;
 
     esp_http_client_handle_t client = esp_http_client_init(&config);
     if (!client) return ESP_ERR_NO_MEM;

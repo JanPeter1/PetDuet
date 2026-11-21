@@ -14,7 +14,8 @@
 #include "esp_sntp.h"
 #include "esp_system.h"
 #include "esp_wifi.h"
-#include "mbedtls/sha256.h"
+#include "sha/sha_core.h"
+#include "psa/crypto.h"
 #ifdef CONFIG_MBEDTLS_CERTIFICATE_BUNDLE
 #include "esp_crt_bundle.h"
 #endif
@@ -78,6 +79,66 @@ static bool sha256_hex_matches(const char* actualHex, const char* expectedHex) {
     }
   }
   return true;
+}
+
+// Streaming SHA256 using mbedtls PSA crypto API
+typedef struct {
+    psa_hash_operation_t operation;
+    bool initialized;
+} cyd_sha256_ctx_t;
+
+static void cyd_sha256_init(cyd_sha256_ctx_t* ctx) {
+    ctx->operation = psa_hash_operation_init();
+    ctx->initialized = false;
+}
+
+static void cyd_sha256_update(cyd_sha256_ctx_t* ctx, const uint8_t* data, size_t len) {
+    if (!ctx->initialized) {
+        psa_status_t status = psa_hash_setup(&ctx->operation, PSA_ALG_SHA_256);
+        if (status != PSA_SUCCESS) {
+            ESP_LOGE(TAG, "psa_hash_setup failed: %d", status);
+            return;
+        }
+        ctx->initialized = true;
+    }
+    psa_status_t status = psa_hash_update(&ctx->operation, data, len);
+    if (status != PSA_SUCCESS) {
+        ESP_LOGE(TAG, "psa_hash_update failed: %d", status);
+    }
+}
+
+static void cyd_sha256_finish(cyd_sha256_ctx_t* ctx, uint8_t output[32]) {
+    if (ctx->initialized) {
+        size_t output_len = 0;
+        psa_status_t status = psa_hash_finish(&ctx->operation, output, 32, &output_len);
+        if (status != PSA_SUCCESS) {
+            ESP_LOGE(TAG, "psa_hash_finish failed: %d", status);
+        }
+        ctx->initialized = false;
+    } else {
+        // No data was added, compute hash of empty string
+        size_t output_len = 0;
+        psa_status_t status = psa_hash_compute(PSA_ALG_SHA_256, NULL, 0, output, 32, &output_len);
+        if (status != PSA_SUCCESS) {
+            ESP_LOGE(TAG, "psa_hash_compute failed: %d", status);
+        }
+    }
+}
+
+static void cyd_sha256_free(cyd_sha256_ctx_t* ctx) {
+    if (ctx->initialized) {
+        psa_hash_abort(&ctx->operation);
+        ctx->initialized = false;
+    }
+}
+
+// One-shot SHA256 using mbedtls PSA crypto API
+static void cyd_sha256(const uint8_t* input, size_t ilen, uint8_t output[32]) {
+    size_t output_len = 0;
+    psa_status_t status = psa_hash_compute(PSA_ALG_SHA_256, input, ilen, output, 32, &output_len);
+    if (status != PSA_SUCCESS) {
+        ESP_LOGE(TAG, "psa_hash_compute failed: %d", status);
+    }
 }
 
 static void wifi_event_handler(void* /*arg*/, esp_event_base_t event_base, int32_t event_id, void* /*event_data*/) {
@@ -1047,9 +1108,8 @@ static bool perform_firmware_ota(
     return false;
   }
 
-  mbedtls_sha256_context shaCtx;
-  mbedtls_sha256_init(&shaCtx);
-  mbedtls_sha256_starts(&shaCtx, 0);
+  cyd_sha256_ctx_t shaCtx;
+  cyd_sha256_init(&shaCtx);
 
   int written = 0;
   int lastPct = -1;
@@ -1061,7 +1121,7 @@ static bool perform_firmware_ota(
       break;
     }
     if (n == 0) break;
-    mbedtls_sha256_update(&shaCtx, chunk, (size_t)n);
+    cyd_sha256_update(&shaCtx, chunk, (size_t)n);
     if (esp_ota_write(otaHandle, chunk, (size_t)n) != ESP_OK) {
       ok = false;
       break;
@@ -1082,8 +1142,8 @@ static bool perform_firmware_ota(
 
   uint8_t shaBin[32];
   char actualHex[65];
-  mbedtls_sha256_finish(&shaCtx, shaBin);
-  mbedtls_sha256_free(&shaCtx);
+  cyd_sha256_finish(&shaCtx, shaBin);
+  cyd_sha256_free(&shaCtx);
   sha256_bytes_to_hex(shaBin, actualHex);
 
   if (ok && !sha256_hex_matches(actualHex, expectedSha256)) {
@@ -1165,12 +1225,7 @@ int cyd_net_check_ota(
           size_t rLen = strlen(rulesBuf);
           uint8_t shaBin[32];
           char actualHex[65];
-          mbedtls_sha256_context rShaCtx;
-          mbedtls_sha256_init(&rShaCtx);
-          mbedtls_sha256_starts(&rShaCtx, 0);
-          mbedtls_sha256_update(&rShaCtx, (const unsigned char*)rulesBuf, rLen);
-          mbedtls_sha256_finish(&rShaCtx, shaBin);
-          mbedtls_sha256_free(&rShaCtx);
+          cyd_sha256((const uint8_t*)rulesBuf, rLen, shaBin);
           sha256_bytes_to_hex(shaBin, actualHex);
 
           cJSON* parsedRules = cJSON_Parse(rulesBuf);

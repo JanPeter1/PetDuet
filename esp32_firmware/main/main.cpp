@@ -207,41 +207,43 @@ static esp_err_t initialize_hardware(void)
     ESP_LOGI(TAG, "Initializing hardware...");
 
     // Initialize SPI bus for TFT (HSPI)
-    spi_bus_config_t tft_bus_cfg = {
-        .mosi_io_num = TFT_MOSI,
-        .miso_io_num = TFT_MISO,
-        .sclk_io_num = TFT_SCLK,
-        .quadwp_io_num = -1,
-        .quadhd_io_num = -1,
-        .data4_io_num = -1,
-        .data5_io_num = -1,
-        .data6_io_num = -1,
-        .data7_io_num = -1,
-        .data_io_default_level = 0,
-        .max_transfer_sz = TFT_WIDTH * TFT_HEIGHT * 2 + 8,
-        .flags = SPICOMMON_BUSFLAG_MASTER | SPICOMMON_BUSFLAG_GPIO_PINS,
-        .isr_cpu_id = ESP_INTR_CPU_AFFINITY_AUTO,
-        .intr_flags = ESP_INTR_FLAG_IRAM,
-    };
+    spi_bus_config_t tft_bus_cfg;
+    memset(&tft_bus_cfg, 0, sizeof(tft_bus_cfg));
+    tft_bus_cfg.mosi_io_num = TFT_MOSI;
+    tft_bus_cfg.miso_io_num = TFT_MISO;
+    tft_bus_cfg.sclk_io_num = TFT_SCLK;
+    tft_bus_cfg.quadwp_io_num = -1;
+    tft_bus_cfg.quadhd_io_num = -1;
+    tft_bus_cfg.data4_io_num = -1;
+    tft_bus_cfg.data5_io_num = -1;
+    tft_bus_cfg.data6_io_num = -1;
+    tft_bus_cfg.data7_io_num = -1;
+    tft_bus_cfg.data_io_default_level = 0;
+    tft_bus_cfg.max_transfer_sz = TFT_WIDTH * TFT_HEIGHT * 2 + 8;
+    tft_bus_cfg.flags = SPICOMMON_BUSFLAG_MASTER | SPICOMMON_BUSFLAG_GPIO_PINS;
+    tft_bus_cfg.isr_cpu_id = ESP_INTR_CPU_AFFINITY_AUTO;
+    tft_bus_cfg.intr_flags = ESP_INTR_FLAG_IRAM;
+    tft_bus_cfg.dma_burst_size = 0;
     ESP_ERROR_CHECK(spi_bus_initialize(TFT_SPI_HOST, &tft_bus_cfg, SPI_DMA_CH_AUTO));
 
     // Initialize SPI bus for Touch (VSPI) - shared with SD if used
-    spi_bus_config_t touch_bus_cfg = {
-        .mosi_io_num = TOUCH_MOSI,
-        .miso_io_num = TOUCH_MISO,
-        .sclk_io_num = TOUCH_CLK,
-        .quadwp_io_num = -1,
-        .quadhd_io_num = -1,
-        .data4_io_num = -1,
-        .data5_io_num = -1,
-        .data6_io_num = -1,
-        .data7_io_num = -1,
-        .data_io_default_level = 0,
-        .max_transfer_sz = 32,
-        .flags = SPICOMMON_BUSFLAG_MASTER | SPICOMMON_BUSFLAG_GPIO_PINS,
-        .isr_cpu_id = ESP_INTR_CPU_AFFINITY_AUTO,
-        .intr_flags = 0,
-    };
+    spi_bus_config_t touch_bus_cfg;
+    memset(&touch_bus_cfg, 0, sizeof(touch_bus_cfg));
+    touch_bus_cfg.mosi_io_num = TOUCH_MOSI;
+    touch_bus_cfg.miso_io_num = TOUCH_MISO;
+    touch_bus_cfg.sclk_io_num = TOUCH_CLK;
+    touch_bus_cfg.quadwp_io_num = -1;
+    touch_bus_cfg.quadhd_io_num = -1;
+    touch_bus_cfg.data4_io_num = -1;
+    touch_bus_cfg.data5_io_num = -1;
+    touch_bus_cfg.data6_io_num = -1;
+    touch_bus_cfg.data7_io_num = -1;
+    touch_bus_cfg.data_io_default_level = 0;
+    touch_bus_cfg.max_transfer_sz = 32;
+    touch_bus_cfg.flags = SPICOMMON_BUSFLAG_MASTER | SPICOMMON_BUSFLAG_GPIO_PINS;
+    touch_bus_cfg.isr_cpu_id = ESP_INTR_CPU_AFFINITY_AUTO;
+    touch_bus_cfg.intr_flags = 0;
+    touch_bus_cfg.dma_burst_size = 0;
     ESP_ERROR_CHECK(spi_bus_initialize(TOUCH_SPI_HOST, &touch_bus_cfg, SPI_DMA_CH_AUTO));
 
     // Initialize RGB LED GPIOs
@@ -259,51 +261,51 @@ static esp_err_t initialize_hardware(void)
     gpio_set_level((gpio_num_t)LED_B, 1);
 
     // Initialize Buzzer (LEDC)
-    ledc_timer_config_t buzzer_timer = {
-        .speed_mode = LEDC_LOW_SPEED_MODE,
-        .duty_resolution = (ledc_timer_bit_t)BUZZER_RESOLUTION,
-        .timer_num = (ledc_timer_t)BUZZER_LEDC_TIMER,
-        .freq_hz = BUZZER_FREQ_HZ,
-        .clk_cfg = LEDC_AUTO_CLK,
-        .deconfigure = false,
-    };
+    ledc_timer_config_t buzzer_timer;
+    memset(&buzzer_timer, 0, sizeof(buzzer_timer));
+    buzzer_timer.speed_mode = LEDC_LOW_SPEED_MODE;
+    buzzer_timer.duty_resolution = (ledc_timer_bit_t)BUZZER_RESOLUTION;
+    buzzer_timer.timer_num = (ledc_timer_t)BUZZER_LEDC_TIMER;
+    buzzer_timer.freq_hz = BUZZER_FREQ_HZ;
+    buzzer_timer.clk_cfg = LEDC_AUTO_CLK;
+    buzzer_timer.deconfigure = false;
     ESP_ERROR_CHECK(ledc_timer_config(&buzzer_timer));
 
-    ledc_channel_config_t buzzer_channel = {
-        .gpio_num = BUZZER_GPIO,
-        .speed_mode = LEDC_LOW_SPEED_MODE,
-        .channel = (ledc_channel_t)BUZZER_LEDC_CHANNEL,
-        .intr_type = LEDC_INTR_DISABLE,
-        .timer_sel = (ledc_timer_t)BUZZER_LEDC_TIMER,
-        .duty = 0,
-        .hpoint = 0,
-        .sleep_mode = LEDC_SLEEP_MODE_NO_ALIVE_NO_PD,
-        .flags = 0,
-    };
+    ledc_channel_config_t buzzer_channel;
+    memset(&buzzer_channel, 0, sizeof(buzzer_channel));
+    buzzer_channel.gpio_num = BUZZER_GPIO;
+    buzzer_channel.speed_mode = LEDC_LOW_SPEED_MODE;
+    buzzer_channel.channel = (ledc_channel_t)BUZZER_LEDC_CHANNEL;
+    buzzer_channel.timer_sel = (ledc_timer_t)BUZZER_LEDC_TIMER;
+    buzzer_channel.duty = 0;
+    buzzer_channel.hpoint = 0;
+    buzzer_channel.sleep_mode = LEDC_SLEEP_MODE_NO_ALIVE_NO_PD;
+    buzzer_channel.deconfigure = false;
+    // flags sub-struct defaults from memset
     ESP_ERROR_CHECK(ledc_channel_config(&buzzer_channel));
 
     // Initialize Backlight (LEDC)
-    ledc_timer_config_t bl_timer = {
-        .speed_mode = LEDC_LOW_SPEED_MODE,
-        .duty_resolution = LEDC_TIMER_8_BIT,
-        .timer_num = LEDC_TIMER_1,
-        .freq_hz = 5000,
-        .clk_cfg = LEDC_AUTO_CLK,
-        .deconfigure = false,
-    };
+    ledc_timer_config_t bl_timer;
+    memset(&bl_timer, 0, sizeof(bl_timer));
+    bl_timer.speed_mode = LEDC_LOW_SPEED_MODE;
+    bl_timer.duty_resolution = LEDC_TIMER_8_BIT;
+    bl_timer.timer_num = LEDC_TIMER_1;
+    bl_timer.freq_hz = 5000;
+    bl_timer.clk_cfg = LEDC_AUTO_CLK;
+    bl_timer.deconfigure = false;
     ESP_ERROR_CHECK(ledc_timer_config(&bl_timer));
 
-    ledc_channel_config_t bl_channel = {
-        .gpio_num = TFT_BL,
-        .speed_mode = LEDC_LOW_SPEED_MODE,
-        .channel = LEDC_CHANNEL_1,
-        .intr_type = LEDC_INTR_DISABLE,
-        .timer_sel = LEDC_TIMER_1,
-        .duty = 200,  // ~80% brightness
-        .hpoint = 0,
-        .sleep_mode = LEDC_SLEEP_MODE_NO_ALIVE_NO_PD,
-        .flags = 0,
-    };
+    ledc_channel_config_t bl_channel;
+    memset(&bl_channel, 0, sizeof(bl_channel));
+    bl_channel.gpio_num = TFT_BL;
+    bl_channel.speed_mode = LEDC_LOW_SPEED_MODE;
+    bl_channel.channel = LEDC_CHANNEL_1;
+    bl_channel.timer_sel = LEDC_TIMER_1;
+    bl_channel.duty = 200;  // ~80% brightness
+    bl_channel.hpoint = 0;
+    bl_channel.sleep_mode = LEDC_SLEEP_MODE_NO_ALIVE_NO_PD;
+    bl_channel.deconfigure = false;
+    // flags sub-struct defaults from memset
     ESP_ERROR_CHECK(ledc_channel_config(&bl_channel));
 
     // Initialize TFT Display
@@ -441,6 +443,8 @@ static void game_task(void* arg)
 static void network_task(void* arg)
 {
     ESP_LOGI(TAG, "Network task started");
+    bool wifi_was_connected = false;
+    bool wifi_unconfigured_logged = false;
 
     // Connect to WiFi
     esp_err_t ret = net_wifi_connect(&g_net_mgr);
@@ -464,12 +468,17 @@ static void network_task(void* arg)
         if (ret == ESP_OK) {
             xEventGroupSetBits(s_sync_events, EVT_WS_CONNECTED);
         }
+    } else if (!wifi_unconfigured_logged) {
+        ESP_LOGW(TAG, "WiFi is not configured or unavailable; retrying automatically");
+        wifi_unconfigured_logged = true;
     }
 
     TickType_t last_sync = xTaskGetTickCount();
     TickType_t last_ws_poll = xTaskGetTickCount();
+    TickType_t last_wifi_retry = xTaskGetTickCount();
     const TickType_t sync_period = pdMS_TO_TICKS(SERVER_SYNC_INTERVAL_MS);
     const TickType_t ws_poll_period = pdMS_TO_TICKS(100);
+    const TickType_t wifi_retry_period = pdMS_TO_TICKS(10000);
 
     while (1) {
         TickType_t now = xTaskGetTickCount();
@@ -488,10 +497,22 @@ static void network_task(void* arg)
             last_sync = now;
         }
 
-        // Check WiFi reconnection
-        if (!net_wifi_is_connected(&g_net_mgr)) {
-            ESP_LOGW(TAG, "WiFi disconnected, reconnecting...");
-            net_wifi_connect(&g_net_mgr);
+        // ESP-IDF reconnects the station from its event handler. Retry at a
+        // bounded interval and only log connection state changes.
+        if (net_wifi_is_connected(&g_net_mgr)) {
+            if (!wifi_was_connected) {
+                ESP_LOGI(TAG, "WiFi connection restored");
+            }
+            wifi_was_connected = true;
+        } else {
+            if (wifi_was_connected) {
+                ESP_LOGW(TAG, "WiFi disconnected; reconnecting");
+                wifi_was_connected = false;
+            }
+            if (now - last_wifi_retry >= wifi_retry_period) {
+                net_wifi_connect(&g_net_mgr);
+                last_wifi_retry = now;
+            }
         }
 
         vTaskDelay(pdMS_TO_TICKS(50));
