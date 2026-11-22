@@ -8,14 +8,18 @@
 #include "esp_event.h"
 #include "esp_http_client.h"
 #include "esp_http_server.h"
+#include "esp_idf_version.h"
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_ota_ops.h"
 #include "esp_sntp.h"
 #include "esp_system.h"
 #include "esp_wifi.h"
-#include "sha/sha_core.h"
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 0)
 #include "psa/crypto.h"
+#else
+#include "mbedtls/sha256.h"
+#endif
 #ifdef CONFIG_MBEDTLS_CERTIFICATE_BUNDLE
 #include "esp_crt_bundle.h"
 #endif
@@ -81,14 +85,16 @@ static bool sha256_hex_matches(const char* actualHex, const char* expectedHex) {
   return true;
 }
 
-// Streaming SHA256 using mbedtls PSA crypto API
+// Streaming SHA256 using PSA Crypto API (ESP-IDF 6+) or mbedtls (ESP-IDF 5)
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 0)
 typedef struct {
     psa_hash_operation_t operation;
     bool initialized;
 } cyd_sha256_ctx_t;
 
 static void cyd_sha256_init(cyd_sha256_ctx_t* ctx) {
-    ctx->operation = psa_hash_operation_init();
+    (void)psa_crypto_init();
+    ctx->operation = PSA_HASH_OPERATION_INIT;
     ctx->initialized = false;
 }
 
@@ -96,14 +102,14 @@ static void cyd_sha256_update(cyd_sha256_ctx_t* ctx, const uint8_t* data, size_t
     if (!ctx->initialized) {
         psa_status_t status = psa_hash_setup(&ctx->operation, PSA_ALG_SHA_256);
         if (status != PSA_SUCCESS) {
-            ESP_LOGE(TAG, "psa_hash_setup failed: %d", status);
+            ESP_LOGE(TAG, "psa_hash_setup failed: %d", (int)status);
             return;
         }
         ctx->initialized = true;
     }
     psa_status_t status = psa_hash_update(&ctx->operation, data, len);
     if (status != PSA_SUCCESS) {
-        ESP_LOGE(TAG, "psa_hash_update failed: %d", status);
+        ESP_LOGE(TAG, "psa_hash_update failed: %d", (int)status);
     }
 }
 
@@ -112,15 +118,14 @@ static void cyd_sha256_finish(cyd_sha256_ctx_t* ctx, uint8_t output[32]) {
         size_t output_len = 0;
         psa_status_t status = psa_hash_finish(&ctx->operation, output, 32, &output_len);
         if (status != PSA_SUCCESS) {
-            ESP_LOGE(TAG, "psa_hash_finish failed: %d", status);
+            ESP_LOGE(TAG, "psa_hash_finish failed: %d", (int)status);
         }
         ctx->initialized = false;
     } else {
-        // No data was added, compute hash of empty string
         size_t output_len = 0;
         psa_status_t status = psa_hash_compute(PSA_ALG_SHA_256, NULL, 0, output, 32, &output_len);
         if (status != PSA_SUCCESS) {
-            ESP_LOGE(TAG, "psa_hash_compute failed: %d", status);
+            ESP_LOGE(TAG, "psa_hash_compute failed: %d", (int)status);
         }
     }
 }
@@ -132,14 +137,40 @@ static void cyd_sha256_free(cyd_sha256_ctx_t* ctx) {
     }
 }
 
-// One-shot SHA256 using mbedtls PSA crypto API
 static void cyd_sha256(const uint8_t* input, size_t ilen, uint8_t output[32]) {
+    (void)psa_crypto_init();
     size_t output_len = 0;
     psa_status_t status = psa_hash_compute(PSA_ALG_SHA_256, input, ilen, output, 32, &output_len);
     if (status != PSA_SUCCESS) {
-        ESP_LOGE(TAG, "psa_hash_compute failed: %d", status);
+        ESP_LOGE(TAG, "psa_hash_compute failed: %d", (int)status);
     }
 }
+#else
+typedef struct {
+    mbedtls_sha256_context ctx;
+} cyd_sha256_ctx_t;
+
+static void cyd_sha256_init(cyd_sha256_ctx_t* ctx) {
+    mbedtls_sha256_init(&ctx->ctx);
+    mbedtls_sha256_starts(&ctx->ctx, 0);
+}
+
+static void cyd_sha256_update(cyd_sha256_ctx_t* ctx, const uint8_t* data, size_t len) {
+    mbedtls_sha256_update(&ctx->ctx, data, len);
+}
+
+static void cyd_sha256_finish(cyd_sha256_ctx_t* ctx, uint8_t output[32]) {
+    mbedtls_sha256_finish(&ctx->ctx, output);
+}
+
+static void cyd_sha256_free(cyd_sha256_ctx_t* ctx) {
+    mbedtls_sha256_free(&ctx->ctx);
+}
+
+static void cyd_sha256(const uint8_t* input, size_t ilen, uint8_t output[32]) {
+    mbedtls_sha256(input, ilen, output, 0);
+}
+#endif
 
 static void wifi_event_handler(void* /*arg*/, esp_event_base_t event_base, int32_t event_id, void* /*event_data*/) {
   if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
@@ -214,8 +245,8 @@ bool cyd_net_connect_sta(const CydConfig& cfg, char* outIpStr, size_t ipLen) {
 
   wifi_config_t wifi_cfg;
   memset(&wifi_cfg, 0, sizeof(wifi_cfg));
-  strncpy((char*)wifi_cfg.sta.ssid, cfg.wifiSsid, sizeof(wifi_cfg.sta.ssid) - 1);
-  strncpy((char*)wifi_cfg.sta.password, cfg.wifiPass, sizeof(wifi_cfg.sta.password) - 1);
+  safe_copy((char*)wifi_cfg.sta.ssid, sizeof(wifi_cfg.sta.ssid), cfg.wifiSsid);
+  safe_copy((char*)wifi_cfg.sta.password, sizeof(wifi_cfg.sta.password), cfg.wifiPass);
   wifi_cfg.sta.threshold.authmode = (strlen(cfg.wifiPass) > 0) ? WIFI_AUTH_WPA_WPA2_PSK : WIFI_AUTH_OPEN;
 
   ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
@@ -510,8 +541,14 @@ void cyd_net_start_ap_portal(CydConfig& cfg) {
   httpd_config_t hcfg = HTTPD_DEFAULT_CONFIG();
   hcfg.stack_size = 6144;
   if (httpd_start(&s_httpd, &hcfg) == ESP_OK) {
-    httpd_uri_t root_uri = { .uri = "/", .method = HTTP_GET, .handler = ap_root_get_handler, .user_ctx = NULL };
-    httpd_uri_t save_uri = { .uri = "/save", .method = HTTP_POST, .handler = ap_save_post_handler, .user_ctx = NULL };
+    httpd_uri_t root_uri = {};
+    root_uri.uri = "/";
+    root_uri.method = HTTP_GET;
+    root_uri.handler = ap_root_get_handler;
+    httpd_uri_t save_uri = {};
+    save_uri.uri = "/save";
+    save_uri.method = HTTP_POST;
+    save_uri.handler = ap_save_post_handler;
     httpd_register_uri_handler(s_httpd, &root_uri);
     httpd_register_uri_handler(s_httpd, &save_uri);
     ESP_LOGI(TAG, "AP Web Portal started at http://192.168.4.1");
@@ -578,10 +615,26 @@ static int http_do_request(const char* url, esp_http_client_method_t method, con
   return status;
 }
 
+static void format_server_url(const char* baseUrl, const char* path, char* outUrl, size_t maxLen) {
+  if (!outUrl || maxLen == 0) return;
+  outUrl[0] = '\0';
+  if (!baseUrl) return;
+  size_t bLen = strlen(baseUrl);
+  while (bLen > 0 && baseUrl[bLen - 1] == '/') {
+    bLen--;
+  }
+  const char* p = path ? path : "";
+  if (p[0] != '\0' && p[0] != '/') {
+    snprintf(outUrl, maxLen, "%.*s/%s", (int)bLen, baseUrl, p);
+  } else {
+    snprintf(outUrl, maxLen, "%.*s%s", (int)bLen, baseUrl, p);
+  }
+}
+
 bool cyd_net_test_php_server(const CydConfig& cfg) {
   if (!s_wifi_connected) return false;
-  char url[220];
-  snprintf(url, sizeof(url), "%s/register.php", cfg.serverUrl);
+  char url[320];
+  format_server_url(cfg.serverUrl, "/register.php", url, sizeof(url));
 
   cJSON* doc = cJSON_CreateObject();
   cJSON_AddStringToObject(doc, "deviceId", cfg.deviceId);
@@ -591,7 +644,7 @@ bool cyd_net_test_php_server(const CydConfig& cfg) {
 
   int code = http_do_request(url, HTTP_METHOD_POST, body, NULL, 0);
   cJSON_free(body);
-  ESP_LOGI(TAG, "PHP server connectivity test HTTP status=%d", code);
+  ESP_LOGI(TAG, "PHP server connectivity test (%s) HTTP status=%d", url, code);
   return code == 200;
 }
 
@@ -624,8 +677,8 @@ bool cyd_net_sync_php_server(const CydConfig& cfg, const TamagotchiCoreEngine& e
   char* body = cJSON_PrintUnformatted(doc);
   cJSON_Delete(doc);
 
-  char url[220];
-  snprintf(url, sizeof(url), "%s/register.php", cfg.serverUrl);
+  char url[320];
+  format_server_url(cfg.serverUrl, "/register.php", url, sizeof(url));
   int code = http_do_request(url, HTTP_METHOD_POST, body, NULL, 0);
   cJSON_free(body);
   if (code != 200) {
@@ -633,7 +686,9 @@ bool cyd_net_sync_php_server(const CydConfig& cfg, const TamagotchiCoreEngine& e
     return false;
   }
 
-  snprintf(url, sizeof(url), "%s/find_friend.php?friendId=%s", cfg.serverUrl, cfg.friendId);
+  char path[96];
+  snprintf(path, sizeof(path), "/find_friend.php?friendId=%s", cfg.friendId);
+  format_server_url(cfg.serverUrl, path, url, sizeof(url));
   char resp[768];
   if (http_do_request(url, HTTP_METHOD_GET, NULL, resp, sizeof(resp)) == 200) {
     cJSON* root = cJSON_Parse(resp);
@@ -670,17 +725,6 @@ bool cyd_net_sync_php_server(const CydConfig& cfg, const TamagotchiCoreEngine& e
     }
   }
   return true;
-}
-
-static void format_server_url(const char* baseUrl, const char* path, char* outUrl, size_t maxLen) {
-  if (!outUrl || maxLen == 0) return;
-  outUrl[0] = '\0';
-  if (!baseUrl) return;
-  size_t bLen = strlen(baseUrl);
-  while (bLen > 0 && baseUrl[bLen - 1] == '/') {
-    bLen--;
-  }
-  snprintf(outUrl, maxLen, "%.*s%s", (int)bLen, baseUrl, path ? path : "");
 }
 
 static void url_encode_component(const char* src, char* dst, size_t maxLen) {
@@ -729,7 +773,7 @@ bool cyd_net_cloud_save(
     return false;
   }
 
-  char url[256];
+  char url[320];
   format_server_url(cfg.serverUrl, CLOUD_SAVE_ENDPOINT, url, sizeof(url));
 
   char resp[512];
@@ -816,8 +860,8 @@ int cyd_net_shop_purchase(
   cJSON_Delete(doc);
   if (!body) return -1;
 
-  char url[220];
-  snprintf(url, sizeof(url), "%s" SHOP_ENDPOINT, cfg.serverUrl);
+  char url[320];
+  format_server_url(cfg.serverUrl, SHOP_ENDPOINT, url, sizeof(url));
   char resp[512];
   int code = http_do_request(url, HTTP_METHOD_POST, body, resp, sizeof(resp));
   cJSON_free(body);
@@ -905,8 +949,10 @@ void cyd_net_poll_p2p_socket(NetPacketCb onPacket) {
 
 void cyd_net_poll_relay(const CydConfig& cfg, NetPacketCb onPacket) {
   if (!s_wifi_connected || !onPacket) return;
-  char url[220];
-  snprintf(url, sizeof(url), "%s/sync.php?deviceId=%s", cfg.serverUrl, cfg.deviceId);
+  char path[96];
+  snprintf(path, sizeof(path), "/sync.php?deviceId=%s", cfg.deviceId);
+  char url[320];
+  format_server_url(cfg.serverUrl, path, url, sizeof(url));
   char* resp = (char*)malloc(2048);
   if (!resp) return;
 
@@ -994,8 +1040,8 @@ bool cyd_net_send_packet_ex(const CydConfig& cfg, FriendState& friendPet, const 
   cJSON_Delete(doc);
   if (!body) return false;
 
-  char url[220];
-  snprintf(url, sizeof(url), "%s/sync.php", cfg.serverUrl);
+  char url[320];
+  format_server_url(cfg.serverUrl, "/sync.php", url, sizeof(url));
   int code = http_do_request(url, HTTP_METHOD_POST, body, NULL, 0);
   cJSON_free(body);
   if (code == 200) {
@@ -1017,12 +1063,11 @@ void cyd_net_send_packet(const CydConfig& cfg, FriendState& friendPet, const cha
 // DUAL-SLOT A/B OTA FIRMWARE & SPIFFS RULES UPDATE (WITH SHA256 CHECKSUM)
 // ============================================================================
 static void resolve_ota_url(const CydConfig& cfg, const char* pathOrUrl, char* out, size_t maxLen) {
+  if (!pathOrUrl) { if (out && maxLen > 0) out[0] = '\0'; return; }
   if (strncmp(pathOrUrl, "http://", 7) == 0 || strncmp(pathOrUrl, "https://", 8) == 0) {
     safe_copy(out, maxLen, pathOrUrl);
-  } else if (pathOrUrl[0] == '/') {
-    snprintf(out, maxLen, "%s%s", cfg.serverUrl, pathOrUrl);
   } else {
-    snprintf(out, maxLen, "%s/%s", cfg.serverUrl, pathOrUrl);
+    format_server_url(cfg.serverUrl, pathOrUrl, out, maxLen);
   }
 }
 
@@ -1040,8 +1085,8 @@ void cyd_net_report_ota(const CydConfig& cfg, const char* event, const char* det
   cJSON_Delete(doc);
   if (!body) return;
 
-  char url[220];
-  snprintf(url, sizeof(url), "%s/ota_report.php", cfg.serverUrl);
+  char url[320];
+  format_server_url(cfg.serverUrl, "/ota_report.php", url, sizeof(url));
   http_do_request(url, HTTP_METHOD_POST, body, NULL, 0);
   cJSON_free(body);
 }
@@ -1185,10 +1230,11 @@ int cyd_net_check_ota(
   }
 
   const char* activeRulesVer = (strlen(engine.rules.version) > 0) ? engine.rules.version : RULES_VERSION;
-  char url[280];
-  snprintf(url, sizeof(url),
-           "%s" OTA_CHECK_ENDPOINT "?device=%s&fw_version=%s&rules_version=%s",
-           cfg.serverUrl, cfg.deviceId, FIRMWARE_VERSION, activeRulesVer);
+  char path[160];
+  snprintf(path, sizeof(path), OTA_CHECK_ENDPOINT "?device=%s&fw_version=%s&rules_version=%s",
+           cfg.deviceId, FIRMWARE_VERSION, activeRulesVer);
+  char url[320];
+  format_server_url(cfg.serverUrl, path, url, sizeof(url));
 
   char* resp = (char*)malloc(2048);
   if (!resp) return -1;
@@ -1217,7 +1263,7 @@ int cyd_net_check_ota(
     const char* expSha = cJSON_IsString(rSha) ? rSha->valuestring : "";
 
     if (cJSON_IsString(rUrl)) {
-      char fullUrl[260];
+      char fullUrl[320];
       resolve_ota_url(cfg, rUrl->valuestring, fullUrl, sizeof(fullUrl));
       char* rulesBuf = (char*)malloc(36864);
       if (rulesBuf) {
@@ -1251,7 +1297,7 @@ int cyd_net_check_ota(
     cJSON* fSz  = cJSON_GetObjectItemCaseSensitive(doc, "fw_size");
     cJSON* fSha = cJSON_GetObjectItemCaseSensitive(doc, "fw_sha256");
     if (cJSON_IsString(fUrl)) {
-      char fullUrl[260];
+      char fullUrl[320];
       resolve_ota_url(cfg, fUrl->valuestring, fullUrl, sizeof(fullUrl));
       int fwSize = cJSON_IsNumber(fSz) ? fSz->valueint : 0;
       char expSha[65] = "";

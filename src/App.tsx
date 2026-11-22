@@ -739,46 +739,7 @@ export default function App() {
         break;
 
       case 'cast_magic': {
-<<<<<<< HEAD
-        // Legacy co-op magic (Friend Blessing) - kept for backward compatibility
-        if (dev1Pet.stats.mana < 25) {
-          cydAudio.warning();
-          triggerNotificationDev1(language === 'de' ? '25 Mana erforderlich! ⚡' : 'Need 25 Mana to cast! ⚡');
-          return;
-        }
-        cydAudio.magicCast();
-        setActivePacket({ from: 'DEV1', type: 'MAGIC', label: '✨ BLESSING' });
-        setDev1Pet((prev) => ({
-          ...prev,
-          stats: { ...prev.stats, mana: prev.stats.mana - 25 },
-          spellsCastCount: prev.spellsCastCount + 1,
-        }));
-        triggerNotificationDev1(t.notifMagicSent);
-        recordMissionAction('cast_spell', 1);
-
-        setTimeout(() => {
-          setActivePacket(null);
-          setLedDev1('gold');
-          setLedDev2('gold');
-          confetti({ particleCount: 50, spread: 60 });
-          triggerNotificationDev2(t.notifMagicReceived);
-          setDev2Pet((prev) => ({
-            ...prev,
-            stats: {
-              ...prev.stats,
-              health: Math.min(100, prev.stats.health + 30),
-              happiness: Math.min(100, prev.stats.happiness + 25),
-            },
-          }));
-          addXPDev1(40);
-          setTimeout(() => {
-            setLedDev1('green');
-            setLedDev2('green');
-          }, 2500);
-        }, 700);
-=======
         handleCoopCast('DEV1');
->>>>>>> b7fa75a5ef0c5a05de74501debb43b891b4eae32
         break;
       }
 
