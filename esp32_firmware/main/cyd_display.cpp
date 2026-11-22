@@ -73,10 +73,7 @@ bool CydDisplay::init() {
   devcfg.dummy_bits = 0;
   devcfg.clock_source = SPI_CLK_SRC_DEFAULT;
   devcfg.duty_cycle_pos = 128;
-  devcfg.cs_ena_pretrans = 0;
-  devcfg.cs_ena_posttrans = 0;
   devcfg.input_delay_ns = 0;
-  devcfg.sample_point = SPI_SAMPLING_POINT_PHASE_1;
   devcfg.flags = 0;
   devcfg.post_cb = NULL;
   ret = spi_bus_add_device(BOARD_TFT_SPI_HOST, &devcfg, &s_tft_spi);

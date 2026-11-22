@@ -135,10 +135,16 @@ extern "C" void app_main(void)
     net_ws_set_callback(&g_net_mgr, on_ws_message, NULL);
 
     // Initialize Pet State Manager
-    ESP_ERROR_CHECK(pet_mgr_init(&g_pet_mgr, &g_net_mgr, DEVICE_ID, "petduet"));
+    ESP_ERROR_CHECK(pet_mgr_init(&g_pet_mgr, &g_net_mgr,
+                                 rules_get_data(&g_rules_mgr), DEVICE_ID,
+                                 "petduet"));
     pet_mgr_set_callbacks(&g_pet_mgr, on_pet_changed, on_partner_updated,
                           on_sync_complete, NULL);
-    ESP_ERROR_CHECK(pet_mgr_load_local(&g_pet_mgr));
+    esp_err_t load_err = pet_mgr_load_local(&g_pet_mgr);
+    if (load_err != ESP_OK && load_err != ESP_ERR_NOT_FOUND) {
+        ESP_LOGE(TAG, "Failed to load local pet state: %s", esp_err_to_name(load_err));
+        ESP_ERROR_CHECK(load_err);
+    }
     xEventGroupSetBits(s_sync_events, EVT_PET_LOADED);
 
     // Initialize Display Manager
@@ -218,12 +224,10 @@ static esp_err_t initialize_hardware(void)
     tft_bus_cfg.data5_io_num = -1;
     tft_bus_cfg.data6_io_num = -1;
     tft_bus_cfg.data7_io_num = -1;
-    tft_bus_cfg.data_io_default_level = 0;
     tft_bus_cfg.max_transfer_sz = TFT_WIDTH * TFT_HEIGHT * 2 + 8;
     tft_bus_cfg.flags = SPICOMMON_BUSFLAG_MASTER | SPICOMMON_BUSFLAG_GPIO_PINS;
     tft_bus_cfg.isr_cpu_id = ESP_INTR_CPU_AFFINITY_AUTO;
     tft_bus_cfg.intr_flags = ESP_INTR_FLAG_IRAM;
-    tft_bus_cfg.dma_burst_size = 0;
     ESP_ERROR_CHECK(spi_bus_initialize(TFT_SPI_HOST, &tft_bus_cfg, SPI_DMA_CH_AUTO));
 
     // Initialize SPI bus for Touch (VSPI) - shared with SD if used
@@ -238,12 +242,10 @@ static esp_err_t initialize_hardware(void)
     touch_bus_cfg.data5_io_num = -1;
     touch_bus_cfg.data6_io_num = -1;
     touch_bus_cfg.data7_io_num = -1;
-    touch_bus_cfg.data_io_default_level = 0;
     touch_bus_cfg.max_transfer_sz = 32;
     touch_bus_cfg.flags = SPICOMMON_BUSFLAG_MASTER | SPICOMMON_BUSFLAG_GPIO_PINS;
     touch_bus_cfg.isr_cpu_id = ESP_INTR_CPU_AFFINITY_AUTO;
     touch_bus_cfg.intr_flags = 0;
-    touch_bus_cfg.dma_burst_size = 0;
     ESP_ERROR_CHECK(spi_bus_initialize(TOUCH_SPI_HOST, &touch_bus_cfg, SPI_DMA_CH_AUTO));
 
     // Initialize RGB LED GPIOs
@@ -279,8 +281,6 @@ static esp_err_t initialize_hardware(void)
     buzzer_channel.timer_sel = (ledc_timer_t)BUZZER_LEDC_TIMER;
     buzzer_channel.duty = 0;
     buzzer_channel.hpoint = 0;
-    buzzer_channel.sleep_mode = LEDC_SLEEP_MODE_NO_ALIVE_NO_PD;
-    buzzer_channel.deconfigure = false;
     // flags sub-struct defaults from memset
     ESP_ERROR_CHECK(ledc_channel_config(&buzzer_channel));
 
@@ -303,8 +303,6 @@ static esp_err_t initialize_hardware(void)
     bl_channel.timer_sel = LEDC_TIMER_1;
     bl_channel.duty = 200;  // ~80% brightness
     bl_channel.hpoint = 0;
-    bl_channel.sleep_mode = LEDC_SLEEP_MODE_NO_ALIVE_NO_PD;
-    bl_channel.deconfigure = false;
     // flags sub-struct defaults from memset
     ESP_ERROR_CHECK(ledc_channel_config(&bl_channel));
 

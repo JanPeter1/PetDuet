@@ -42,11 +42,8 @@ esp_err_t touch_init(TouchManager* tm) {
         .mode = 0,
         .clock_source = SPI_CLK_SRC_DEFAULT,
         .duty_cycle_pos = 128,
-        .cs_ena_pretrans = 0,
-        .cs_ena_posttrans = 0,
         .clock_speed_hz = TOUCH_SPI_FREQ_HZ,
         .input_delay_ns = 0,
-        .sample_point = SPI_SAMPLING_POINT_PHASE_0,
         .spics_io_num = TOUCH_CS,
         .flags = SPI_DEVICE_NO_DUMMY,
         .queue_size = 3,
@@ -109,8 +106,6 @@ static esp_err_t touch_read_register(TouchManager* tm, uint8_t cmd, uint16_t* va
     trans.tx_data[2] = 0;
     trans.tx_data[3] = 0;
     trans.rx_buffer = NULL;
-    trans.override_freq_hz = 0;
-
     esp_err_t ret = spi_device_polling_transmit(tm->spi_dev, &trans);
     if (ret == ESP_OK) {
         *value = (trans.rx_data[0] << 8) | trans.rx_data[1];

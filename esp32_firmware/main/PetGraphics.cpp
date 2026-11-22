@@ -348,14 +348,16 @@ static void lcd_draw_bitmap(int16_t x, int16_t y, int16_t w, int16_t h, const ui
 
         int16_t chunk_y = y + row;
         int16_t chunk_y_end = chunk_y + chunk_rows - 1;
-        ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(s_io, ILI9341_CASET, (uint8_t[]){
+        uint8_t caset_data[4] = {
             (uint8_t)((x >> 8) & 0xFF), (uint8_t)(x & 0xFF),
             (uint8_t)(((x + w - 1) >> 8) & 0xFF), (uint8_t)((x + w - 1) & 0xFF)
-        }, 4));
-        ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(s_io, ILI9341_RASET, (uint8_t[]){
+        };
+        ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(s_io, ILI9341_CASET, caset_data, 4));
+        uint8_t raset_data[4] = {
             (uint8_t)((chunk_y >> 8) & 0xFF), (uint8_t)(chunk_y & 0xFF),
             (uint8_t)((chunk_y_end >> 8) & 0xFF), (uint8_t)(chunk_y_end & 0xFF)
-        }, 4));
+        };
+        ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(s_io, ILI9341_RASET, raset_data, 4));
         ESP_ERROR_CHECK(esp_lcd_panel_io_tx_color(s_io, ILI9341_RAMWR,
                                                    s_rgb565_swap_buf,
                                                    chunk_pixels * sizeof(uint16_t)));
@@ -381,14 +383,16 @@ static void lcd_fill_rect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t c
 
         int16_t chunk_y = y + row;
         int16_t chunk_y_end = chunk_y + chunk_rows - 1;
-        ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(s_io, ILI9341_CASET, (uint8_t[]){
+        uint8_t caset_data[4] = {
             (uint8_t)((x >> 8) & 0xFF), (uint8_t)(x & 0xFF),
             (uint8_t)(((x + w - 1) >> 8) & 0xFF), (uint8_t)((x + w - 1) & 0xFF)
-        }, 4));
-        ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(s_io, ILI9341_RASET, (uint8_t[]){
+        };
+        ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(s_io, ILI9341_CASET, caset_data, 4));
+        uint8_t raset_data[4] = {
             (uint8_t)((chunk_y >> 8) & 0xFF), (uint8_t)(chunk_y & 0xFF),
             (uint8_t)((chunk_y_end >> 8) & 0xFF), (uint8_t)(chunk_y_end & 0xFF)
-        }, 4));
+        };
+        ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(s_io, ILI9341_RASET, raset_data, 4));
         ESP_ERROR_CHECK(esp_lcd_panel_io_tx_color(s_io, ILI9341_RAMWR,
                                                    s_rgb565_swap_buf,
                                                    chunk_pixels * sizeof(uint16_t)));
@@ -416,8 +420,6 @@ esp_err_t display_init(esp_lcd_panel_handle_t* panel_handle, esp_lcd_panel_io_ha
     io_config.user_ctx = s_color_transfer_sem;
     io_config.lcd_cmd_bits = 8;
     io_config.lcd_param_bits = 8;
-    io_config.cs_ena_pretrans = 0;
-    io_config.cs_ena_posttrans = 0;
     // flags sub-struct fields default to 0/false from memset
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)TFT_SPI_HOST, &io_config, io_handle));
 
@@ -430,17 +432,23 @@ esp_err_t display_init(esp_lcd_panel_handle_t* panel_handle, esp_lcd_panel_io_ha
     vTaskDelay(pdMS_TO_TICKS(120));
 
     // Power control A
-    ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(*io_handle, ILI9341_PWCTR1, (uint8_t[]){0x23}, 1));
+    uint8_t pwctr1_data[1] = {0x23};
+    ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(*io_handle, ILI9341_PWCTR1, pwctr1_data, 1));
     // Power control B
-    ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(*io_handle, ILI9341_PWCTR2, (uint8_t[]){0x10}, 1));
+    uint8_t pwctr2_data[1] = {0x10};
+    ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(*io_handle, ILI9341_PWCTR2, pwctr2_data, 1));
     // VCOM control 1
-    ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(*io_handle, ILI9341_VMCTR1, (uint8_t[]){0x3E, 0x28}, 2));
+    uint8_t vmctr1_data[2] = {0x3E, 0x28};
+    ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(*io_handle, ILI9341_VMCTR1, vmctr1_data, 2));
     // VCOM control 2
-    ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(*io_handle, ILI9341_VMCTR2, (uint8_t[]){0x86}, 1));
+    uint8_t vmctr2_data[1] = {0x86};
+    ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(*io_handle, ILI9341_VMCTR2, vmctr2_data, 1));
     // Memory access control
-    ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(*io_handle, ILI9341_MADCTL, (uint8_t[]){ILI9341_MADCTL_DEFAULT}, 1));
+    uint8_t madctl_data[1] = {ILI9341_MADCTL_DEFAULT};
+    ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(*io_handle, ILI9341_MADCTL, madctl_data, 1));
     // Pixel format: 16-bit (RGB565)
-    ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(*io_handle, ILI9341_COLMOD, (uint8_t[]){0x55}, 1));
+    uint8_t colmod_data[1] = {0x55};
+    ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(*io_handle, ILI9341_COLMOD, colmod_data, 1));
 
     // Exit sleep
     ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(*io_handle, ILI9341_SLPOUT, NULL, 0));

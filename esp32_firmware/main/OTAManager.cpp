@@ -150,7 +150,6 @@ esp_err_t ota_download_firmware(OTAManager* om) {
     config.keep_alive_interval = 0;
     config.keep_alive_count = 0;
     config.if_name = NULL;
-    config.addr_type = HTTP_ADDR_TYPE_UNSPEC;
 
     esp_https_ota_config_t ota_config;
     memset(&ota_config, 0, sizeof(ota_config));
@@ -318,7 +317,6 @@ esp_err_t ota_download_rules(OTAManager* om) {
     config.keep_alive_interval = 0;
     config.keep_alive_count = 0;
     config.if_name = NULL;
-    config.addr_type = HTTP_ADDR_TYPE_UNSPEC;
 
     esp_http_client_handle_t client = esp_http_client_init(&config);
     if (!client) return ESP_ERR_NO_MEM;

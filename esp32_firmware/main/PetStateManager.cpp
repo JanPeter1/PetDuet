@@ -18,11 +18,13 @@
 static const char* TAG = "PetStateMgr";
 
 esp_err_t pet_mgr_init(PetStateManager* pm, NetworkManager* net,
-                       const char* device_id, const char* nvs_namespace) {
-    if (!pm || !net || !device_id || !nvs_namespace) return ESP_ERR_INVALID_ARG;
+                       const RulesData* rules, const char* device_id,
+                       const char* nvs_namespace) {
+    if (!pm || !net || !rules || !device_id || !nvs_namespace) return ESP_ERR_INVALID_ARG;
 
     memset(pm, 0, sizeof(PetStateManager));
     pm->net = net;
+    pm->rules = rules;
     pm->conflict_strategy = CONFLICT_MERGE;
 
     strncpy(pm->nvs_namespace, nvs_namespace, sizeof(pm->nvs_namespace)-1);
@@ -35,7 +37,7 @@ esp_err_t pet_mgr_init(PetStateManager* pm, NetworkManager* net,
     }
 
     // Initialize pet state
-    ESP_ERROR_CHECK(engine_init(&pm->pet, NULL)); // Rules will be set later
+    ESP_ERROR_CHECK(engine_init(&pm->pet, pm->rules));
     strncpy(pm->pet.device_id, device_id, MAX_STRING_LEN-1);
 
     ESP_LOGI(TAG, "Pet state manager initialized: %s", device_id);
@@ -299,9 +301,9 @@ esp_err_t pet_mgr_factory_reset(PetStateManager* pm) {
     }
 
     // Reinitialize pet state
-    if (err == ESP_OK) {
+    if (err == ESP_OK && pm->rules) {
         memset(&pm->pet, 0, sizeof(PetState));
-        engine_init(&pm->pet, NULL);
+        engine_init(&pm->pet, pm->rules);
         strncpy(pm->pet.device_id, DEVICE_ID, MAX_STRING_LEN-1);
         strncpy(pm->pet.trainer_name, TRAINER_NAME, MAX_STRING_LEN-1);
         strncpy(pm->pet.biome_id, DEFAULT_BIOME, MAX_STRING_LEN-1);

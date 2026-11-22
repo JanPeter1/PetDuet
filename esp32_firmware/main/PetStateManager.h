@@ -37,6 +37,7 @@ typedef struct {
 
     // Network
     NetworkManager* net;
+    const RulesData* rules;
 
     // Sync state
     uint32_t last_local_save;
@@ -62,7 +63,8 @@ typedef struct {
 
 // Initialization
 esp_err_t pet_mgr_init(PetStateManager* pm, NetworkManager* net,
-                       const char* device_id, const char* nvs_namespace);
+                       const RulesData* rules, const char* device_id,
+                       const char* nvs_namespace);
 void pet_mgr_deinit(PetStateManager* pm);
 
 // State access
