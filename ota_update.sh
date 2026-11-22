@@ -6,7 +6,13 @@
 set -e
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FIRMWARE_BIN="$PROJECT_ROOT/esp32_firmware/.pio/build/esp32-2432s028r/firmware.bin"
+IDF_BIN="$PROJECT_ROOT/esp32_firmware/build/petduet.bin"
+PIO_BIN="$PROJECT_ROOT/esp32_firmware/.pio/build/esp32-2432s028r/firmware.bin"
+if [ -f "$IDF_BIN" ]; then
+    FIRMWARE_BIN="$IDF_BIN"
+else
+    FIRMWARE_BIN="$PIO_BIN"
+fi
 SERVER_BIN="$PROJECT_ROOT/php_server/cyd_tamagotchi.bin"
 MANIFEST="$PROJECT_ROOT/php_server/ota_manifest.json"
 CONFIG_H="$PROJECT_ROOT/esp32_firmware/config.h"
@@ -39,8 +45,8 @@ echo ""
 
 # 1. Check firmware binary exists
 if [ ! -f "$FIRMWARE_BIN" ]; then
-    echo -e "${RED}Error: Firmware binary not found at $FIRMWARE_BIN${NC}"
-    echo "Build the firmware first: cd esp32_firmware && pio run"
+    echo -e "${RED}Error: Firmware binary not found at $IDF_BIN or $PIO_BIN${NC}"
+    echo "Build the firmware first: cd esp32_firmware && idf.py build"
     exit 1
 fi
 
@@ -107,8 +113,8 @@ print(f\"Manifest Size: {m['firmware']['file_size']}\")
 echo -e "${GREEN}[6/6] Done!${NC}"
 echo ""
 echo -e "${YELLOW}Next steps:${NC}"
-echo "  1. Build & flash new firmware to CYD:"
-echo "     cd esp32_firmware && pio run -t upload"
+echo "  1. Build & flash new firmware to CYD (ESP-IDF 6.1):"
+echo "     cd esp32_firmware && idf.py build flash"
 echo ""
 echo "  2. Start PHP server:"
 echo "     php -S localhost:8080 -t php_server"

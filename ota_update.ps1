@@ -22,7 +22,9 @@ param(
 )
 
 $PROJECT_ROOT = Split-Path -Parent $MyInvocation.MyCommand.Definition
-$FIRMWARE_BIN = Join-Path $PROJECT_ROOT "esp32_firmware\.pio\build\esp32-2432s028r\firmware.bin"
+$IDF_BIN      = Join-Path $PROJECT_ROOT "esp32_firmware\build\petduet.bin"
+$PIO_BIN      = Join-Path $PROJECT_ROOT "esp32_firmware\.pio\build\esp32-2432s028r\firmware.bin"
+$FIRMWARE_BIN = if (Test-Path $IDF_BIN) { $IDF_BIN } else { $PIO_BIN }
 $SERVER_BIN   = Join-Path $PROJECT_ROOT "php_server\cyd_tamagotchi.bin"
 $MANIFEST     = Join-Path $PROJECT_ROOT "php_server\ota_manifest.json"
 $CONFIG_H     = Join-Path $PROJECT_ROOT "esp32_firmware\config.h"
@@ -32,8 +34,8 @@ Write-Host ""
 
 # 1. Check firmware binary exists
 if (-not (Test-Path $FIRMWARE_BIN)) {
-    Write-Error "Firmware binary not found at $FIRMWARE_BIN"
-    Write-Host "Build the firmware first: cd esp32_firmware && pio run"
+    Write-Error "Firmware binary not found at $IDF_BIN (or $PIO_BIN)"
+    Write-Host "Build the firmware first: cd esp32_firmware && idf.py build"
     exit 1
 }
 
@@ -84,8 +86,8 @@ Write-Host "Manifest Size: $($m.firmware.file_size)"
 Write-Host "[6/6] Done!" -ForegroundColor Green
 Write-Host ""
 Write-Host "Next steps:"
-Write-Host "  1. Build & flash new firmware to CYD:"
-Write-Host "     cd esp32_firmware && pio run -t upload"
+Write-Host "  1. Build & flash new firmware to CYD (ESP-IDF 6.1):"
+Write-Host "     cd esp32_firmware && idf.py build flash"
 Write-Host ""
 Write-Host "  2. Start PHP server:"
 Write-Host "     php -S localhost:8080 -t php_server"

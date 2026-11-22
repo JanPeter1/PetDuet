@@ -204,7 +204,7 @@ try {
         try {
             & idf.py build
             if ($LASTEXITCODE -ne 0) {
-                throw "ESP-IDF Kompilierung fehlgeschlagen (Exit Code $LASTEXITCODE)."
+                throw "ESP-IDF Kompilierung fehlgeschlagen (Exit Code $LASTEXITCODE). Falls ESP-IDF aktualisiert wurde: 'cd esp32_firmware; idf.py fullclean' ausfuehren."
             }
         } finally {
             Pop-Location

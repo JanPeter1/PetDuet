@@ -607,14 +607,14 @@ static void on_right_btn_clicked(lv_event_t* e) {
         s_app->engine.stats.mana -= 30;
         uint32_t now = cyd_millis();
         NetPacket pkt = {};
-        strncpy(pkt.from, s_app->config.deviceId, sizeof(pkt.from) - 1);
+        TamagotchiCoreEngine::copyStr(pkt.from, sizeof(pkt.from), s_app->config.deviceId);
         if (s_app->friendDualCastUntilMs > 0 && now <= s_app->friendDualCastUntilMs) {
           // Both devices pressed MGC+ within 10s -> Dual Astral Harmony!
           s_app->friendDualCastUntilMs = 0;
           s_app->dualCastUntilMs = 0;
           s_app->auroraUntilMs = now + 4000U;
-          strncpy(pkt.type, "MAGIC_SYNC", sizeof(pkt.type) - 1);
-          strncpy(pkt.text, "Astral Harmony!", sizeof(pkt.text) - 1);
+          TamagotchiCoreEngine::copyStr(pkt.type, sizeof(pkt.type), "MAGIC_SYNC");
+          TamagotchiCoreEngine::copyStr(pkt.text, sizeof(pkt.text), "Astral Harmony!");
           cyd_net_send_packet_ex(s_app->config, s_app->friendPet, pkt);
           s_app->engine.stats.health = (uint8_t)engineMin(100, s_app->engine.stats.health + 50);
           s_app->engine.stats.happiness = (uint8_t)engineMin(100, s_app->engine.stats.happiness + 40);
@@ -624,8 +624,8 @@ static void on_right_btn_clicked(lv_event_t* e) {
           cyd_lvgl_show_banner(LANG_DE ? "ASTRALE HARMONIE! +100XP +Tarte!" : "ASTRAL HARMONY! +100XP +Tart!", 3500);
         } else {
           s_app->dualCastUntilMs = now + 10000U;
-          strncpy(pkt.type, "MAGIC_SYNC", sizeof(pkt.type) - 1);
-          strncpy(pkt.text, "Friend Blessing", sizeof(pkt.text) - 1);
+          TamagotchiCoreEngine::copyStr(pkt.type, sizeof(pkt.type), "MAGIC_SYNC");
+          TamagotchiCoreEngine::copyStr(pkt.text, sizeof(pkt.text), "Friend Blessing");
           cyd_net_send_packet_ex(s_app->config, s_app->friendPet, pkt);
           s_app->engine.addXP(40);
           cyd_sound_treat_sent();
@@ -919,9 +919,9 @@ static void on_magic_action_cb(lv_event_t* e) {
       if (sp.target == 2) {
         uint32_t now = cyd_millis();
         NetPacket pkt = {};
-        strncpy(pkt.type, "MAGIC_SYNC", sizeof(pkt.type) - 1);
-        strncpy(pkt.from, s_app->config.deviceId, sizeof(pkt.from) - 1);
-        strncpy(pkt.text, sp.name, sizeof(pkt.text) - 1);
+        TamagotchiCoreEngine::copyStr(pkt.type, sizeof(pkt.type), "MAGIC_SYNC");
+        TamagotchiCoreEngine::copyStr(pkt.from, sizeof(pkt.from), s_app->config.deviceId);
+        TamagotchiCoreEngine::copyStr(pkt.text, sizeof(pkt.text), sp.name);
         cyd_net_send_packet_ex(s_app->config, s_app->friendPet, pkt);
         if (s_app->friendDualCastUntilMs > 0 && now <= s_app->friendDualCastUntilMs) {
           s_app->friendDualCastUntilMs = 0;
@@ -1091,20 +1091,20 @@ static void on_trade_send_offer_cb(lv_event_t* e) {
   uint8_t wIdx = s_app->tradeSelectedWantIdx % 5;
   s_app->outgoingTrade.active = true;
   snprintf(s_app->outgoingTrade.tradeId, sizeof(s_app->outgoingTrade.tradeId), "tr_%lu", (unsigned long)cyd_millis());
-  strncpy(s_app->outgoingTrade.offeredId, offerId, sizeof(s_app->outgoingTrade.offeredId) - 1);
-  strncpy(s_app->outgoingTrade.offeredName, offerName, sizeof(s_app->outgoingTrade.offeredName) - 1);
-  strncpy(s_app->outgoingTrade.requestedId, TRADE_WANT_IDS[wIdx], sizeof(s_app->outgoingTrade.requestedId) - 1);
-  strncpy(s_app->outgoingTrade.requestedName, TRADE_WANT_NAMES[wIdx], sizeof(s_app->outgoingTrade.requestedName) - 1);
+  TamagotchiCoreEngine::copyStr(s_app->outgoingTrade.offeredId, sizeof(s_app->outgoingTrade.offeredId), offerId);
+  TamagotchiCoreEngine::copyStr(s_app->outgoingTrade.offeredName, sizeof(s_app->outgoingTrade.offeredName), offerName);
+  TamagotchiCoreEngine::copyStr(s_app->outgoingTrade.requestedId, sizeof(s_app->outgoingTrade.requestedId), TRADE_WANT_IDS[wIdx]);
+  TamagotchiCoreEngine::copyStr(s_app->outgoingTrade.requestedName, sizeof(s_app->outgoingTrade.requestedName), TRADE_WANT_NAMES[wIdx]);
 
   NetPacket pkt = {};
-  strncpy(pkt.type, "TRADE_OFFER", sizeof(pkt.type) - 1);
-  strncpy(pkt.from, s_app->config.deviceId, sizeof(pkt.from) - 1);
+  TamagotchiCoreEngine::copyStr(pkt.type, sizeof(pkt.type), "TRADE_OFFER");
+  TamagotchiCoreEngine::copyStr(pkt.from, sizeof(pkt.from), s_app->config.deviceId);
   snprintf(pkt.text, sizeof(pkt.text), "%s -> %s", offerName, TRADE_WANT_NAMES[wIdx]);
-  strncpy(pkt.tradeId, s_app->outgoingTrade.tradeId, sizeof(pkt.tradeId) - 1);
-  strncpy(pkt.offeredId, offerId, sizeof(pkt.offeredId) - 1);
-  strncpy(pkt.offeredName, offerName, sizeof(pkt.offeredName) - 1);
-  strncpy(pkt.requestedId, TRADE_WANT_IDS[wIdx], sizeof(pkt.requestedId) - 1);
-  strncpy(pkt.requestedName, TRADE_WANT_NAMES[wIdx], sizeof(pkt.requestedName) - 1);
+  TamagotchiCoreEngine::copyStr(pkt.tradeId, sizeof(pkt.tradeId), s_app->outgoingTrade.tradeId);
+  TamagotchiCoreEngine::copyStr(pkt.offeredId, sizeof(pkt.offeredId), offerId);
+  TamagotchiCoreEngine::copyStr(pkt.offeredName, sizeof(pkt.offeredName), offerName);
+  TamagotchiCoreEngine::copyStr(pkt.requestedId, sizeof(pkt.requestedId), TRADE_WANT_IDS[wIdx]);
+  TamagotchiCoreEngine::copyStr(pkt.requestedName, sizeof(pkt.requestedName), TRADE_WANT_NAMES[wIdx]);
 
   cyd_net_send_packet_ex(s_app->config, s_app->friendPet, pkt);
   cyd_sound_treat_sent();
@@ -1119,9 +1119,9 @@ static void on_trade_cancel_outgoing_cb(lv_event_t* /*e*/) {
   s_app->engine.addKnownItemById(s_app->outgoingTrade.offeredId, 1);
 
   NetPacket pkt = {};
-  strncpy(pkt.type, "TRADE_DECLINE", sizeof(pkt.type) - 1);
-  strncpy(pkt.from, s_app->config.deviceId, sizeof(pkt.from) - 1);
-  strncpy(pkt.tradeId, s_app->outgoingTrade.tradeId, sizeof(pkt.tradeId) - 1);
+  TamagotchiCoreEngine::copyStr(pkt.type, sizeof(pkt.type), "TRADE_DECLINE");
+  TamagotchiCoreEngine::copyStr(pkt.from, sizeof(pkt.from), s_app->config.deviceId);
+  TamagotchiCoreEngine::copyStr(pkt.tradeId, sizeof(pkt.tradeId), s_app->outgoingTrade.tradeId);
   cyd_net_send_packet_ex(s_app->config, s_app->friendPet, pkt);
 
   memset(&s_app->outgoingTrade, 0, sizeof(s_app->outgoingTrade));
@@ -1147,11 +1147,11 @@ static void on_trade_accept_cb(lv_event_t* /*e*/) {
   s_app->engine.addXP(35);
 
   NetPacket pkt = {};
-  strncpy(pkt.type, "TRADE_ACCEPT", sizeof(pkt.type) - 1);
-  strncpy(pkt.from, s_app->config.deviceId, sizeof(pkt.from) - 1);
-  strncpy(pkt.tradeId, s_app->incomingTrade.tradeId, sizeof(pkt.tradeId) - 1);
-  strncpy(pkt.offeredId, s_app->incomingTrade.offeredId, sizeof(pkt.offeredId) - 1);
-  strncpy(pkt.requestedId, s_app->incomingTrade.requestedId, sizeof(pkt.requestedId) - 1);
+  TamagotchiCoreEngine::copyStr(pkt.type, sizeof(pkt.type), "TRADE_ACCEPT");
+  TamagotchiCoreEngine::copyStr(pkt.from, sizeof(pkt.from), s_app->config.deviceId);
+  TamagotchiCoreEngine::copyStr(pkt.tradeId, sizeof(pkt.tradeId), s_app->incomingTrade.tradeId);
+  TamagotchiCoreEngine::copyStr(pkt.offeredId, sizeof(pkt.offeredId), s_app->incomingTrade.offeredId);
+  TamagotchiCoreEngine::copyStr(pkt.requestedId, sizeof(pkt.requestedId), s_app->incomingTrade.requestedId);
   cyd_net_send_packet_ex(s_app->config, s_app->friendPet, pkt);
 
   memset(&s_app->incomingTrade, 0, sizeof(s_app->incomingTrade));
@@ -1165,9 +1165,9 @@ static void on_trade_decline_cb(lv_event_t* /*e*/) {
   if (!s_app || !s_app->incomingTrade.active) return;
   cyd_sound_click();
   NetPacket pkt = {};
-  strncpy(pkt.type, "TRADE_DECLINE", sizeof(pkt.type) - 1);
-  strncpy(pkt.from, s_app->config.deviceId, sizeof(pkt.from) - 1);
-  strncpy(pkt.tradeId, s_app->incomingTrade.tradeId, sizeof(pkt.tradeId) - 1);
+  TamagotchiCoreEngine::copyStr(pkt.type, sizeof(pkt.type), "TRADE_DECLINE");
+  TamagotchiCoreEngine::copyStr(pkt.from, sizeof(pkt.from), s_app->config.deviceId);
+  TamagotchiCoreEngine::copyStr(pkt.tradeId, sizeof(pkt.tradeId), s_app->incomingTrade.tradeId);
   cyd_net_send_packet_ex(s_app->config, s_app->friendPet, pkt);
 
   memset(&s_app->incomingTrade, 0, sizeof(s_app->incomingTrade));
@@ -1804,16 +1804,16 @@ void cyd_lvgl_open_modal(SubModalTab tab) {
       else if (strcmp(eng.season, "autumn") == 0) seasonLbl = "Herbst";
       else if (strcmp(eng.season, "winter") == 0) seasonLbl = "Winter";
     }
-    char cloudTxt[48];
+    char cloudTxt[64];
     if (s_app->offlineMode) {
-      snprintf(cloudTxt, sizeof(cloudTxt), L_CLD_OFFLINE);
+      snprintf(cloudTxt, sizeof(cloudTxt), "%s", L_CLD_OFFLINE);
     } else if (s_app->cloudSyncOk && s_app->lastCloudSaveMs > 0) {
       uint32_t agoSec = (cyd_millis() - s_app->lastCloudSaveMs) / 1000U;
       snprintf(cloudTxt, sizeof(cloudTxt), L_CLD_SYNCED, (unsigned long)agoSec);
     } else if (s_app->lastCloudSaveEpoch > 0) {
       snprintf(cloudTxt, sizeof(cloudTxt), L_CLD_SAVED_NVS, (unsigned long)s_app->lastCloudSaveEpoch);
     } else {
-      snprintf(cloudTxt, sizeof(cloudTxt), L_CLD_NONE);
+      snprintf(cloudTxt, sizeof(cloudTxt), "%s", L_CLD_NONE);
     }
 
     lv_obj_t* lbl = lv_label_create(body);

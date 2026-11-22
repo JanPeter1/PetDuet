@@ -1,6 +1,6 @@
 /**
  * ESP32 Cheap Yellow Display (CYD - ESP32-2432S028R) Tamagotchi RPG Firmware
- * Native ESP-IDF v5 + LVGL v8.3 implementation.
+ * Native ESP-IDF (v5 / v6.1) + LVGL v8.4 implementation.
  */
 
 import appMainCpp from '../../esp32_firmware/main/app_main.cpp?raw';
@@ -33,7 +33,7 @@ export const FIRMWARE_FILES: Record<string, { filename: string; description: str
   },
   'main/cyd_lvgl_ui.cpp': {
     filename: 'main/cyd_lvgl_ui.cpp',
-    description: 'LVGL v8.3 Dual-Pet UI with 16x16 pixel-art sprites, horizontal feed flyout, and 5-tab + chat modals.',
+    description: 'LVGL v8.4 Dual-Pet UI with 16x16 pixel-art sprites, horizontal feed flyout, and 5-tab + chat modals.',
     code: lvglUiCpp,
   },
   'main/cyd_display.cpp': {
@@ -73,12 +73,12 @@ export const FIRMWARE_FILES: Record<string, { filename: string; description: str
   },
   'main/lv_conf.h': {
     filename: 'main/lv_conf.h',
-    description: 'LVGL v8.3 configuration (byte-swapped RGB565, chroma-key transparency, 32KB heap).',
+    description: 'LVGL v8.4 configuration (byte-swapped RGB565, chroma-key transparency, 32KB heap).',
     code: lvConfH,
   },
   'main/idf_component.yml': {
     filename: 'main/idf_component.yml',
-    description: 'ESP-IDF Component Manager manifest declaring lvgl/lvgl v8.3 dependency.',
+    description: 'ESP-IDF Component Manager manifest declaring lvgl/lvgl ^8.4.0 and espressif/cjson (IDF >= 6.0).',
     code: idfCompYml,
   },
   'main/CMakeLists.txt': {
@@ -88,7 +88,7 @@ export const FIRMWARE_FILES: Record<string, { filename: string; description: str
   },
   'CMakeLists.txt': {
     filename: 'CMakeLists.txt',
-    description: 'Root ESP-IDF v5 project CMake configuration.',
+    description: 'Root ESP-IDF v5/v6.1 project CMake configuration (with GCC 15 C17 flags for third-party libs).',
     code: rootCmake,
   },
   'sdkconfig.defaults': {
@@ -123,7 +123,7 @@ export const FIRMWARE_FILES: Record<string, { filename: string; description: str
   },
   'platformio.ini': {
     filename: 'platformio.ini',
-    description: 'PlatformIO config using framework = espidf + LVGL v8.3.',
+    description: 'PlatformIO legacy fallback config using framework = espidf + LVGL v8.4.',
     code: cydPio,
   },
   'README.md': {

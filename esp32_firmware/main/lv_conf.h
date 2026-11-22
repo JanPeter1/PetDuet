@@ -1,10 +1,12 @@
 /**
- * LVGL v8.3 Configuration for ESP32-2432S028R (CYD 320x240, ESP-IDF)
+ * LVGL v8.4 Configuration for ESP32-2432S028R (CYD 320x240, ESP-IDF 5/6)
  */
 #if 1
 #ifndef LV_CONF_H
 #define LV_CONF_H
 
+#include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 /* Color settings: 16-bit RGB565 Big-Endian for direct ILI9341 DMA */

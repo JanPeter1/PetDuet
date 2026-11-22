@@ -1,3 +1,6 @@
+# NOTE: Omitting REQUIRES/PRIV_REQUIRES allows ESP-IDF 'main' to auto-link all core
+# components (including IDF 6 split drivers esp_driver_* and mbedtls) as well as
+# managed components from idf_component.yml (lvgl__lvgl, espressif__cjson).
 idf_component_register(
     SRCS
         "main.cpp"

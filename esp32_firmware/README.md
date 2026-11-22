@@ -1,6 +1,6 @@
-# ESP32 CYD Retro Tamagotchi RPG Firmware (ESP-IDF v5 + LVGL v8)
+# ESP32 CYD Retro Tamagotchi RPG Firmware (ESP-IDF v6.1.0 + LVGL v8.4)
 
-This directory contains the native **ESP-IDF** firmware for the **ESP32 Cheap Yellow Display (CYD)**, model **ESP32-2432S028R** (2.8" 320x240 ILI9341 LCD + XPT2046 resistive touch + RGB LED + Piezo speaker).
+This directory contains the native **ESP-IDF** (compatible with v5.x and **v6.1.0**) firmware for the **ESP32 Cheap Yellow Display (CYD)**, model **ESP32-2432S028R** (2.8" 320x240 ILI9341 LCD + XPT2046 resistive touch + RGB LED + Piezo speaker).
 
 ---
 
@@ -21,7 +21,7 @@ This directory contains the native **ESP-IDF** firmware for the **ESP32 Cheap Ye
 
 ## ⚡ Native ESP-IDF Drivers & Over-The-Air (OTA) System
 
-1. **Direct SPI Drivers + LVGL v8.3**:
+1. **Direct SPI Drivers + LVGL v8.4**:
    - **ILI9341 Display (`SPI2_HOST` @ 40MHz)**: Byte-swapped LVGL RGB565 DMA transfers with CYD panel color inversion (`0x21`) and backlight on GPIO 21.
    - **XPT2046 Touch (`SPI3_HOST` @ 2.5MHz)**: Calibrated coordinate sampling on IRQ GPIO 36 feeding LVGL `LV_INDEV_TYPE_POINTER`.
 2. **Hardware A/B Dual Partition Switching (`esp_ota_ops.h`)**:
@@ -41,24 +41,26 @@ This directory contains the native **ESP-IDF** firmware for the **ESP32 Cheap Ye
 - `main/cyd_touch.c` / `.h`: Native ESP-IDF `SPI3_HOST` XPT2046 touch controller driver.
 - `main/cyd_hw.c` / `.h`: GPIO RGB status LEDs (active low), BOOT button (GPIO 0), and LEDC PWM piezo buzzer (GPIO 26).
 - `main/cyd_storage.cpp` / `.h`: ESP-IDF `nvs_flash` ("cyd_pet") and `esp_spiffs` rules persistence.
-- `main/cyd_net.cpp` / `.h`: `esp_wifi` STA + SoftAP portal (`esp_http_server` at `192.168.4.1`), `lwip/sockets` P2P (port 8888), `esp_http_client` PHP sync, and `esp_ota_ops` updater.
-- `main/lv_conf.h` & `main/idf_component.yml`: LVGL v8.3 configuration & IDF Component Manager dependency.
+- `main/cyd_net.cpp` / `.h`: `esp_wifi` STA + SoftAP portal (`esp_http_server` at `192.168.4.1`), `lwip/sockets` P2P (port 8888), `esp_http_client` PHP sync, PSA Crypto SHA-256 (IDF 6) / MbedTLS fallback (IDF 5), and `esp_ota_ops` updater.
+- `main/lv_conf.h` & `main/idf_component.yml`: LVGL v8.4 configuration & IDF Component Manager dependencies (`lvgl/lvgl ^8.4.0`, `espressif/cjson ^1.7.19` for IDF >= 6.0).
 - `TamagotchiCoreEngine.h`: Platform-independent, zero-heap C++ game engine shared with host unit tests.
 - `PetGraphics.h`: 16-bit RGB565 biome palettes, 16×16 sprites, and procedural pet/egg drawing.
-- `CMakeLists.txt`, `sdkconfig.defaults`, `partitions.csv`, `platformio.ini`: Build configurations for `idf.py` and PlatformIO (`framework = espidf`).
+- `CMakeLists.txt`, `sdkconfig.defaults`, `partitions.csv`, `platformio.ini`: Build configurations for `idf.py` (ESP-IDF 6.1.0) and PlatformIO fallback.
 
 ---
 
 ## 🚀 Building & Flashing
 
-### Method 1: Native ESP-IDF CLI (`idf.py`) — Recommended
+### Method 1: Native ESP-IDF v6.1.0 CLI (`idf.py`) — Recommended
 ```bash
 cd esp32_firmware
+# Bei Wechsel von ESP-IDF 5.x oder nach Git-Sync einmalig altes build/sdkconfig bereinigen:
+idf.py fullclean
 idf.py set-target esp32
 idf.py build flash monitor
 ```
 
-### Method 2: PlatformIO (`framework = espidf`)
+### Method 2: PlatformIO (`framework = espidf`, ESP-IDF 5.1 Fallback)
 ```bash
 cd esp32_firmware
 pio run -e esp32-2432s028r -t upload --upload-port COM3

@@ -6,7 +6,13 @@ REM Example: ota_update.bat 2.1.2 "Fixed touch calibration"
 setlocal enabledelayedexpansion
 
 set PROJECT_ROOT=%~dp0
-set FIRMWARE_BIN=%PROJECT_ROOT%esp32_firmware\.pio\build\esp32-2432s028r\firmware.bin
+set IDF_BIN=%PROJECT_ROOT%esp32_firmware\build\petduet.bin
+set PIO_BIN=%PROJECT_ROOT%esp32_firmware\.pio\build\esp32-2432s028r\firmware.bin
+if exist "%IDF_BIN%" (
+    set FIRMWARE_BIN=%IDF_BIN%
+) else (
+    set FIRMWARE_BIN=%PIO_BIN%
+)
 set SERVER_BIN=%PROJECT_ROOT%php_server\cyd_tamagotchi.bin
 set MANIFEST=%PROJECT_ROOT%php_server\ota_manifest.json
 set CONFIG_H=%PROJECT_ROOT%esp32_firmware\config.h
@@ -29,8 +35,8 @@ echo.
 
 REM 1. Check firmware binary exists
 if not exist "%FIRMWARE_BIN%" (
-    echo Error: Firmware binary not found at %FIRMWARE_BIN%
-    echo Build the firmware first: cd esp32_firmware && pio run
+    echo Error: Firmware binary not found at %IDF_BIN% or %PIO_BIN%
+    echo Build the firmware first: cd esp32_firmware && idf.py build
     exit /b 1
 )
 
@@ -74,8 +80,8 @@ REM 6. Done
 echo [6/6] Done!
 echo.
 echo Next steps:
-echo   1. Build ^& flash new firmware to CYD:
-echo      cd esp32_firmware ^&^& pio run -t upload
+echo   1. Build ^& flash new firmware to CYD (ESP-IDF 6.1):
+echo      cd esp32_firmware ^&^& idf.py build flash
 echo.
 echo   2. Start PHP server:
 echo      php -S localhost:8080 -t php_server

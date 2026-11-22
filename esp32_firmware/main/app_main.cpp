@@ -205,10 +205,10 @@ extern "C" void app_main(void) {
 
   // 2. Storage (NVS + SPIFFS) & Engine setup
   cyd_storage_init(s_app.config);
-  strncpy(s_app.engine.biome, s_app.config.biome, sizeof(s_app.engine.biome) - 1);
-  strncpy(s_app.engine.name, s_app.config.trainerName, sizeof(s_app.engine.name) - 1);
+  TamagotchiCoreEngine::copyStr(s_app.engine.biome, sizeof(s_app.engine.biome), s_app.config.biome);
+  TamagotchiCoreEngine::copyStr(s_app.engine.name, sizeof(s_app.engine.name), s_app.config.trainerName);
 
-  strncpy(s_app.friendPet.deviceId, s_app.config.friendId, sizeof(s_app.friendPet.deviceId) - 1);
+  TamagotchiCoreEngine::copyStr(s_app.friendPet.deviceId, sizeof(s_app.friendPet.deviceId), s_app.config.friendId);
   strcpy(s_app.friendPet.name, "Sunscale");
   strcpy(s_app.friendPet.biome, "desert");
   strcpy(s_app.friendPet.phase, "Baby");
