@@ -81,7 +81,7 @@ bool cyd_touch_read(uint16_t *out_x, uint16_t *out_y) {
     uint16_t z1 = xpt2046_read_channel(0xB1);
     uint16_t z2 = xpt2046_read_channel(0xC1);
     int32_t pressure = (int32_t)z1 + (4095 - (int32_t)z2);
-    if (pressure < 350) continue;
+    if (pressure < 300) continue;
 
     uint16_t raw_x = xpt2046_read_channel(0xD1); // X in landscape orientation
     uint16_t raw_y = xpt2046_read_channel(0x91); // Y in landscape orientation
@@ -100,7 +100,13 @@ bool cyd_touch_read(uint16_t *out_x, uint16_t *out_y) {
   int32_t avg_x = sum_x / valid;
   int32_t avg_y = sum_y / valid;
 
+#if BOARD_TOUCH_SWAP_XY
+  if (out_x) *out_x = map_clamp(avg_y, BOARD_TOUCH_MIN_Y, BOARD_TOUCH_MAX_Y, 0, BOARD_DISPLAY_WIDTH - 1);
+  if (out_y) *out_y = map_clamp(avg_x, BOARD_TOUCH_MIN_X, BOARD_TOUCH_MAX_X, 0, BOARD_DISPLAY_HEIGHT - 1);
+#else
   if (out_x) *out_x = map_clamp(avg_x, BOARD_TOUCH_MIN_X, BOARD_TOUCH_MAX_X, 0, BOARD_DISPLAY_WIDTH - 1);
   if (out_y) *out_y = map_clamp(avg_y, BOARD_TOUCH_MIN_Y, BOARD_TOUCH_MAX_Y, 0, BOARD_DISPLAY_HEIGHT - 1);
+#endif
+
   return true;
 }

@@ -17,7 +17,7 @@ This directory contains the native **ESP-IDF** (compatible with v5.x and **v6.1.
 - Landscape RGB565 setup: `MADCTL=0x28`, `PIXFMT=0x55`, `FRMCTR1=00 1A`, `DFUNCTR=08 82 27`, inversion command `0x21`.
 - Power/VCOM values: `C0=10`, `C1=00`, `C5=30 30`, `C7=B7`; use the ILI9341_2 gamma tables in `main/cyd_display.cpp`.
 - LVGL uses 16-bit swapped color and a DMA-capable staging buffer for partial flushes. Keep this staging path; passing the LVGL draw buffer directly to SPI DMA caused visual corruption.
-- Touch: XPT2046 on SPI3 (MOSI 32, MISO 39, SCLK 25, CS 33) at 2.5 MHz, with DMA disabled for its three-byte polling transfers. Detect contact from Z1/Z2 pressure; do not require GPIO36 IRQ to be low because that input has no internal pull-up.
+- Touch: XPT2046 on SPI3 (MOSI 32, MISO 39, SCLK 25, CS 33) at 2.5 MHz, with DMA disabled for its three-byte polling transfers. Detect contact from Z1/Z2 pressure; do not require GPIO36 IRQ to be low because that input has no internal pull-up. With ILI9341 `MADCTL=0x28`, swap the XPT2046 axes before mapping to LVGL coordinates (`BOARD_TOUCH_SWAP_XY=1`).
 
 ## 🎮 Touchscreen Controls & LVGL RPG Interface
 
@@ -38,7 +38,7 @@ This directory contains the native **ESP-IDF** (compatible with v5.x and **v6.1.
 
 1. **Direct SPI Drivers + LVGL v8.4**:
    - **ILI9341 Display (`SPI2_HOST` @ 40MHz)**: Byte-swapped LVGL RGB565 DMA transfers with CYD panel color inversion (`0x21`) and backlight on GPIO 21.
-   - **XPT2046 Touch (`SPI3_HOST` @ 2.5MHz)**: Calibrated coordinate sampling on IRQ GPIO 36 feeding LVGL `LV_INDEV_TYPE_POINTER`.
+   - **XPT2046 Touch (`SPI3_HOST` @ 2.5MHz)**: Pressure-polled, axis-swapped coordinates feeding LVGL `LV_INDEV_TYPE_POINTER`.
 2. **Hardware A/B Dual Partition Switching (`esp_ota_ops.h`)**:
    - Uses `partitions.csv` (`ota_0` 1.5MB, `ota_1` 1.5MB, `spiffs` 896KB).
    - Enables `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y`; marks partition valid after boot or rolls back on failure.

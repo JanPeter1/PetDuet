@@ -30,6 +30,8 @@
 #define BOARD_TOUCH_MAX_X 3800
 #define BOARD_TOUCH_MIN_Y 200
 #define BOARD_TOUCH_MAX_Y 3800
+// ILI9341 MADCTL=0x28 landscape orientation requires transposing XPT2046 axes.
+#define BOARD_TOUCH_SWAP_XY 1
 
 #define BOARD_HAS_PSRAM 0
 #define BOARD_DATA_EVENT_COUNT 12
