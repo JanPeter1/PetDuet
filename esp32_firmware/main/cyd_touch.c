@@ -2,7 +2,6 @@
 #include "../CYD_Pins.h"
 #include "../cyd_config.h"
 
-#include "driver/gpio.h"
 #include "driver/spi_master.h"
 #include "esp_log.h"
 #include <string.h>
@@ -26,24 +25,21 @@ static uint16_t xpt2046_read_channel(uint8_t cmd) {
 }
 
 void cyd_touch_init(void) {
-  gpio_config_t irq_conf = {
-    .pin_bit_mask = (1ULL << XPT2046_IRQ),
-    .mode = GPIO_MODE_INPUT,
-    .pull_up_en = GPIO_PULLUP_DISABLE, // GPIO 36 is input-only without internal PU
-    .pull_down_en = GPIO_PULLDOWN_DISABLE,
-    .intr_type = GPIO_INTR_DISABLE
-  };
-  gpio_config(&irq_conf);
-
-  spi_bus_config_t buscfg = {
-    .mosi_io_num = XPT2046_MOSI,
-    .miso_io_num = XPT2046_MISO,
-    .sclk_io_num = XPT2046_CLK,
-    .quadwp_io_num = -1,
-    .quadhd_io_num = -1,
-    .max_transfer_sz = 32
-  };
-  esp_err_t ret = spi_bus_initialize(BOARD_TOUCH_SPI_HOST, &buscfg, SPI_DMA_CH_AUTO);
+  spi_bus_config_t buscfg;
+  memset(&buscfg, 0, sizeof(buscfg));
+  buscfg.mosi_io_num = XPT2046_MOSI;
+  buscfg.miso_io_num = XPT2046_MISO;
+  buscfg.sclk_io_num = XPT2046_CLK;
+  buscfg.quadwp_io_num = -1;
+  buscfg.quadhd_io_num = -1;
+  buscfg.data4_io_num = -1;
+  buscfg.data5_io_num = -1;
+  buscfg.data6_io_num = -1;
+  buscfg.data7_io_num = -1;
+  buscfg.max_transfer_sz = 32;
+  // These are tiny three-byte XPT2046 transfers; polling without DMA avoids
+  // bounce-buffer and alignment issues with the stack-based tx/rx packets.
+  esp_err_t ret = spi_bus_initialize(BOARD_TOUCH_SPI_HOST, &buscfg, SPI_DMA_DISABLED);
   if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
     ESP_LOGE(TAG, "Touch SPI bus init failed: %s", esp_err_to_name(ret));
     return;
@@ -59,7 +55,7 @@ void cyd_touch_init(void) {
   if (ret != ESP_OK) {
     ESP_LOGE(TAG, "Touch SPI add device failed: %s", esp_err_to_name(ret));
   } else {
-    ESP_LOGI(TAG, "XPT2046 Touch initialized on SPI3_HOST");
+    ESP_LOGI(TAG, "XPT2046 touch initialized on SPI3_HOST (2.5MHz, pressure polling)");
   }
 }
 
@@ -73,11 +69,9 @@ static uint16_t map_clamp(int32_t v, int32_t in_min, int32_t in_max, int32_t out
 
 bool cyd_touch_read(uint16_t *out_x, uint16_t *out_y) {
   if (!s_touch_spi) return false;
-  if (gpio_get_level((gpio_num_t)XPT2046_IRQ) != 0) {
-    return false;
-  }
 
-  // Verify touch pressure (Z1) and average 3 samples
+  // Poll pressure instead of gating on IRQ: GPIO36 has no internal pull-up,
+  // and some CYD revisions leave the PENIRQ line unreliable.
   int32_t sum_x = 0;
   int32_t sum_y = 0;
   int valid = 0;

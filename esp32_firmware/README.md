@@ -17,6 +17,7 @@ This directory contains the native **ESP-IDF** (compatible with v5.x and **v6.1.
 - Landscape RGB565 setup: `MADCTL=0x28`, `PIXFMT=0x55`, `FRMCTR1=00 1A`, `DFUNCTR=08 82 27`, inversion command `0x21`.
 - Power/VCOM values: `C0=10`, `C1=00`, `C5=30 30`, `C7=B7`; use the ILI9341_2 gamma tables in `main/cyd_display.cpp`.
 - LVGL uses 16-bit swapped color and a DMA-capable staging buffer for partial flushes. Keep this staging path; passing the LVGL draw buffer directly to SPI DMA caused visual corruption.
+- Touch: XPT2046 on SPI3 (MOSI 32, MISO 39, SCLK 25, CS 33) at 2.5 MHz, with DMA disabled for its three-byte polling transfers. Detect contact from Z1/Z2 pressure; do not require GPIO36 IRQ to be low because that input has no internal pull-up.
 
 ## 🎮 Touchscreen Controls & LVGL RPG Interface
 
