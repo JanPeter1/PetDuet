@@ -4,6 +4,20 @@ This directory contains the native **ESP-IDF** (compatible with v5.x and **v6.1.
 
 ---
 
+## Confirmed target hardware
+
+- Purchased display: [Amazon ASIN B0FWK1YCQJ](https://www.amazon.de/dp/B0FWK1YCQJ)
+- Board model: **ESP32-2432S028R** (classic ESP32 CYD, not an ESP32-S3 board)
+- Use the pinout in `CYD_Pins.h`; documentation for `ES3C28P` / `ES3N28P` is for a different S3 board and does not apply here.
+
+### Known-good LCD configuration
+
+- Controller: ILI9341, using the `ILI9341_2` initialization profile.
+- Display SPI: `SPI2_HOST`, MOSI 13, MISO 12, SCLK 14, CS 15, DC 2, 20 MHz; do not set `SPI_SAMPLING_POINT_PHASE_1` (unsupported on this ESP32).
+- Landscape RGB565 setup: `MADCTL=0x28`, `PIXFMT=0x55`, `FRMCTR1=00 1A`, `DFUNCTR=08 82 27`, inversion command `0x21`.
+- Power/VCOM values: `C0=10`, `C1=00`, `C5=30 30`, `C7=B7`; use the ILI9341_2 gamma tables in `main/cyd_display.cpp`.
+- LVGL uses 16-bit swapped color and a DMA-capable staging buffer for partial flushes. Keep this staging path; passing the LVGL draw buffer directly to SPI DMA caused visual corruption.
+
 ## 🎮 Touchscreen Controls & LVGL RPG Interface
 
 - **Top-Left `FEED / FUTT` + Horizontal Food Flyout**:

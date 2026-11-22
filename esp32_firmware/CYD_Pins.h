@@ -15,7 +15,7 @@
 #define CYD_TFT_SCLK 14
 #define CYD_TFT_CS   15
 #define CYD_TFT_DC    2
-#define CYD_TFT_RST  -1
+#define CYD_TFT_RST  -1  // Set to 22 if your CYD board has hardware reset on GPIO22
 #define CYD_TFT_BL   21 // Backlight (PWM / digital output)
 
 // ----------------------------------------------------------------------------

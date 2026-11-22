@@ -26,7 +26,7 @@
 #define TFT_WHITE       0xFFFF
 #define TFT_ORANGE      0xFDA0
 #define TFT_GREENYELLOW 0xB7E0
-#define TFT_PINK        0xFE19
+#define TFT_PINK        0xF81F
 #define TFT_GOLD        0xFEA0
 #define TFT_SILVER      0xC618
 #endif

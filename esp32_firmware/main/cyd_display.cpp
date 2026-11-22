@@ -6,6 +6,7 @@
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
 #include "esp_heap_caps.h"
+#include "esp_idf_version.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -53,8 +54,10 @@ bool CydDisplay::init() {
   buscfg.flags = 0;
   buscfg.isr_cpu_id = ESP_INTR_CPU_AFFINITY_AUTO;
   buscfg.intr_flags = 0;
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 0)
   buscfg.dma_burst_size = 0;
   buscfg.data_io_default_level = 0;
+#endif
   esp_err_t ret = spi_bus_initialize(BOARD_TFT_SPI_HOST, &buscfg, SPI_DMA_CH_AUTO);
   if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
     ESP_LOGE(TAG, "TFT SPI bus init failed: %s", esp_err_to_name(ret));
@@ -64,7 +67,7 @@ bool CydDisplay::init() {
   spi_device_interface_config_t devcfg;
   memset(&devcfg, 0, sizeof(devcfg));
   devcfg.mode = 0;
-  devcfg.clock_speed_hz = 40 * 1000 * 1000; // 40 MHz
+  devcfg.clock_speed_hz = 20 * 1000 * 1000; // 20 MHz (reduced for stability)
   devcfg.spics_io_num = CYD_TFT_CS;
   devcfg.queue_size = 7;
   devcfg.pre_cb = ili_spi_pre_cb;
@@ -73,6 +76,8 @@ bool CydDisplay::init() {
   devcfg.dummy_bits = 0;
   devcfg.clock_source = SPI_CLK_SRC_DEFAULT;
   devcfg.duty_cycle_pos = 128;
+  devcfg.cs_ena_pretrans = 0;
+  devcfg.cs_ena_posttrans = 0;
   devcfg.input_delay_ns = 0;
   devcfg.flags = 0;
   devcfg.post_cb = NULL;
@@ -88,6 +93,24 @@ bool CydDisplay::init() {
       s_dma_buf = (uint16_t*)malloc(DMA_BUF_PIXELS * sizeof(uint16_t));
     }
   }
+
+  // Optional hardware reset (some CYD boards have TFT_RST on GPIO 22)
+  #ifdef CYD_TFT_RST
+  #if CYD_TFT_RST >= 0
+  gpio_config_t rst_conf = {
+    .pin_bit_mask = (1ULL << CYD_TFT_RST),
+    .mode = GPIO_MODE_OUTPUT,
+    .pull_up_en = GPIO_PULLUP_DISABLE,
+    .pull_down_en = GPIO_PULLDOWN_DISABLE,
+    .intr_type = GPIO_INTR_DISABLE
+  };
+  gpio_config(&rst_conf);
+  gpio_set_level((gpio_num_t)CYD_TFT_RST, 0);
+  vTaskDelay(pdMS_TO_TICKS(10));
+  gpio_set_level((gpio_num_t)CYD_TFT_RST, 1);
+  vTaskDelay(pdMS_TO_TICKS(120));
+  #endif
+  #endif
 
   // ILI9341 Reset & Initialization Sequence (CYD 2.8" Landscape 320x240)
   writeCmd(0x01); // SWRESET
@@ -114,26 +137,26 @@ bool CydDisplay::init() {
   static const uint8_t pump[] = {0x20};
   writeCmd(0xF7); writeData(pump, sizeof(pump));
 
-  static const uint8_t pwr1[] = {0x23};
+  static const uint8_t pwr1[] = {0x10};
   writeCmd(0xC0); writeData(pwr1, sizeof(pwr1));
 
-  static const uint8_t pwr2[] = {0x10};
+  static const uint8_t pwr2[] = {0x00};
   writeCmd(0xC1); writeData(pwr2, sizeof(pwr2));
 
-  static const uint8_t vcom1[] = {0x3E, 0x28};
+  static const uint8_t vcom1[] = {0x30, 0x30};
   writeCmd(0xC5); writeData(vcom1, sizeof(vcom1));
 
-  static const uint8_t vcom2[] = {0x86};
+  static const uint8_t vcom2[] = {0xB7};
   writeCmd(0xC7); writeData(vcom2, sizeof(vcom2));
 
-  // Landscape rotation 1 for ILI9341_2_DRIVER CYD (MV | BGR = 0x28)
+  // ILI9341_2 CYD profile, landscape rotation: MV | BGR.
   static const uint8_t madctl[] = {0x28};
   writeCmd(0x36); writeData(madctl, sizeof(madctl));
 
   static const uint8_t pixfmt[] = {0x55}; // 16-bit/pixel RGB565
   writeCmd(0x3A); writeData(pixfmt, sizeof(pixfmt));
 
-  static const uint8_t frmctr[] = {0x00, 0x18};
+  static const uint8_t frmctr[] = {0x00, 0x1A};
   writeCmd(0xB1); writeData(frmctr, sizeof(frmctr));
 
   static const uint8_t dfunc[] = {0x08, 0x82, 0x27};
@@ -145,6 +168,18 @@ bool CydDisplay::init() {
   static const uint8_t gammaSet[] = {0x01};
   writeCmd(0x26); writeData(gammaSet, sizeof(gammaSet));
 
+  static const uint8_t gammaPositive[] = {
+    0x0F, 0x2A, 0x28, 0x08, 0x0E, 0x08, 0x54, 0xA9,
+    0x43, 0x0A, 0x0F, 0x00, 0x00, 0x00, 0x00
+  };
+  writeCmd(0xE0); writeData(gammaPositive, sizeof(gammaPositive));
+
+  static const uint8_t gammaNegative[] = {
+    0x00, 0x15, 0x17, 0x07, 0x11, 0x06, 0x2B, 0x56,
+    0x3C, 0x05, 0x10, 0x0F, 0x3F, 0x3F, 0x0F
+  };
+  writeCmd(0xE1); writeData(gammaNegative, sizeof(gammaNegative));
+
   // CYD Panel Color Inversion Fix (0x21)
   writeCmd(0x21);
 
@@ -154,7 +189,7 @@ bool CydDisplay::init() {
 
   fillScreen(TFT_BLACK);
   setBacklight(true);
-  ESP_LOGI(TAG, "ILI9341 320x240 display ready on SPI2_HOST (40MHz)");
+  ESP_LOGI(TAG, "ILI9341 320x240 display ready on SPI2_HOST (20MHz)");
   return true;
 }
 
@@ -222,7 +257,20 @@ void CydDisplay::flushRgb565Rect(int x1, int y1, int x2, int y2, const uint16_t*
   setAddrWindow((uint16_t)x1, (uint16_t)y1, (uint16_t)x2, (uint16_t)y2);
 
   if (alreadySwapped) {
-    pushColors(pixels, total);
+    // LVGL's partial draw buffer is not guaranteed to be DMA-capable/aligned.
+    // Stage it through the DMA buffer to avoid corrupted rows on ESP32 SPI DMA.
+    if (!s_dma_buf) {
+      pushColors(pixels, total);
+      return;
+    }
+    size_t sent = 0;
+    while (sent < total) {
+      size_t chunk = total - sent;
+      if (chunk > DMA_BUF_PIXELS) chunk = DMA_BUF_PIXELS;
+      memcpy(s_dma_buf, pixels + sent, chunk * sizeof(uint16_t));
+      pushColors(s_dma_buf, chunk);
+      sent += chunk;
+    }
     return;
   }
   if (!s_dma_buf) {

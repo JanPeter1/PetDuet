@@ -12,7 +12,7 @@ dependencies:
   idf:
     source:
       type: idf
-    version: 5.3.1
+    version: 6.1.0
   lvgl/lvgl:
     component_hash: d7c1ac037ae6e85d94897f807d6e7ba0946a83e720074fc95a4f6241da9f9f53
     dependencies: []
@@ -24,6 +24,6 @@ direct_dependencies:
 - espressif/cjson
 - idf
 - lvgl/lvgl
-manifest_hash: c31354402d4770166c8a8ae94451bc58ae388baf414b88ab793707f7a6c4f1b8
+manifest_hash: 263c2823404ecb9e520f583c8ff612fc95fdb6bce94e00e956e697aa9b499126
 target: esp32
-version: 2.0.0
+version: 3.0.0

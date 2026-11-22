@@ -50,9 +50,15 @@
 #define COLOR_MANA_PURPLE 0x99FD // Mana / Magic
 
 // Additional colors for icons & sprites
-#define TFT_SILVER        0xC618
-#define TFT_PINK          0xF81F
-#define TFT_DARKGREY      0x7BEF
+#ifndef TFT_SILVER
+  #define TFT_SILVER      0xC618
+#endif
+#ifndef TFT_PINK
+  #define TFT_PINK        0xF81F
+#endif
+#ifndef TFT_DARKGREY
+  #define TFT_DARKGREY    0x7BEF
+#endif
 
 struct BiomeTheme {
   const char* name;
