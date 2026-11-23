@@ -1601,7 +1601,11 @@ void cyd_lvgl_refresh_main_screen(void) {
     lv_obj_set_style_border_width(s_left_stage, 0, 0);
     lv_obj_set_style_border_width(s_right_stage, 0, 0);
   }
-  lv_obj_set_style_bg_color(s_dot_btn, lv_color_hex(fr.isOnline ? 0x22C55E : 0xEF4444), 0);
+  uint32_t dotCol = 0xEF4444; // red: no server connection
+if (!s_app->offlineMode) {
+  dotCol = fr.isOnline ? 0x22C55E : 0xFACC15; // green: partner online, yellow: server connected
+}
+lv_obj_set_style_bg_color(s_dot_btn, lv_color_hex(dotCol), 0);
 
   lv_label_set_text(s_my_name_lbl, eng.name);
   lv_label_set_text_fmt(s_my_lv_lbl, "Lv%u", eng.level);
